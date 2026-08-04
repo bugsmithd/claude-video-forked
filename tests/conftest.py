@@ -69,6 +69,46 @@ def build_static_clip(
     ])
 
 
+# 5 fills × 4s = a 20s clip whose color names its own timestamp: bucket = t // 4.
+TIMED_COLORS = ["red", "lime", "blue", "yellow", "magenta"]
+TIMED_RGB = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)]
+TIMED_SEG = 4.0
+
+
+def build_timed_clip(
+    path: Path,
+    seg: float = TIMED_SEG,
+    size: str = "320x240",
+    fps: int = 10,
+) -> None:
+    """Color-coded clock with ONE keyframe, at t=0.
+
+    Scenecut detection off and a GOP longer than the clip, so every seek target
+    except 0 sits mid-GOP. A frame that reports a timestamp its color disagrees
+    with means the extractor labelled an intent instead of a measurement.
+    """
+    inputs: list[str] = []
+    for color in TIMED_COLORS:
+        inputs += ["-f", "lavfi", "-t", str(seg), "-i", f"color=c={color}:s={size}:r={fps}"]
+    streams = "".join(f"[{i}:v]" for i in range(len(TIMED_COLORS)))
+    filt = f"{streams}concat=n={len(TIMED_COLORS)}:v=1:a=0[out]"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        *inputs,
+        "-filter_complex", filt, "-map", "[out]",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-g", "1000", "-sc_threshold", "0",
+        str(path),
+    ])
+
+
+@pytest.fixture(scope="session")
+def timed_clip(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    path = tmp_path_factory.mktemp("clips") / "timed.mp4"
+    build_timed_clip(path)
+    return path
+
+
 @pytest.fixture(scope="session")
 def cut_clip(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("clips") / "cuts.mp4"

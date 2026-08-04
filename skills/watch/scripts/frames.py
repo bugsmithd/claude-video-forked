@@ -46,6 +46,45 @@ def _scale_filter(resolution: int) -> str:
     )
 
 
+def _stamp_time(seconds: float) -> str:
+    """Filename-safe clock: ``02m15s``, ``1h02m15s``. No colons — those read as
+    path separators in Finder and break shell globs."""
+    total = max(0, int(round(seconds)))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{secs:02d}s"
+    return f"{minutes:02d}m{secs:02d}s"
+
+
+def stamp_paths(selected: list[dict]) -> list[dict]:
+    """Rename each frame so its file name carries the second it shows.
+
+    Frames get read one image per tool call and paired with timestamps by hand,
+    which is exactly where a whole batch can shift by one and nobody notices.
+    ``frame_0007_t02m15s.jpg`` makes a frame self-identifying: a misread pairing
+    shows up in the path instead of hiding in list order.
+
+    Call this LAST. :func:`_thumb_frames` rebuilds an ffmpeg ``%0Nd`` pattern
+    from the file name, so it needs the plain zero-padded sequence; renaming
+    before dedup would silently turn dedup into a no-op. Fail-open: a collision
+    or an OS error leaves that frame's path untouched.
+    """
+    for frame in selected:
+        src = Path(frame["path"])
+        if "_t" in src.stem:
+            continue
+        dst = src.with_name(f"{src.stem}_t{_stamp_time(frame['timestamp_seconds'])}{src.suffix}")
+        if dst.exists():
+            continue
+        try:
+            src.rename(dst)
+        except OSError:
+            continue
+        frame["path"] = str(dst)
+    return selected
+
+
 def _clamp_fps(fps: float, duration_seconds: float, max_frames: int) -> tuple[float, int]:
     fps = min(fps, MAX_FPS)
     target = min(max_frames, max(1, int(round(fps * duration_seconds))))
