@@ -1,6 +1,6 @@
 {
   "name": "watch",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Let Claude watch a video. Downloads with yt-dlp, extracts auto-scaled second-stamped frames with ffmpeg, pulls captions or falls back to Whisper (local whisper.cpp, Groq, or OpenAI), and hands frames + transcript to Claude. Fork of bradautomates/claude-video.",
   "author": {
     "name": "Divyanshu Rathore"
@@ -8,5 +8,19 @@
   "homepage": "https://github.com/bugsmithd/claude-video-forked",
   "repository": "https://github.com/bugsmithd/claude-video-forked",
   "license": "MIT",
-  "keywords": ["video", "watch", "youtube", "vimeo", "tiktok", "transcription", "whisper", "whisper.cpp", "yt-dlp", "ffmpeg", "multimodal", "frames", "notes"]
+  "keywords": [
+    "video",
+    "watch",
+    "youtube",
+    "vimeo",
+    "tiktok",
+    "transcription",
+    "whisper",
+    "whisper.cpp",
+    "yt-dlp",
+    "ffmpeg",
+    "multimodal",
+    "frames",
+    "notes"
+  ]
 }
