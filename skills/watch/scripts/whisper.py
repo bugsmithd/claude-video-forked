@@ -36,6 +36,38 @@ OPENAI_MODEL = "whisper-1"
 # margin under that so multipart framing overhead never pushes a chunk over.
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 
+# HOW MUCH AUDIO IS HANDED TO ONE LOCAL DECODE, in seconds, including the
+# context on either side. This dial names the DECODED span rather than the kept
+# span because the decoded span is what degenerates.
+#
+# A long decode collapses. On one two-hour recording a single whole-file pass
+# collapsed at 21:49 and repeated one sentence 6,434 times to the end: 83% of
+# the file lost, and the last line before the collapse was already mis-heard.
+# Fifteen-minute windows over the same audio bounded the damage without removing
+# it -- seven of nine clean, one looped, one lost thirteen minutes -- and an
+# offset re-run over the lost stretch collapsed again at a different second.
+# Three four-minute windows over that same stretch came back clean. So the
+# failure is a property of the decode, not of the audio, and its probability
+# scales with the window.
+#
+# Four minutes is not the longest span ever measured clean -- most of the
+# fifteen-minute windows were fine. It is the longest span that has not yet been
+# measured degenerating, which is a weaker and more honest claim, and the reason
+# the number is a dial rather than a constant.
+#
+# Set WATCH_DECODE_WINDOW_SECONDS to 0 to decode in one pass again. That is the
+# configuration the paragraph above describes losing 83% of a file.
+DECODE_WINDOW_SECONDS = 240.0
+# Context decoded on EACH side of a window and then discarded. A sentence
+# straddling a boundary is decoded whole by the window that keeps it, at a cost
+# of 2 x overlap of extra decoding per window. It is not free of edge cases:
+# see `drop_seam_repeats` for the sentence two windows render on opposite sides
+# of a boundary.
+DECODE_OVERLAP_SECONDS = 30.0
+# How far either side of a boundary two independent decodes of the same sentence
+# may be assumed to land. Used only at the join; see `drop_seam_repeats`.
+SEAM_SECONDS = 2.0
+
 
 def plan_chunks(
     total_seconds: float,
@@ -60,6 +92,135 @@ def plan_chunks(
         duration = (total_seconds - offset) if i == n - 1 else chunk
         plan.append((round(offset, 3), round(duration, 3)))
     return plan
+
+
+def plan_windows(
+    total_seconds: float,
+    window_seconds: float = DECODE_WINDOW_SECONDS,
+    overlap_seconds: float = DECODE_OVERLAP_SECONDS,
+) -> list[tuple[float, float, float, float]]:
+    """Split a duration into overlapping decode windows.
+
+    Returns (offset, duration, keep_from, keep_to) per window. The first two are
+    the audio handed to the decoder; the last two are the span of SOURCE time
+    whose segments are kept. The kept SPANS are contiguous and tile the file
+    exactly once, so no stretch of audio is claimed by two windows.
+
+    The overlap is symmetric: a window is decoded with `overlap_seconds` of
+    context on each side of the span it keeps, EXCEPT where that would run off
+    the start or end of the file, where it is clamped. So a sentence crossing a
+    boundary is heard whole by the window that keeps it rather than cut in half
+    by both.
+
+    A tiling of spans is not by itself a guarantee about sentences; see
+    `drop_seam_repeats` for what happens to a sentence rendered on both sides of
+    a boundary by two independent decodes.
+
+    `window_seconds <= 0` disables windowing and returns one whole-file window.
+    A negative window or overlap, and an overlap of half the window or more,
+    are misconfigurations rather than preferences, and raise: silently reverting
+    to a whole-file decode is the failure this exists to remove.
+    """
+    if window_seconds < 0 or overlap_seconds < 0:
+        raise ValueError(
+            f"window {window_seconds}s and overlap {overlap_seconds}s must not "
+            f"be negative")
+    if window_seconds <= 0 or total_seconds <= window_seconds:
+        return [(0.0, total_seconds, 0.0, total_seconds)]
+
+    kept = window_seconds - 2 * overlap_seconds
+    if kept <= 0:
+        raise ValueError(
+            f"overlap {overlap_seconds}s x2 leaves nothing of a {window_seconds}s "
+            f"window to keep")
+
+    out: list[tuple[float, float, float, float]] = []
+    keep_from = 0.0
+    while keep_from < total_seconds:
+        keep_to = min(keep_from + kept, total_seconds)
+        offset = max(0.0, keep_from - overlap_seconds)
+        end = min(total_seconds, keep_to + overlap_seconds)
+        out.append((round(offset, 3), round(end - offset, 3),
+                    round(keep_from, 3), round(keep_to, 3)))
+        keep_from = keep_to
+    return out
+
+
+def trim_to_keep(
+    segments: list[dict],
+    keep_from: float,
+    keep_to: float,
+    last: bool,
+) -> list[dict]:
+    """Drop the segments a window decoded only as context.
+
+    Kept by segment START, so a SPAN of source time is claimed by exactly one
+    window even when a segment runs past the boundary. The final window keeps
+    everything after its start: a decoder may place a segment a little past the
+    duration ffprobe reported, and the tail of a file is not a thing to discard
+    on a rounding.
+
+    A span tiling is not a sentence tiling. Each window is an INDEPENDENT decode,
+    so one sentence gets its own timestamp from each of the two windows that
+    heard it, and those two timestamps can straddle the boundary in opposite
+    directions -- in which case a strict span test drops it from both. That is
+    why the caller passes a lower bound slack of `SEAM_SECONDS` and then removes
+    the duplicates by text; see `drop_seam_repeats`. A duplicated sentence is
+    visible in the transcript. A dropped one is not.
+    """
+    return [s for s in segments
+            if s["start"] >= keep_from and (last or s["start"] < keep_to)]
+
+
+def _seam_key(text: str) -> str:
+    return " ".join("".join(
+        c if c.isalnum() or c.isspace() else " " for c in text.lower()).split())
+
+
+def longest_identical_run(segments: list[dict]) -> int:
+    """The longest run of consecutive segments saying the same thing.
+
+    A decode that has stopped listening emits one line over and over. On a clean
+    decode of a two-hour recording the longest such run was 3; on the pass that
+    collapsed it was 6,434.
+    """
+    best = run = 0
+    previous = None
+    for seg in segments:
+        key = _seam_key(seg["text"])
+        run = run + 1 if key and key == previous else 1
+        previous = key
+        best = max(best, run)
+    return best
+
+
+# A run this long is a loop, not a speaker repeating themselves. Windowing turned
+# a 6,434-run that ate 83% of a file into an 8-run inside one 4-minute window --
+# bounded, but still there, and still unquotable.
+LOOP_RUN = 4
+
+
+def drop_seam_repeats(kept: list[dict], incoming: list[dict],
+                      seam: float = SEAM_SECONDS) -> list[dict]:
+    """Remove the sentences at a window's head that the previous window has.
+
+    The window before this one kept everything up to the boundary; this one is
+    allowed to reach back `seam` seconds past it so a sentence cannot fall
+    between the two. Anything it reaches back and finds already there is
+    dropped, matched on the words rather than the clock, because the two
+    renderings of one sentence rarely carry the same timestamp -- that mismatch
+    is the whole reason the slack exists.
+
+    Only the tail of `kept` is compared: a sentence legitimately repeated an
+    hour earlier is not a seam artefact, and matching against the whole
+    transcript would silently delete real repetition.
+    """
+    if not kept or not incoming:
+        return incoming
+    edge = max(s["end"] for s in kept)
+    recent = {_seam_key(s["text"]) for s in kept if s["end"] >= edge - 4 * seam}
+    return [s for s in incoming
+            if not (s["start"] <= edge + seam and _seam_key(s["text"]) in recent)]
 
 
 def _read_config_value(name: str) -> str | None:
@@ -384,11 +545,25 @@ def _segments_from_response(data: dict) -> list[dict]:
 def transcribe_chunks(
     chunks: list[tuple[Path, float]],
     transcribe_one,
+    keeps: list[tuple[float, float]] | None = None,
+    retry_window=None,
 ) -> list[dict]:
     """Transcribe each chunk, shift its segments by the chunk offset, concatenate.
 
     A chunk that fails after its own retries is logged and skipped so one bad
     slice doesn't discard the whole transcript. Raises only if every chunk fails.
+
+    `keeps` is the per-chunk (keep_from, keep_to) from `plan_windows`. With it,
+    each chunk contributes only the segments inside its own span and the
+    overlaps are dropped; without it every segment is kept, which is right for
+    the byte-split path where chunks do not overlap.
+
+    `retry_window(index)` re-decodes one window from a different offset, and is
+    called only when a window comes back looping. The degeneration is a property
+    of the decode rather than of the audio -- the same stretch that killed a
+    decode twice came back clean from a third start -- so a second attempt from
+    a different second is the cheapest repair there is. It is used only if it
+    loops less than the first attempt did; a retry is allowed to fail.
     """
     segments: list[dict] = []
     failures = 0
@@ -402,9 +577,42 @@ def transcribe_chunks(
                 file=sys.stderr,
             )
             continue
-        segments.extend(shift_segments(chunk_segments, offset))
+
+        run = longest_identical_run(chunk_segments)
+        if retry_window and run >= LOOP_RUN:
+            print(f"[watch] chunk {index + 1}/{len(chunks)} looped {run}x — "
+                  f"re-decoding it from a different offset", file=sys.stderr)
+            try:
+                alternative = retry_window(index)
+            except SystemExit as exc:
+                print(f"[watch] the retry failed too ({exc})", file=sys.stderr)
+                alternative = None
+            if alternative is not None:
+                alternative_run = longest_identical_run(alternative)
+                print(f"[watch] retry looped {alternative_run}x vs {run}x — "
+                      f"{'keeping the retry' if alternative_run < run else 'keeping the first'}",
+                      file=sys.stderr)
+                if alternative_run < run:
+                    chunk_segments = alternative
+
+        shifted = shift_segments(chunk_segments, offset)
+        if keeps:
+            keep_from, keep_to = keeps[index]
+            # Every window after the first reaches SEAM_SECONDS back past its own
+            # boundary, and drop_seam_repeats then removes whatever the previous
+            # window already kept. Reaching back risks a duplicate; not reaching
+            # back risks a silent loss, and only one of those is visible.
+            lower = keep_from - SEAM_SECONDS if index else keep_from
+            shifted = trim_to_keep(shifted, lower, keep_to,
+                                   index == len(chunks) - 1)
+            shifted = drop_seam_repeats(segments, shifted)
+        segments.extend(shifted)
+        # Both numbers: decoded, then kept. A window that decoded 90 and kept 60
+        # is working as intended; one that decoded 90 and kept 0 is a boundary
+        # bug, and printing only the decoded count would hide it.
         print(
-            f"[watch] chunk {index + 1}/{len(chunks)} → {len(chunk_segments)} segments",
+            f"[watch] chunk {index + 1}/{len(chunks)} → {len(chunk_segments)} "
+            f"segments, {len(shifted)} kept",
             file=sys.stderr,
         )
 
@@ -413,12 +621,15 @@ def transcribe_chunks(
     return segments
 
 
-def _run_whisper_cpp(bin_path: str, audio_path: Path) -> list[dict]:
+def _run_whisper_cpp(bin_path: str, audio_path: Path,
+                     model_override: str | None = None) -> list[dict]:
     """Transcribe one audio file with a local whisper.cpp binary.
 
     Requires WHISPER_CPP_BIN (the whisper-cli executable) and WHISPER_CPP_MODEL
     (a ggml model file) in the environment or ~/.config/watch/.env. Nothing
     leaves the machine.
+
+    `model_override` is the second decode's model; see `second_model_path`.
     """
     # WHISPER_CPP_BIN may be a path or a bare name already on PATH.
     binary = Path(bin_path).expanduser()
@@ -428,7 +639,7 @@ def _run_whisper_cpp(bin_path: str, audio_path: Path) -> list[dict]:
             raise SystemExit(f"WHISPER_CPP_BIN is not an executable path or on PATH: {bin_path}")
         binary = Path(resolved)
 
-    model = _read_config_value("WHISPER_CPP_MODEL")
+    model = model_override or _read_config_value("WHISPER_CPP_MODEL")
     if not model:
         raise SystemExit(
             "WHISPER_CPP_MODEL is not set. Point it at a ggml model file "
@@ -455,7 +666,9 @@ def _run_whisper_cpp(bin_path: str, audio_path: Path) -> list[dict]:
     language = _read_config_value("WHISPER_CPP_LANG") or "auto"
     threads = _read_config_value("WHISPER_CPP_THREADS") or str(os.cpu_count() or 4)
 
-    out_prefix = audio_path.with_suffix(".whisper")
+    # A distinct prefix per model, so a failed second decode can never be read
+    # from the first decode's leftover JSON and reported as the second witness.
+    out_prefix = audio_path.with_suffix(".whisper2" if model_override else ".whisper")
     cmd = [
         str(binary.resolve()),
         "-m", str(model_path.resolve()),
@@ -511,7 +724,8 @@ def _run_whisper_cpp(bin_path: str, audio_path: Path) -> list[dict]:
     return segments
 
 
-def _transcribe_file(backend: str, api_key: str, audio_path: Path) -> list[dict]:
+def _transcribe_file(backend: str, api_key: str, audio_path: Path,
+                     model_override: str | None = None) -> list[dict]:
     """Transcribe one audio file and return its 0-based segments.
 
     For cloud backends `api_key` is the API key; for "local" it is the
@@ -522,10 +736,54 @@ def _transcribe_file(backend: str, api_key: str, audio_path: Path) -> list[dict]
     elif backend == "openai":
         response = _post_whisper(OPENAI_ENDPOINT, api_key, OPENAI_MODEL, audio_path)
     elif backend == "local":
-        return _run_whisper_cpp(api_key, audio_path)
+        return _run_whisper_cpp(api_key, audio_path, model_override)
     else:
         raise SystemExit(f"Unknown whisper backend: {backend}")
     return _segments_from_response(response)
+
+
+def _config_float(name: str, default: float) -> float:
+    """A numeric dial from the environment or the dotenv, or its default.
+
+    A value that is not a number is a typo in a config file, and a typo that
+    silently reverts to the default would put a whole-file decode back without
+    saying so. It stops the run instead.
+    """
+    raw = _read_config_value(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise SystemExit(f"{name} is not a number: {raw!r}")
+
+
+def second_model_path() -> str | None:
+    """The model for the second decode, from WHISPER_CPP_MODEL_2, or None.
+
+    TWO MODELS ARE NOT TWO WITNESS CLASSES. Both are speech-to-text; they have
+    agreed with each other and been wrong together. What a second decode buys is
+    a way to SEE an unstable passage: on one file the two models disagreed on the
+    episode's most-quoted sentence, one hearing the negation of the other, and a
+    single-model note would have published the inverse of the claim.
+
+    So the second rendering is written to disk beside the first and neither is
+    merged into the other. Picking the better one is a per-file judgement made
+    from the alignment, and inheriting last file's choice is what this exists to
+    prevent -- the model trusted on one recording was the one that collapsed on
+    the next. That is one reversal, not a rate: enough to stop inheriting a
+    choice, and not enough to predict which model fails next.
+    """
+    return _read_config_value("WHISPER_CPP_MODEL_2")
+
+
+def write_rendering(path: Path, backend: str, model: str | None,
+                    segments: list[dict]) -> Path:
+    """Write one decode where `wq-transcript-align` can read it."""
+    path.write_text(json.dumps(
+        {"backend": backend, "model": model, "segments": segments}, indent=2),
+        encoding="utf-8")
+    return path
 
 
 def transcribe_video(
@@ -556,17 +814,70 @@ def transcribe_video(
     audio_path = extract_audio(video_path, audio_out)
     audio_bytes = audio_path.stat().st_size
 
-    def transcribe_one(path: Path) -> list[dict]:
-        return _transcribe_file(backend, api_key, path)
+    def decode(model_override: str | None, work_name: str) -> list[dict]:
+        def transcribe_one(path: Path) -> list[dict]:
+            return _transcribe_file(backend, api_key, path, model_override)
 
-    if audio_bytes <= MAX_UPLOAD_BYTES:
-        verb = "transcribing locally with" if backend == "local" else "uploading to"
-        print(
-            f"[watch] audio: {audio_bytes / 1024:.0f} kB — {verb} {backend} Whisper…",
-            file=sys.stderr,
-        )
-        segments = transcribe_one(audio_path)
-    else:
+        # WINDOWED, for the local backend only. The cloud APIs window internally
+        # and have not been measured degenerating this way; that is a gap in the
+        # evidence, not a clean bill of health, so their path is left as it was
+        # rather than changed on a guess. Windowing them would also multiply
+        # requests, rate-limit exposure and cost per video.
+        window_seconds = _config_float("WATCH_DECODE_WINDOW_SECONDS",
+                                       DECODE_WINDOW_SECONDS)
+        overlap_seconds = _config_float("WATCH_DECODE_OVERLAP_SECONDS",
+                                        DECODE_OVERLAP_SECONDS)
+        if backend == "local" and window_seconds > 0:
+            duration = audio_duration(audio_path)
+            try:
+                windows = plan_windows(duration, window_seconds, overlap_seconds)
+            except ValueError as exc:
+                raise SystemExit(f"decode window misconfigured: {exc}")
+            if len(windows) == 1:
+                print(f"[watch] audio: {duration:.0f}s — one decode window",
+                      file=sys.stderr)
+                return transcribe_one(audio_path)
+            print(
+                f"[watch] audio: {duration:.0f}s — {len(windows)} decode windows "
+                f"of {window_seconds:.0f}s (+{overlap_seconds:.0f}s context each "
+                f"side); a longer decode is where transcripts collapse",
+                file=sys.stderr,
+            )
+            chunks = split_audio(audio_path, audio_out.parent / work_name,
+                                 [(offset, length) for offset, length, _, _ in windows])
+
+            def retry_window(index: int) -> list[dict] | None:
+                """The same window, decoded from a different second.
+
+                Reaching further back is preferred; at the very start of the
+                file there is nothing to reach back into, so it reaches forward
+                instead. Either way the window still covers everything it keeps.
+                """
+                offset, length, _keep_from, _keep_to = windows[index]
+                start = max(0.0, offset - overlap_seconds)
+                end = min(duration, offset + length + overlap_seconds)
+                if start == offset and end == offset + length:
+                    return None
+                again = split_audio(audio_path,
+                                    audio_out.parent / f"{work_name}-retry-{index}",
+                                    [(start, end - start)])
+                # Returned in the ORIGINAL window's frame, because the caller
+                # shifts by that window's offset and knows nothing of this one.
+                return shift_segments(transcribe_one(again[0][0]), start - offset)
+
+            return transcribe_chunks(
+                chunks, transcribe_one,
+                keeps=[(keep_from, keep_to) for _, _, keep_from, keep_to in windows],
+                retry_window=retry_window)
+
+        if audio_bytes <= MAX_UPLOAD_BYTES:
+            verb = "transcribing locally with" if backend == "local" else "uploading to"
+            print(
+                f"[watch] audio: {audio_bytes / 1024:.0f} kB — {verb} {backend} Whisper…",
+                file=sys.stderr,
+            )
+            return transcribe_one(audio_path)
+
         duration = audio_duration(audio_path)
         plan = plan_chunks(duration, audio_bytes, MAX_UPLOAD_BYTES)
         print(
@@ -574,13 +885,39 @@ def transcribe_video(
             f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB — splitting into {len(plan)} chunks…",
             file=sys.stderr,
         )
-        chunks = split_audio(audio_path, audio_out.parent / "chunks", plan)
-        segments = transcribe_chunks(chunks, transcribe_one)
+        chunks = split_audio(audio_path, audio_out.parent / work_name, plan)
+        return transcribe_chunks(chunks, transcribe_one)
+
+    segments = decode(None, "chunks")
 
     if not segments:
         raise SystemExit("Whisper returned no transcript segments")
 
     print(f"[watch] transcribed {len(segments)} segments via {backend}", file=sys.stderr)
+
+    second = second_model_path() if backend == "local" else None
+    if second:
+        first_path = write_rendering(
+            audio_out.parent / "transcript-1.json", backend,
+            _read_config_value("WHISPER_CPP_MODEL"), segments)
+        # A second decode that dies must not take the first one's transcript
+        # with it. A run with one rendering is worse than a run with two and
+        # says so; a run with none is a wasted download.
+        try:
+            other = decode(second, "chunks-2")
+        except SystemExit as exc:
+            print(f"[watch] second decode failed, continuing with one: {exc}",
+                  file=sys.stderr)
+        else:
+            second_path = write_rendering(
+                audio_out.parent / "transcript-2.json", backend, second, other)
+            print(
+                f"[watch] second decode: {len(other)} segments — NOTHING HERE IS "
+                f"QUOTABLE until the two agree:\n"
+                f"[watch]   wq-transcript-align {first_path} {second_path}",
+                file=sys.stderr,
+            )
+
     return segments, backend
 
 
