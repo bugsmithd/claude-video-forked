@@ -15,6 +15,7 @@ import json
 import math
 import mimetypes
 import os
+import re
 import shutil
 import ssl
 import subprocess
@@ -172,9 +173,15 @@ def trim_to_keep(
             if s["start"] >= keep_from and (last or s["start"] < keep_to)]
 
 
+# Deliberately a second copy of what watch-quality's transcript_align does with
+# the same words. This script ships inside the skill and runs on the standard
+# library alone, so it cannot import the grading package -- a plugin that needed
+# a pip install to transcribe a video would not be a plugin.
+RE_SEAM_WORD = re.compile(r"[a-z0-9']+")
+
+
 def _seam_key(text: str) -> str:
-    return " ".join("".join(
-        c if c.isalnum() or c.isspace() else " " for c in text.lower()).split())
+    return " ".join(RE_SEAM_WORD.findall(text.lower()))
 
 
 def longest_identical_run(segments: list[dict]) -> int:

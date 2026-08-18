@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import re
 import sys
@@ -308,8 +309,7 @@ def check_rendering(name: str, segments: list[dict], duration: float | None,
     defects: list[str] = []
     texts = [normalise(s["text"]) for s in segments]
     distinct = len(set(texts))
-    tokens = [w for s in segments for w in RE_WORD.findall(s["text"].lower())]
-    words = len(tokens)
+    words = sum(len(RE_WORD.findall(s["text"].lower())) for s in segments)
     run_len, run_start, run_text = longest_run(segments)
     holes = gaps(segments, max_gap)
     last_end = max((segment_end(s) for s in segments), default=0.0)
@@ -380,6 +380,11 @@ def check_rendering(name: str, segments: list[dict], duration: float | None,
     return defects, census
 
 
+def is_salient(words: list[str]) -> bool:
+    """Does this side of a divergence carry meaning rather than wording?"""
+    return any(w in SALIENT or any(c.isdigit() for c in w) for w in words)
+
+
 def align(base: list[dict], other: list[dict],
           min_region: int) -> tuple[float, list[dict], dict]:
     """Whole-file token alignment: (ratio, regions, census).
@@ -423,14 +428,8 @@ def align(base: list[dict], other: list[dict],
     return ratio, sorted(shown, key=lambda r: (not r["salient"], -r["size"])), census
 
 
-def is_salient(words: list[str]) -> bool:
-    """Does this side of a divergence carry meaning rather than wording?"""
-    return any(w in SALIENT or any(c.isdigit() for c in w) for w in words)
-
-
 def fingerprint(segments: list[dict]) -> str:
     """What two renderings must NOT share if they are to be two witnesses."""
-    import hashlib
     joined = "\n".join(f"{s['start']:.2f}\t{normalise(s['text'])}"
                        for s in segments)
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
