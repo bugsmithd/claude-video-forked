@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "watch-quality"
+version = "0.1.0"
+description = "Evidence gates for notes made from video"
+readme = "README.md"
+requires-python = ">=3.11"          # tomllib, and `X | None` at runtime
+license = { text = "MIT" }
+authors = [{ name = "Divyanshu Rathore" }]
+keywords = ["notes", "evidence", "transcript", "video", "quality"]
+
+# Deliberately none. Every gate runs on the standard library, so a corpus can
+# be graded on a machine with nothing installed. `ocr_vote --index` shells out
+# to `tesseract` and reads image sizes through Pillow when it is present; both
+# are optional and their absence is reported, never assumed away.
+dependencies = []
+
+[project.optional-dependencies]
+ocr = ["Pillow>=10"]
+
+[project.scripts]
+wq-resolve-note = "watchquality.cli:resolve_note"
+wq-anchor-manifest = "watchquality.cli:anchor_manifest"
+wq-spoken-vote = "watchquality.cli:spoken_vote"
+wq-ocr-vote = "watchquality.cli:ocr_vote"
+wq-demote-note = "watchquality.cli:demote_note"
+wq-say-captions = "watchquality.cli:say_captions"
+wq-frame-fixture = "watchquality.cli:frame_fixture"
+wq-policy = "watchquality.cli:policy"
+wq-corpus-scan = "watchquality.cli:corpus_scan"
+
+[tool.setuptools.packages.find]
+where = ["src"]
