@@ -1,6 +1,6 @@
 # watch-quality
 
-Nine checks that refuse to let a note claim more than its evidence supports.
+Eleven commands that refuse to let a note claim more than its evidence supports.
 
 They are built for notes made from video — a `/watch` run, or anything that
 produces a transcript, a set of extracted frames, and a note that cites seconds
@@ -19,6 +19,8 @@ run actually captured.
 | `wq-say-captions` | What was actually said around this second? (the tool you reach for when a gate disagrees with you) |
 | `wq-frame-fixture` | Build frame fixtures for the manifest tests. |
 | `wq-policy` | Which policy file is in force, and what does it say? |
+| `wq-transcript-align` | Did this transcript decode survive, and where does a second decode of the same audio disagree with it? |
+| `wq-note-windows` | Which stretches of a long video is a note written from, and where do they overlap? |
 | `wq-corpus-scan` | Has any corpus data leaked into this package's own source? |
 
 Three principles the checks are built on, because they explain the refusals:
@@ -55,7 +57,7 @@ search_roots = ["~/watch-runs", "/tmp"]
 # Runs whose evidence cannot be reconstructed. Every entry must start with an
 # ISO date and a reason; the list is printed on every run and may only shrink.
 [unresolvable_runs]
-"dQw4w9WgXcQ" = "2026-08-05 frames reaped with the temp run dir; captions kept"
+"dQw4w9WgXcQ" = "2024-01-31 the frames for this run no longer exist; captions do"
 ```
 
 Resolution order, first hit wins: `$WATCH_QUALITY_POLICY`, then
@@ -82,6 +84,60 @@ stderr, so `2>/dev/null` gives you a work queue and `>/dev/null` gives you the
 summary. The census is deliberately loud: "0 defects" over 24 notes means
 nothing without knowing how many of them were testable.
 
+## Before any of that: did the transcript survive?
+
+Every check above grades a note against a transcript. None of them can tell you
+the transcript is wrong. If the decode collapsed, the anchors still resolve, the
+quoted words still match the file, and the file is fiction.
+
+```
+wq-transcript-align turbo.json large-v3.json --duration 3600
+```
+
+It answers two questions. **Did either decode degenerate?** — a run of identical
+segments (`E-TS-LOOP`), a stretch with no segments in it (`E-TS-GAP`), a
+rendering that stops early (`E-TS-SHORT`), a stuck decoder repeating a handful of
+texts (`E-TS-REPEAT`). **Where do two decodes of the same audio disagree?** —
+whole-file token alignment, the ratio, and the divergent passages largest first,
+each anchored to a second.
+
+Run it on two renderings, from two models. One is `E-TS-SINGLE-WITNESS`: a lone
+decode has nothing to be checked against. But two models are **not** two witness
+classes — both are speech-to-text, and they have agreed with each other and been
+wrong together. The alignment measures *stability*; instability is a reason to
+distrust a passage, and agreement is never on its own a reason to trust one.
+Which model is the better one is a per-file question, decided from the alignment
+and never inherited from the last file: the model trusted on one recording was
+the one that collapsed on the next. That is one reversal, not a rate — enough to
+stop inheriting a choice, not enough to predict which model fails next.
+
+Accepts WebVTT, whisper.cpp `-oj` JSON, Whisper `verbose_json`, or a bare list of
+`{start, end, text}`, so the renderings need no conversion step to compare.
+
+## Writing a long video in windows
+
+A single pass over a two-hour transcript compresses the middle hardest, and does
+it invisibly: partial lists arrive presented as whole ones, and a stretch that
+carried three anecdotes comes back as a sentence. Writing it in windows fixes
+that only if the boundaries are not themselves a compression nobody can see —
+so they come from a script and two numbers, never from a model.
+
+```
+wq-note-windows turbo.json                       # 10-minute windows, 90s overlap
+wq-note-windows turbo.json --chapters video.info.json
+```
+
+Windows here **overlap on purpose**, which is the opposite of the decode windows
+above. A decode discards its overlap: two copies of a sentence in one transcript
+is a defect. A note window keeps it, so a claim made across a seam is written
+twice and reconciled once at merge — two windows that never see the same words
+have a seam nobody read.
+
+`--chapters` prefers the uploader's own marks where they exist, and says so on
+stderr when the file declares none rather than quietly reverting to arithmetic.
+Boundaries snap to the transcript's segments, so `--json` gives a plan anyone can
+re-derive and check an outline against.
+
 ## Which build passed this note
 
 "0 defects" is a claim about a moment. Without a record of *which* moment, it is
@@ -92,7 +148,7 @@ every note keeps its old clean bill of health with nothing saying so.
 wq-resolve-note --stamp
 ```
 
-writes `graded_with: watch-quality@0.2.0` into the frontmatter of every note
+writes `graded_with: watch-quality@0.3.0` into the frontmatter of every note
 that is clean **at that moment**. A note with outstanding defects is refused
 (`E-STAMP-REFUSED`), never stamped — a stamp on a red note would read months
 later as "this version passed it", which is the exact false light the gates
@@ -113,7 +169,7 @@ everything would repair staleness you have not been shown yet.
 A note cites evidence with a token that names the file and quotes the words:
 
 ```
-{{CITE:docs/strategy.md#"the sentence already running in their head"}}
+{{CITE:docs/strategy.md#"we sell to people who have already decided"}}
 ```
 
 `wq-resolve-note --write` resolves the quote, renders it, and records the file,
@@ -140,8 +196,17 @@ Every module carries its own:
 
 ```
 wq-resolve-note --selftest      # ...and the same for each command
+wq-transcript-align --selftest
+wq-note-windows --selftest
 wq-corpus-scan                  # no corpus data in this source tree
+wq-corpus-scan ..               # ...nor anywhere else being published
 ```
+
+`wq-corpus-scan` reads every published text file — prose, packaging and fixtures,
+not only `*.py`. It read only the code until 0.3.0, and three leaks reached the
+README under a clean scan: an exemption reason with its real date, a sentence
+quoted from a private document, and a private recording's exact duration. Point
+it at the repository root, not at the package.
 
 They pass with no corpus, no policy file and no network. That is enforced, not
 hoped for: fixtures that read a real document were the reason this package could

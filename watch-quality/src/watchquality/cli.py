@@ -3,7 +3,7 @@
 Every gate already exposes `main(argv)` and returns an exit code, because that
 is what makes them testable from their own selftests. A console script is
 called with no arguments, so each name here is the two-line adapter between the
-two -- kept in one file so a reader can see all nine commands at once, and so
+two -- kept in one file so a reader can see all eleven commands at once, and so
 adding a gate is one line rather than a new `if __name__` block.
 """
 
@@ -59,4 +59,14 @@ def policy() -> int:
 
 def corpus_scan() -> int:
     from .wq_corpus_scan import main
+    return _run(main)
+
+
+def transcript_align() -> int:
+    from .transcript_align import main
+    return _run(main)
+
+
+def note_windows() -> int:
+    from .note_windows import main
     return _run(main)

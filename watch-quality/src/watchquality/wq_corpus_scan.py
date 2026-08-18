@@ -22,9 +22,17 @@ False positives are expected and cheap: add the token to ALLOW below with a
 reason. A false NEGATIVE is what this exists to prevent, so the shape test is
 deliberately broad.
 
+EVERY PUBLISHED TEXT FILE, not just the code. This scanner read `*.py` only for
+its first two releases, so the README, the packaging metadata and the tests were
+structurally invisible to it -- and that is exactly where the leaks were found,
+by a reviewer reading rather than by this gate running: a real exemption reason
+with its real date, a sentence quoted verbatim from a private document, and a
+private recording's exact duration, all in README prose that had passed a clean
+scan. A gate that only reads the files least likely to leak is a rubber stamp.
+
 Usage:
-    scripts/wq_corpus_scan.py            # scan scripts/
-    scripts/wq_corpus_scan.py <path>...  # scan what you name
+    scripts/wq_corpus_scan.py            # scan the package's own source
+    scripts/wq_corpus_scan.py <path>...  # scan what you name, files or trees
     scripts/wq_corpus_scan.py --selftest
 
 Exit: 0 clean, 1 something corpus-shaped is in the source, 2 usage error.
@@ -50,7 +58,22 @@ ALLOW: dict[str, str] = {
     "-Xk4Rm2Qp7Z": "synthetic dash-id fixture in say_captions selftest",
     "Bt7Wn3Kd9Qy": "synthetic plain-id fixture in say_captions selftest",
     "A-Za-z0-9_-": "the character class itself, written out in a comment",
+    "dQw4w9WgXcQ": "the internet's best-known public video, used as a README "
+                   "example precisely because it is in no private corpus",
+    "rlOpbu3Enkw": "the URL in the upstream project's own download test, "
+                   "inherited with the fork and present in no private corpus",
+    "colorE5E5E5": "a WebVTT cue-tag colour class, not an id -- the shape test "
+                   "cannot tell hex from base64 and is not asked to",
 }
+
+# What counts as a published file. Everything in a public repository is
+# published, so the list is about what can CARRY a leak in text, not about what
+# a reader would call source. Binary fixtures are not read; a leak in one is a
+# real risk this gate does not cover, and saying so is better than implying it.
+TEXT_SUFFIXES = frozenset({
+    ".py", ".md", ".toml", ".txt", ".tsv", ".csv", ".json",
+    ".cfg", ".ini", ".yaml", ".yml", ".sh", ".vtt", ".srt",
+})
 
 
 def _is_id_shaped(tok: str) -> bool:
@@ -148,6 +171,11 @@ def selftest() -> int:
     check("nothing is refused by default", n_hits("path = secretco/docs"), 0)
     check("an empty entry refuses nothing",
           n_hits("anything at all", ("",)), 0)
+    # The gap that let three leaks through: prose, packaging and fixtures are
+    # published too, so the file list must reach past *.py.
+    for suffix in (".md", ".toml", ".txt", ".json", ".tsv", ".vtt"):
+        check(f"{suffix} is scanned", suffix in TEXT_SUFFIXES, True)
+    check("a compiled artefact is not", ".pyc" in TEXT_SUFFIXES, False)
 
     print(f"# selftest OK ({cases} cases)")
     return 0
@@ -161,14 +189,16 @@ def main(argv: list[str]) -> int:
     # day the gates moved and no longer sat where the scanner looked.
     pkg = Path(__file__).resolve().parent
     root = pkg.parent
-    if argv:
-        targets = [Path(a).resolve() for a in argv]
-    else:
-        targets = sorted(pkg.glob("*.py"))
+    targets = [Path(a).resolve() for a in argv] if argv else [pkg]
     files: list[Path] = []
     for t in targets:
         if t.is_dir():
-            files.extend(sorted(t.rglob("*.py")))
+            files.extend(sorted(
+                p for p in t.rglob("*")
+                if p.is_file() and p.suffix.lower() in TEXT_SUFFIXES
+                # A repository's own history is not published prose, and it is
+                # large enough to turn this gate into a minute-long wait.
+                and ".git" not in p.parts))
         else:
             files.append(t)
     # This scanner quotes every shape it refuses, so it would refuse itself.
