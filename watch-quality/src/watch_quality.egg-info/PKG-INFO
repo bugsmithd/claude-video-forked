@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: watch-quality
-Version: 0.1.0
+Version: 0.2.0
 Summary: Evidence gates for notes made from video
 Author: Divyanshu Rathore
 License: MIT
@@ -93,6 +93,32 @@ its defects on stdout and its census — counts, denominators, exemptions — on
 stderr, so `2>/dev/null` gives you a work queue and `>/dev/null` gives you the
 summary. The census is deliberately loud: "0 defects" over 24 notes means
 nothing without knowing how many of them were testable.
+
+## Citing a source, and citing a version of this package
+
+A note cites evidence with a token that names the file and quotes the words:
+
+```
+{{CITE:docs/strategy.md#"the sentence already running in their head"}}
+```
+
+`wq-resolve-note --write` resolves the quote, renders it, and records the file,
+the line, a sha256 and the quote in a sidecar. A later run re-checks the sha, so
+an edit to the cited document is reported rather than silently tolerated.
+
+Code can be cited the same way, but a **path** is the wrong address for it:
+
+```
+{{CITE:watch-quality@0.1.0:ocr_vote.py#"TEXTFUL_WORDS = 5"}}
+```
+
+The version is part of the address on purpose. A citation resolved against
+0.1.0 **refuses** to resolve against 0.2.0 (`E-CITE-VERSION`) rather than
+quietly resolving to different code — the quote may well still be present in the
+new release, at a new line, meaning something else. Not installed is
+`E-CITE-NOPKG`, which says the claim cannot be checked here, not that it is
+false. The distinction is the whole point: a re-grade months later is either
+comparable, or loudly not comparable.
 
 ## Tests
 

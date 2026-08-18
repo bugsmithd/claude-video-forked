@@ -82,6 +82,32 @@ stderr, so `2>/dev/null` gives you a work queue and `>/dev/null` gives you the
 summary. The census is deliberately loud: "0 defects" over 24 notes means
 nothing without knowing how many of them were testable.
 
+## Which build passed this note
+
+"0 defects" is a claim about a moment. Without a record of *which* moment, it is
+a claim about an unknown one: tighten a check, move a threshold, fix a bug, and
+every note keeps its old clean bill of health with nothing saying so.
+
+```
+wq-resolve-note --stamp
+```
+
+writes `graded_with: watch-quality@0.2.0` into the frontmatter of every note
+that is clean **at that moment**. A note with outstanding defects is refused
+(`E-STAMP-REFUSED`), never stamped — a stamp on a red note would read months
+later as "this version passed it", which is the exact false light the gates
+exist to remove.
+
+Thereafter `--check` reports `E-GRADE-UNSTAMPED` (nothing says which build
+passed this) and `E-GRADE-STALE` (a different version is installed than the one
+that passed it). Stale is not wrong; it is out of date, and saying so is the
+difference between comparable and quietly incomparable.
+
+Stamping writes to notes, and notes cite each other by content hash, so a stamp
+invalidates the recorded sha of any note citing the stamped one. `--stamp`
+repairs exactly those rows between rounds and nothing else — refreshing
+everything would repair staleness you have not been shown yet.
+
 ## Citing a source, and citing a version of this package
 
 A note cites evidence with a token that names the file and quotes the words:

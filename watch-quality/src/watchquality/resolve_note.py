@@ -187,6 +187,16 @@ RE_APPLIED = re.compile(r"^applied:[ \t]*(.*)$", re.MULTILINE)
 STATUSES = ("capture", "distilled", "applied", "discarded")
 
 RE_REVIEWS = re.compile(r"^reviews:[ \t]*(.*)$", re.MULTILINE)
+# Which build of the checks last passed this note.
+#
+# "0 defects" is a claim about a moment, and without this it is a claim about an
+# unknown moment. A check can be tightened, a threshold moved, a bug fixed --
+# and every note keeps its old clean bill of health, because nothing in the note
+# says which version issued it. The stamp is written only by `--stamp`, only on
+# a note that is clean at the time, so it means "these checks, at this version,
+# passed" and cannot be back-dated by editing prose.
+DIST_NAME = "watch-quality"
+RE_GRADED = re.compile(r"^graded_with:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 RE_LANE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REVIEW_DIR = POLICY.reviews_dir()
 # Lanes that really ran and whose report is gone. Same shape and same promise as
@@ -661,7 +671,8 @@ def check_sidecar(root: Path, frontmatter: str, rel) -> list[str]:
     return defects
 
 
-def refresh_sidecar(root: Path, note: Path) -> tuple[list[str], int]:
+def refresh_sidecar(root: Path, note: Path,
+                    only: set[str] | None = None) -> tuple[list[str], int]:
     """Re-resolve a sidecar's recorded quotes and rewrite line and sha256.
 
     E-CITE-STALE conflates two very different states: the cited file changed
@@ -670,6 +681,10 @@ def refresh_sidecar(root: Path, note: Path) -> tuple[list[str], int]:
     note used to leave a permanent red light -- which is how a check gets
     switched off. This separates them: a quote that still resolves refreshes,
     a quote that does not stays a defect and nothing is written.
+
+    `only` restricts the refresh to rows citing those paths. `--stamp` uses it
+    to repair the rows its own writes invalidated, without also papering over
+    staleness that has nothing to do with this run.
     """
     rel = note.relative_to(root) if note.is_relative_to(root) else note
     text, why = safe_read(note)
@@ -696,6 +711,13 @@ def refresh_sidecar(root: Path, note: Path) -> tuple[list[str], int]:
             rows.append(row)
             continue
         cited, _line, sha, quote = fields[0], fields[1], fields[2], fields[3]
+        if only is not None and cited not in only:
+            # Refreshing a row nobody asked about would rewrite a sha that went
+            # stale for a reason the caller has not seen yet, turning a defect
+            # into a silent update. `only` is how --stamp repairs exactly the
+            # rows IT invalidated and nothing else.
+            rows.append(row)
+            continue
         if RE_PKG_SPEC.match(cited):
             target, why = package_target(cited)
             if target is None:
@@ -731,6 +753,73 @@ def refresh_sidecar(root: Path, note: Path) -> tuple[list[str], int]:
     return defects, refreshed
 
 
+def current_stamp() -> str | None:
+    """`watch-quality@0.1.0`, or None when the package is not installed."""
+    try:
+        return f"{DIST_NAME}@{metadata.version(DIST_NAME)}"
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def check_grade(frontmatter: str, rel) -> list[str]:
+    """Is this note's clean bill of health the CURRENT one?
+
+    Three states, and they are not the same defect:
+
+      unstamped   nothing says which build passed this note. Reported, because
+                  an unattributed pass is what this whole field exists to end.
+      stale       a different version is installed than the one that passed it.
+                  The note is not wrong; its verdict is simply out of date, and
+                  saying so is the difference between comparable and quietly
+                  incomparable.
+      uninstallable  the package is not installed, so nothing can be compared.
+                  Silent -- every other check is already failing loudly by then.
+    """
+    now = current_stamp()
+    if now is None:
+        return []
+    m = RE_GRADED.search(frontmatter)
+    if not m or not m.group(1):
+        return [f"{rel}:1 E-GRADE-UNSTAMPED no graded_with:, so nothing says "
+                f"which build passed this note (--stamp records {now})"]
+    if m.group(1) != now:
+        return [f"{rel}:1 E-GRADE-STALE passed by {m.group(1)}, but {now} is "
+                f"installed; re-check and --stamp to make it comparable"]
+    return []
+
+
+def stamp_note(path: Path, root: Path, stamp: str) -> tuple[list[str], bool]:
+    """Record `graded_with:` on a note that is CLEAN right now.
+
+    Refusing to stamp a note with defects is the whole integrity of the field.
+    A stamp on a red note would read, months later, as "this version passed it",
+    which is the exact false light every gate here exists to remove.
+    """
+    rel = path.relative_to(root) if path.is_relative_to(root) else path
+    defects, _ = check_note(path, root, False)
+    defects = [d for d in defects if "E-GRADE-" not in d]
+    if defects:
+        return [f"{rel}:1 E-STAMP-REFUSED {len(defects)} defect(s) outstanding; "
+                f"a stamp on a red note is a false clean bill"], False
+    text, why = safe_read(path)
+    if text is None:
+        return [f"{rel}:1 E-READ {why}"], False
+    split = split_frontmatter(text)
+    if split is None:
+        return [f"{rel}:1 E-FRONTMATTER no YAML frontmatter block"], False
+    frontmatter, body = split
+    if RE_GRADED.search(frontmatter):
+        if RE_GRADED.search(frontmatter).group(1) == stamp:
+            return [], False
+        new_fm = RE_GRADED.sub(f"graded_with: {stamp}", frontmatter, count=1)
+    else:
+        # Last field in the block, so an existing note's frontmatter keeps the
+        # order a reader already knows.
+        new_fm = frontmatter.rstrip("\n") + f"\ngraded_with: {stamp}"
+    path.write_text(f"---\n{new_fm}\n---\n{body}", encoding="utf-8")
+    return [], True
+
+
 def check_note(path: Path, root: Path, require_density: bool,
                band: tuple[float, float] | None = None,
                floor: bool = False) -> tuple[list[str], dict | None]:
@@ -750,6 +839,7 @@ def check_note(path: Path, root: Path, require_density: bool,
     cite_defects += check_sidecar(root, frontmatter, rel)
     cite_defects += check_lanes(root, frontmatter, rel)
     cite_defects += check_status(frontmatter, rel, root)
+    cite_defects += check_grade(frontmatter, rel)
     cite_defects += check_band(body, band, rel)
     sets = find_sets(body, body_start_line)
     cite_defects += [f"{rel}:{s['line']} {s['error']}" for s in sets if "error" in s]
@@ -1567,8 +1657,14 @@ def selftest() -> int:
         r = Path(td).resolve()
         (r / "notes" / "reviews" / "WIRED").mkdir(parents=True)
         note = r / "notes" / "2026-01-01--wired--WIRED.md"
+        # The fixture is stamped, because these cases are about lanes and status
+        # reaching the exit code. An unstamped note is its own defect, tested
+        # below; leaving it unstamped here would make every case pass for the
+        # wrong reason.
+        graded = f"graded_with: {current_stamp()}\n" if current_stamp() else ""
         clean = ('---\nvideo_id: WIRED\nduration: "1:00"\nstatus: distilled\n'
-                 'applied:\n---\n\n# t\n\nA body with no declaration in it.\n')
+                 f'applied:\n{graded}---\n\n# t\n\n'
+                 'A body with no declaration in it.\n')
         note.write_text(clean, encoding="utf-8")
         assert main(["--check", "--no-require-density", str(note)], root=r) == 0
         cases += 1
@@ -1583,6 +1679,65 @@ def selftest() -> int:
                         encoding="utf-8")
         assert main(["--check", "--no-require-density", str(note)], root=r) == 1
         cases += 1
+
+        # --- the grade stamp ---
+        now = current_stamp()
+        if now:
+            # A red note is REFUSED and left exactly as it was. This is the case
+            # that matters: a stamp is a claim that these checks passed.
+            red = clean.replace("applied:\n", "applied: docs/x.md\n").replace(
+                f"graded_with: {now}\n", "")
+            note.write_text(red, encoding="utf-8")
+            errs, wrote = stamp_note(note, r, now)
+            assert not wrote and errs and "E-STAMP-REFUSED" in errs[0], errs
+            assert note.read_text(encoding="utf-8") == red, "a refusal wrote"
+            cases += 1
+            # Clean again -> stamped, and the stamp is the installed version.
+            note.write_text(clean.replace(f"graded_with: {now}\n", ""),
+                            encoding="utf-8")
+            errs, wrote = stamp_note(note, r, now)
+            assert wrote and not errs, errs
+            assert f"graded_with: {now}" in note.read_text(encoding="utf-8")
+            cases += 1
+            # Stamping twice writes nothing the second time.
+            assert stamp_note(note, r, now) == ([], False)
+            cases += 1
+            # A stamp from another version is stale, not wrong.
+            stale = note.read_text(encoding="utf-8").replace(
+                now, f"{DIST_NAME}@0.0.0")
+            note.write_text(stale, encoding="utf-8")
+            d, _ = check_note(note, r, False)
+            assert any("E-GRADE-STALE" in x for x in d), d
+            cases += 1
+            # An unstamped note says so rather than passing quietly.
+            note.write_text(clean.replace(f"graded_with: {now}\n", ""),
+                            encoding="utf-8")
+            d, _ = check_note(note, r, False)
+            assert any("E-GRADE-UNSTAMPED" in x for x in d), d
+            cases += 1
+            # The frontmatter stays parseable after stamping, which a naive
+            # append past the closing --- would break.
+            stamp_note(note, r, now)
+            fm, _body = split_frontmatter(note.read_text(encoding="utf-8"))
+            assert RE_GRADED.search(fm), fm
+            cases += 1
+            # `only` leaves an unrelated stale row alone. Without this, --stamp
+            # would quietly repair staleness the caller has not been shown.
+            cited = r / "docs" / "cited.md"
+            cited.parent.mkdir(exist_ok=True)
+            cited.write_text("the quoted words are here\n", encoding="utf-8")
+            side = sidecar_path(r, "WIRED")
+            side.parent.mkdir(parents=True, exist_ok=True)
+            side.write_text("docs/cited.md\t1\tdeadbeef\tthe quoted words\n",
+                            encoding="utf-8")
+            assert refresh_sidecar(r, note, only={"docs/other.md"}) == ([], 0)
+            assert "deadbeef" in side.read_text(encoding="utf-8")
+            cases += 1
+            # ...and refreshes it when it IS in scope.
+            _d, n_refreshed = refresh_sidecar(r, note, only={"docs/cited.md"})
+            assert n_refreshed == 1, n_refreshed
+            assert "deadbeef" not in side.read_text(encoding="utf-8")
+            cases += 1
     print(f"selftest OK ({cases} cases)")
     return 0
 
@@ -1606,6 +1761,9 @@ def main(argv: list[str], root: Path | None = None) -> int:
                          "defect (on by default; all eight notes declare one)")
     ap.add_argument("--refresh-sidecar", action="store_true",
                     help="re-resolve recorded quotes and rewrite their sha256")
+    ap.add_argument("--stamp", action="store_true",
+                    help="record graded_with: on every note that is clean now; "
+                         "a note with defects is refused, not stamped")
     ap.add_argument("--no-floor", dest="floor", action="store_false",
                     help="skip the untokenised-path floor (on by default)")
     ap.add_argument("--selftest", action="store_true")
@@ -1616,6 +1774,42 @@ def main(argv: list[str], root: Path | None = None) -> int:
 
     files = collect([p.resolve() for p in args.paths]
                     or [root / POLICY.notes_dir()])
+
+    if args.stamp:
+        stamp = current_stamp()
+        if stamp is None:
+            print(f"{PROG}: {DIST_NAME} is not installed, so there is no "
+                  f"version to stamp with", file=sys.stderr)
+            return 2
+        # Stamping WRITES to notes, and notes cite each other, so stamping note
+        # A invalidates the recorded sha of any note citing A -- which makes the
+        # citer red and unstampable, purely as a side effect of this run. One
+        # pass therefore cannot finish the job.
+        #
+        # Between rounds only the rows citing notes THIS RUN stamped are
+        # refreshed. Refreshing everything would repair staleness the caller has
+        # not been shown yet, which turns a defect into a silent update -- the
+        # failure mode every check here exists to remove. Three rounds is a
+        # runaway guard, not a limit anyone should reach.
+        defects, stamped, rounds = [], 0, 0
+        for rounds in range(1, 4):
+            defects, wrote = [], set()
+            for f in files:
+                d, did = stamp_note(f, root, stamp)
+                defects.extend(d)
+                if did:
+                    wrote.add(str(f.relative_to(root)
+                                  if f.is_relative_to(root) else f))
+            stamped += len(wrote)
+            if not wrote:
+                break
+            for f in files:
+                refresh_sidecar(root, f, only=wrote)
+        for line in defects:
+            print(line)
+        print(f"# {len(files)} notes, {stamped} stamped {stamp} over {rounds} "
+              f"round(s), {len(defects)} refused", file=sys.stderr)
+        return 1 if defects else 0
 
     if args.refresh_sidecar:
         defects, refreshed = [], 0
