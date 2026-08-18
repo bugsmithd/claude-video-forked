@@ -53,6 +53,12 @@ WINDOW_SECONDS = 600.0
 # windows and reconciled at merge. Below about a minute a sentence can begin in
 # one window and land its point in the next with neither having both halves.
 OVERLAP_SECONDS = 90.0
+# One window holding more than this share of a multi-window plan means the split
+# did not happen. An adversarial lane produced it by setting every segment's
+# start to zero: window 1 took all 360 segments over a full hour, which is
+# exactly the single overloaded context the windows exist to prevent, reported
+# as a clean plan of seven windows.
+OVERFULL_SHARE = 0.5
 
 
 def plan(segments: list[dict], window_seconds: float,
@@ -109,9 +115,26 @@ def plan(segments: list[dict], window_seconds: float,
         # on a boundary, belongs to a window rather than to nothing; these
         # windows overlap by design, so claiming a segment twice at a seam is
         # the intended behaviour and losing it is not.
-        rows = [s for s in segments if s["start"] <= end and s["end"] >= start]
-        out.append(_row(index, rows, start, end))
+        members = [i for i, s in enumerate(segments)
+                   if s["start"] <= end and s["end"] >= start]
+        row = _row(index, [segments[i] for i in members], start, end)
+        row["members"] = members
+        out.append(row)
     return out
+
+
+def orphans(segments: list[dict], windows: list[dict]) -> list[int]:
+    """Indices of segments that no window claimed.
+
+    MEMBERSHIP, not geometry. An earlier version asked whether each segment's
+    span fell inside some window's printed span, which a segment whose end
+    precedes its start satisfies vacuously -- so a segment in none of the seven
+    windows was reported as an orphan count of zero.
+    """
+    claimed: set[int] = set()
+    for window in windows:
+        claimed.update(window.get("members", ()))
+    return [i for i in range(len(segments)) if i not in claimed]
 
 
 def _row(index: int, rows: list[dict], start: float, end: float) -> dict:
@@ -145,8 +168,10 @@ def plan_from_chapters(segments: list[dict], chapters: list[dict]) -> list[dict]
     for index, chapter in enumerate(chapters):
         start = float(chapter.get("start_time") or 0.0)
         end = float(chapter.get("end_time") or 0.0)
-        rows = [s for s in segments if s["start"] <= end and s["end"] >= start]
-        row = _row(index, rows, start, end)
+        members = [i for i, s in enumerate(segments)
+                   if s["start"] <= end and s["end"] >= start]
+        row = _row(index, [segments[i] for i in members], start, end)
+        row["members"] = members
         row["title"] = (chapter.get("title") or "").strip()
         out.append(row)
     return out
@@ -171,11 +196,6 @@ def selftest() -> int:
         return [{"start": i * step, "end": i * step + step,
                  "text": f"segment number {i} said a few words"}
                 for i in range(count)]
-
-    def orphans(rows: list[dict], windows: list[dict]) -> int:
-        return sum(1 for s in rows
-                   if not any(w["start"] <= s["start"] and s["end"] <= w["end"]
-                              for w in windows))
 
     short = segs(20)                      # 200 seconds
     windows = plan(short, 600.0, 90.0)
@@ -205,12 +225,12 @@ def selftest() -> int:
     # walked the clock over a gapless fixture, so it could only ever pass: a
     # transcript with a hole in it has seconds no window covers, and there is
     # nothing there to cover. What must hold is that no segment falls out.
-    check("no segment falls outside every window", orphans(long, windows), 0)
+    check("no segment falls outside every window", orphans(long, windows), [])
     gappy = [{"start": 0.0, "end": 10.0, "text": "first thing said"},
              {"start": 2400.0, "end": 2410.0, "text": "much later"},
              {"start": 4000.0, "end": 4010.0, "text": "later still"}]
     check("a transcript full of holes still loses no segment",
-          orphans(gappy, plan(gappy, 600.0, 90.0)), 0)
+          orphans(gappy, plan(gappy, 600.0, 90.0)), [])
 
     check("the words are counted, not estimated", windows[0]["words"],
           sum(len(RE_WORD.findall(s["text"].lower()))
@@ -243,11 +263,18 @@ def selftest() -> int:
                    {"start": 20.0, "end": 20.0, "text": "another bare stamp"}]
     check("zero-length segments are placed",
           plan(zero_length, 600.0, 90.0)[0]["segments"], 3)
+    # THE WHOLE SEGMENT LIST, not a slice of it. This case previously excluded
+    # the malformed segment from its own assertion, so it passed while that
+    # segment sat in none of the windows -- the exact loss the check exists for.
     reversed_seg = [{"start": 0.0, "end": 10.0, "text": "ordinary"},
                     {"start": 500.0, "end": 400.0, "text": "ends before it starts"}]
     check("a segment whose end precedes its start is still placed",
-          orphans([reversed_seg[0]], plan(reversed_seg, 600.0, 90.0)), 0)
+          orphans(reversed_seg, plan(reversed_seg, 600.0, 90.0)), [])
     check("...and is counted", plan(reversed_seg, 600.0, 90.0)[0]["segments"], 2)
+    # Membership, not geometry: a window's printed span cannot answer this.
+    faked = [dict(w, members=[]) for w in plan(reversed_seg, 600.0, 90.0)]
+    check("a window that claims nothing orphans everything",
+          len(orphans(reversed_seg, faked)), 2)
 
     check("an empty transcript plans nothing", plan([], 600.0, 90.0), [])
     for bad in ((90.0, 90.0), (0.0, 10.0), (-5.0, 999.0), (600.0, -30.0)):
@@ -260,6 +287,19 @@ def selftest() -> int:
     # Determinism is the whole claim of this file: same input, same boundaries.
     check("the same transcript plans the same windows",
           plan(long, 600.0, 90.0), plan(long, 600.0, 90.0))
+
+    # Every segment at second zero, which is what a decoder with broken offsets
+    # emits. The plan looked like seven windows and window 1 held all of them --
+    # the one overloaded context these windows exist to break up, wearing a
+    # table of boundaries.
+    timeless = [{"start": 0.0, "end": 3600.0, "text": f"segment number {i}"}
+                for i in range(360)]
+    stacked = plan(timeless, 600.0, 90.0)
+    check("a timeless transcript still plans windows", len(stacked) > 1, True)
+    check("...and one of them holds everything",
+          stacked[0]["segments"], 360)
+    check("...which is a distinct-start-count of one",
+          len({s["start"] for s in timeless}), 1)
 
     chapters = [{"start_time": 0.0, "end_time": 1200.0, "title": "The setup"},
                 {"start_time": 1200.0, "end_time": 3600.0, "title": "The argument"}]
@@ -345,13 +385,26 @@ def main(argv: list[str] | None = None) -> int:
     # COUNTED, not assumed. A window plan that quietly loses a segment loses
     # whatever that segment said, and the loss is invisible in a table of
     # boundaries that all look reasonable.
-    orphans = [s for s in segments
-               if not any(w["start"] <= s["start"] and s["end"] <= w["end"]
-                          for w in windows)]
+    lost = orphans(segments, windows)
     defects.extend(
-        f"[{hms(s['start'])}] E-WIN-ORPHAN a segment lies in no window; "
-        f"nothing would be written from it"
-        for s in orphans[:10])
+        f"[{hms(segments[i]['start'])}] E-WIN-ORPHAN a segment lies in no "
+        f"window; nothing would be written from it"
+        for i in lost[:10])
+    # A plan whose windows all collapse onto one is the single overloaded
+    # context this file exists to break up, wearing a table of boundaries. It
+    # happens when a decoder emits every segment at the same second.
+    distinct_starts = len({s["start"] for s in segments})
+    if segments and distinct_starts < max(2, len(segments) // 100):
+        defects.append(
+            f"[00:00] E-WIN-TIMELESS {distinct_starts} distinct start time(s) "
+            f"across {len(segments)} segments; this transcript has no usable "
+            f"timeline, so any window plan over it is arithmetic on one number")
+    biggest = max((w["segments"] for w in windows), default=0)
+    if len(windows) > 1 and biggest > len(segments) * OVERFULL_SHARE:
+        defects.append(
+            f"[00:00] E-WIN-OVERFULL one window holds {biggest} of "
+            f"{len(segments)} segments; the plan says it split the video and "
+            f"the numbers say it did not")
     for defect in defects:
         print(defect)
     print(f"# {len(windows)} window(s), "

@@ -94,12 +94,35 @@ quoted words still match the file, and the file is fiction.
 wq-transcript-align turbo.json large-v3.json --duration 3600
 ```
 
-It answers two questions. **Did either decode degenerate?** — a run of identical
-segments (`E-TS-LOOP`), a stretch with no segments in it (`E-TS-GAP`), a
-rendering that stops early (`E-TS-SHORT`), a stuck decoder repeating a handful of
-texts (`E-TS-REPEAT`). **Where do two decodes of the same audio disagree?** —
-whole-file token alignment, the ratio, and the divergent passages largest first,
-each anchored to a second.
+It answers two questions. **Did either decode degenerate?** and **where do two
+decodes of the same audio disagree?**
+
+Every check below exists because an attack got past the check before it. A lane
+whose only job was to build inputs that PASS defeated ten of this command's
+promises on its first attempt, so the obvious checks are the first row and the
+rest are what survived:
+
+| Code | What gets past the obvious version |
+|---|---|
+| `E-TS-LOOP` | a run of identical segments — the collapse everyone thinks of |
+| `E-TS-NEARLOOP` | the same run with a counter appended, so 2,000 repeats read as 2,000 distinct texts |
+| `E-TS-DOMINANT` | one stuck line *interleaved* with real speech: longest run 1, distinct ratio 0.5006, half the file |
+| `E-TS-REPEAT` | a stalled decoder, by distinct-to-total share |
+| `E-TS-GAP` | a hole longer than the limit |
+| `E-TS-SPARSE` | one second of speech every twenty: 95% unwitnessed, no single hole over the limit |
+| `E-TS-SEGMENT` | one malformed segment claiming to run to the end of the file, which blinds both checks above it |
+| `E-TS-VOCABULARY` | fluent-looking filler with almost no vocabulary in it |
+| `E-TS-SHORT` | a rendering that stops early (needs `--duration`) |
+| `E-TS-DIVERGENT` | two decodes that are not renderings of the same words |
+| `E-TS-SAME-WITNESS` | the same file passed twice, which scores 1.0000 and proves nothing |
+| `E-TS-SINGLE-WITNESS` | one decode, which has nothing to be checked against |
+
+Divergent passages are printed **salient first, then largest** — a region that
+touches a negation or a number is shown whatever its size. Two decodes that
+differed only in whether the speaker said "not" scored 0.9999905 over 52,788
+tokens and produced a single region of size 1; under a size ranking with a
+3-token floor, nothing was printed at all. Regions beyond `--regions` are counted
+on stderr rather than silently dropped.
 
 Run it on two renderings, from two models. One is `E-TS-SINGLE-WITNESS`: a lone
 decode has nothing to be checked against. But two models are **not** two witness
@@ -136,7 +159,16 @@ have a seam nobody read.
 `--chapters` prefers the uploader's own marks where they exist, and says so on
 stderr when the file declares none rather than quietly reverting to arithmetic.
 Boundaries snap to the transcript's segments, so `--json` gives a plan anyone can
-re-derive and check an outline against.
+re-derive and check an outline against — each window carrying the indices of the
+segments it owns, which is also what makes the loss checks exact rather than
+geometric.
+
+`E-WIN-ORPHAN` is a segment no window claimed, `E-WIN-EMPTY` a window that
+claimed nothing, `E-WIN-OVERFULL` a "split" where one window still holds most of
+the video, and `E-WIN-TIMELESS` a transcript whose segments share so few start
+times that no plan over it means anything. The last two exist because a plan of
+seven windows, one of which holds all 360 segments, is the single overloaded
+context these windows exist to prevent, reported as a clean table.
 
 ## Which build passed this note
 
