@@ -2,6 +2,39 @@
 
 All notable changes to `/watch` are documented here.
 
+Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
+without changelog entries and are described only in git history; 0.5.0 restores
+the habit rather than back-filling from memory.
+
+## [0.5.0] — 2026-08-19
+
+### Added
+- **Windowed local decode.** whisper.cpp now transcribes 240 seconds at a time,
+  keeping 180 and taking 30 seconds of context on each side, because a long
+  decode collapses: a single whole-file pass over a two-hour recording repeated
+  one sentence 6,434 times from 21:49 and lost 83% of the file. Dials are
+  `WATCH_DECODE_WINDOW_SECONDS` and `WATCH_DECODE_OVERLAP_SECONDS`; 0 restores
+  the single pass. Cloud backends are unchanged — they have not been measured
+  failing this way, which is an absence of evidence rather than a clean bill of
+  health.
+- **A window that loops is re-decoded from a different offset**, and the better
+  of the two is kept. It is a second roll of the dice, not a cure: on one
+  measured run a looping window went from 6 repeats to 1, and another went from
+  6 to 30 and kept its first decode.
+- **`WHISPER_CPP_MODEL_2`** runs a second decode with a second model and writes
+  both renderings to the run directory. Neither is merged and neither is chosen
+  automatically — the model trusted on one recording was the one that collapsed
+  on the next.
+- **`watch-quality` 0.3.0** ships two new commands: `wq-transcript-align`, which
+  asks whether a decode survived and where a second decode disagrees, and
+  `wq-note-windows`, which prints the boundaries a long video would be written
+  from.
+
+### Fixed
+- Windowed output no longer duplicates or drops a sentence at a window
+  boundary. Each window reaches two seconds back past its own edge and drops
+  what the previous window already kept, matched on words rather than the clock.
+
 ## [0.2.0] — 2026-06-29
 
 ### Added
