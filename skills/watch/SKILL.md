@@ -144,7 +144,7 @@ Optional flags:
 - `--start T` / `--end T` — focus on a section. Accepts `SS`, `MM:SS`, or `HH:MM:SS`. When either is set, fps auto-scales denser (see "Focusing on a section" below).
 - `--timestamps T1,T2,…` — grab a frame at each of these absolute timestamps (`SS`, `MM:SS`, or `HH:MM:SS`). Use this after reading the transcript to capture deictic moments the presenter flags ("look here", "as you can see", "notice this") that visual selection alone may miss. See "Transcript-cue frames" below.
 - `--max-frames N` — override the preset cap for tighter token budget (e.g. `--max-frames 40`)
-- `--resolution W` — change frame width in px (default 512; bump to 1024 only if the user needs to read on-screen text)
+- `--resolution W` — change frame width in px (default **768**). Measured on twelve frames of a UI tutorial, OCR'd at four widths: 512px yields 17 readable words, 768px yields 402, 1024px yields 637, 1536px yields 891. Use 1024+ for dense UI, code or small type; 512 only when the video is a talking head and tokens matter more than text.
 - `--fps F` — override auto-fps (clamped to 2 fps max)
 - `--out-dir DIR` — keep working files somewhere specific (default: an auto-generated tmp dir)
 - `--whisper groq|openai|local` — force a specific Whisper backend (default: prefer Groq, then OpenAI, then local whisper.cpp)
@@ -180,7 +180,7 @@ python3 "${SKILL_DIR}/scripts/watch.py" "$URL" --start 2:15 --end 2:45 --fps 2
 python3 "${SKILL_DIR}/scripts/watch.py" "$URL" --start 1:12:00
 ```
 
-**Step 3 — Read every frame path the script lists.** The Read tool renders JPEGs directly as images for you. Read all frames in a single message (parallel tool calls) so you see them together. The frames are in chronological order with a `t=MM:SS` timestamp so you can align them to the transcript.
+**Step 3 — Read every frame path the script lists, in batches of at most 20.** The Read tool renders JPEGs directly as images for you. Each batch is one message whose file names sit beside its own images; do not open a hundred frames across one message and pair them with a separate list afterwards, which is how a whole batch shifts by one and nobody notices. Every frame also carries its second **in its own pixels**, drawn top-left, so a mis-pairing is visible in the image rather than inferred from list order — if a frame's burned-in `t=` disagrees with the path you think you are reading, trust the pixels and say so.
 
 **Step 4 — answer the user.** You now have two streams of evidence:
 - **Frames** — what's on screen at each timestamp
@@ -206,10 +206,14 @@ At `balanced` / `token-burner` detail, the script extracts **scene-aware** frame
 
 ## Transcript-cue frames
 
-Visual frame selection (scene/keyframe) can miss the moments a presenter explicitly flags — "look here", "as you can see", "notice this", "watch what happens" — because pointing at a slide is often a *low* visual change. `--timestamps` lets you force a frame at those exact moments. **You** decide which moments matter, by reading the transcript:
+Visual frame selection (scene/keyframe) can miss the moments a presenter explicitly flags — "look here", "as you can see", "notice this", "watch what happens" — because pointing at a slide is often a *low* visual change.
+
+**This now runs by itself.** When captions exist, the script scans the transcript for those phrases before it spends the frame budget and pins a frame at each, up to 12, at least 20s apart. The report marks them `reason=transcript-cue`. Pass `--no-auto-cues` to turn it off.
+
+The pattern is deliberately narrow — it wants a pointing word followed by something being shown ("look at this chart"), not rhetorical use ("look, the point is"). It will still miss cues phrased unusually, so the manual route remains and **overrides** the automatic one:
 
 1. Run once at `--detail transcript` (or any detail) to get the timestamped transcript.
-2. Scan it for deictic cues — phrases where the speaker directs attention to something on screen. This is a judgment call (ignore rhetorical "look, the point is…"); that's why it's done by you, not a regex.
+2. Scan it for deictic cues the regex would not catch.
 3. Re-run with `--timestamps 4:32,7:10,9:55` (absolute source times). For a URL, point the second run at the **downloaded local file** in the work dir so it doesn't re-download.
 
 Behavior:
@@ -242,7 +246,7 @@ All settings live in `~/.config/watch/.env`. The script prefers OpenRouter, then
 ## Token efficiency
 
 This skill burns tokens primarily on frames. Order of magnitude:
-- 80 frames at 512px wide is roughly 50-80k image tokens depending on aspect ratio.
+- 80 frames at 768px wide is roughly 110-180k image tokens depending on aspect ratio; the same 80 at 512px is roughly 50-80k and reads almost no on-screen text.
 - The transcript is cheap (a few thousand tokens at most for a 10-minute video).
 - Bumping `--resolution` to 1024 roughly quadruples the image tokens per frame. Only do it when necessary.
 

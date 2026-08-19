@@ -124,6 +124,68 @@ def filter_range(
     return [seg for seg in segments if seg["end"] >= lo and seg["start"] <= hi]
 
 
+# WHERE THE INFORMATION IS, ACCORDING TO THE PERSON WHO PUT IT THERE.
+# Scene-change and keyframe selection both sample by how much the picture
+# CHANGED, and pointing at a slide changes almost nothing: a review lane found a
+# screen recording under-read, with 169 of 182 extracted frames cited nowhere
+# while the moments the presenter flagged had no frame at all.
+#
+# The speaker says when to look. These are the phrases that say it, kept to ones
+# that are about the screen rather than about the argument -- "look at this"
+# earns a frame, "look, the point is" does not, so the pattern requires the
+# pointing word to be followed by something being shown.
+#
+# THE FIRST VERSION OF THIS PATTERN FOUND NOTHING ON A REAL TUTORIAL. It
+# demanded "look at this/that/the", and a person actually says "let's take a
+# look at my inbox", "let's look at another way", "on this message, I see…".
+# Tuned against a 9-minute UI walkthrough it now finds six moments in 149
+# segments, which is the right order: enough to pin, few enough to afford.
+_DET = (r"(?:this|that|these|those|the|my|our|your|his|her|its|their|another"
+        r"|a|an|it|here)")
+DEICTIC = re.compile(
+    r"\b(?:"
+    rf"(?:let'?s |now |so |if you )?(?:take a |have a )?look at {_DET}\b"
+    r"|look (?:here|at the screen)\b"
+    r"|as you can see|you(?:'ll| will| can)? see (?:here|this|that|the)\b"
+    r"|(?:we|i) (?:can )?see (?:here|this|that|the)\b"
+    rf"|notice {_DET}\b|notice how\b"
+    r"|watch (?:what happens|this|closely)\b"
+    r"|(?:right |over )?here (?:you|we|is|are|i)\b"
+    r"|(?:shown|show(?:n|ing)?) (?:here|on (?:the )?(?:screen|slide))\b"
+    r"|(?:this|the) (?:slide|chart|graph|diagram|screenshot|table|screen)\b"
+    r"|on (?:this|the) (?:screen|slide|message|page|tab)\b"
+    r"|(?:if you )?zoom in\b"
+    r")",
+    re.IGNORECASE,
+)
+# Two cues a few seconds apart are one moment described twice, and each one
+# costs a frame out of the same budget the detail engine is spending.
+CUE_MIN_GAP = 20.0
+# A hard ceiling so a presenter who says "look at this" every thirty seconds
+# cannot spend the whole frame budget on cues; what is dropped is reported.
+CUE_LIMIT = 12
+
+
+def deictic_cues(segments: list[dict], min_gap: float = CUE_MIN_GAP,
+                 limit: int = CUE_LIMIT) -> list[float]:
+    """Seconds where the speaker points at the screen, earliest first.
+
+    Returns starts, not midpoints: the frame wanted is the one being pointed at,
+    and it is on screen before the sentence describing it finishes.
+    """
+    out: list[float] = []
+    for seg in segments:
+        if not DEICTIC.search(seg.get("text") or ""):
+            continue
+        start = float(seg["start"])
+        if out and start - out[-1] < min_gap:
+            continue
+        out.append(start)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _format_stamp(seconds: float) -> str:
     """Render a transcript timestamp as [MM:SS], rolling over to [H:MM:SS] once
     past an hour. Mirrors frames.format_time so transcript stamps stay aligned

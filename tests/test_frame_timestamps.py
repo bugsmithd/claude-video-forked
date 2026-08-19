@@ -88,6 +88,58 @@ def test_stamping_is_idempotent(timed_clip: Path, tmp_path: Path):
     assert all(Path(fr["path"]).exists() for fr in out)
 
 
+def _corner_luma(path: Path) -> float:
+    """Mean luma of the top-left corner, where the stamp is drawn."""
+    result = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-i", str(path),
+            "-vf", "crop=iw/3:ih/8:0:0,scale=1:1",
+            "-f", "rawvideo", "-pix_fmt", "gray", "-",
+        ],
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    return result.stdout[0]
+
+
+def test_the_second_is_burned_into_the_pixels(timed_clip: Path, tmp_path: Path):
+    """A filename can be re-paired with the wrong image; pixels cannot."""
+    out, _ = frames.extract_at_timestamps(str(timed_clip), tmp_path / "f", [7.0, 13.0])
+    before = [_corner_luma(Path(fr["path"])) for fr in out]
+
+    burned = frames.burn_stamps(out)
+
+    assert all(fr.get("stamped_pixels") for fr in burned)
+    after = [_corner_luma(Path(fr["path"])) for fr in burned]
+    assert after != before, "the stamp changed no pixels"
+    # The frame is still the frame: the fixture's colour must still name its second.
+    _assert_label_matches_pixels(burned)
+
+
+def test_burning_is_idempotent(timed_clip: Path, tmp_path: Path):
+    out, _ = frames.extract_at_timestamps(str(timed_clip), tmp_path / "f", [7.0])
+    once = frames.burn_stamps(out)
+    first = _corner_luma(Path(once[0]["path"]))
+    twice = frames.burn_stamps(once)
+
+    assert _corner_luma(Path(twice[0]["path"])) == first
+
+
+def test_a_missing_imaging_library_leaves_the_frames_alone(timed_clip: Path,
+                                                           tmp_path: Path,
+                                                           monkeypatch):
+    """The filename stamp is the floor; burn-in is the improvement on it."""
+    out, _ = frames.extract_at_timestamps(str(timed_clip), tmp_path / "f", [7.0])
+    before = _corner_luma(Path(out[0]["path"]))
+    monkeypatch.setattr(frames, "_imaging", lambda: None)
+
+    same = frames.burn_stamps(out)
+
+    assert not any(fr.get("stamped_pixels") for fr in same)
+    assert _corner_luma(Path(same[0]["path"])) == before
+
+
 def test_stamp_time_formats_past_an_hour():
     assert frames._stamp_time(7.0) == "00m07s"
     assert frames._stamp_time(135.4) == "02m15s"

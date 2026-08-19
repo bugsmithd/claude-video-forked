@@ -92,6 +92,90 @@ def stamp_paths(selected: list[dict]) -> list[dict]:
     return selected
 
 
+def _imaging():
+    """Pillow, or None. Optional on purpose — see `burn_stamps`."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return None
+    return Image, ImageDraw, ImageFont
+
+
+# Pillow's built-in font is an 11px bitmap. On a 768px-wide frame that is a
+# smudge -- the first burned stamp was there in the pixels and unreadable, which
+# is the same as not being there. A real face, sized to the box, is legible at
+# every width this pipeline emits.
+FONT_CANDIDATES = (
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+)
+
+
+def _stamp_font(font_mod, size: int):
+    """A truetype face at `size`, or Pillow's bitmap default."""
+    for path in FONT_CANDIDATES:
+        if Path(path).exists():
+            try:
+                return font_mod.truetype(path, size)
+            except OSError:
+                continue
+    return font_mod.load_default()
+
+
+# The stamp's box, as a fraction of the frame's height: a reader has to be able
+# to read it at 512px wide without it covering the content it is labelling.
+STAMP_HEIGHT = 0.055
+STAMP_PAD = 3
+
+
+def burn_stamps(selected: list[dict]) -> list[dict]:
+    """Draw each frame's second INTO the frame.
+
+    `stamp_paths` puts the second in the file name, which fixes half of this and
+    was already shipped when the mis-pairing happened anyway: file names arrive
+    as one list and the images as another, and position still does the pairing.
+    A name can be re-paired with the wrong image by anything that reorders
+    either list. Pixels cannot.
+
+    So the second is drawn into the top-left corner, in the smallest box that
+    stays legible at 512px wide. A frame is then self-identifying however it is
+    transported, batched or re-sorted, and a mis-pairing becomes visible in the
+    image instead of being inferred from a list index.
+
+    OPTIONAL, AND THE FALLBACK IS THE OLD BEHAVIOUR. Pillow is not a dependency
+    of this skill and this ffmpeg build has no `drawtext`, so where neither is
+    available the frames pass through untouched and the file-name stamp remains
+    the floor. No frame is ever lost to this step: any failure leaves that
+    frame's file exactly as it was.
+    """
+    imaging = _imaging()
+    if imaging is None:
+        return selected
+    image_mod, draw_mod, font_mod = imaging
+
+    for frame in selected:
+        if frame.get("stamped_pixels"):
+            continue
+        path = Path(frame["path"])
+        label = f"t={_stamp_time(frame['timestamp_seconds'])}"
+        try:
+            with image_mod.open(path) as opened:
+                img = opened.convert("RGB")
+            box_h = max(14, int(img.height * STAMP_HEIGHT))
+            font = _stamp_font(font_mod, max(11, int(box_h * 0.78)))
+            draw = draw_mod.Draw(img)
+            text_w = draw.textlength(label, font=font)
+            draw.rectangle([0, 0, text_w + 2 * STAMP_PAD, box_h], fill=(0, 0, 0))
+            draw.text((STAMP_PAD, 0), label, fill=(255, 255, 255), font=font)
+            img.save(path, quality=90)
+        except (OSError, ValueError):
+            continue
+        frame["stamped_pixels"] = True
+    return selected
+
+
 _FPS_MODE_ARGS: list[str] | None = None
 
 

@@ -17,8 +17,8 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from config import frame_cap, get_config  # noqa: E402
 from download import download, fetch_captions, is_url  # noqa: E402
-from frames import MAX_FPS, auto_fps, auto_fps_focus, extract_at_timestamps, extract_keyframes, extract_scene_or_uniform, format_time, get_metadata, merge_frames, parse_time, parse_timestamps, stamp_paths  # noqa: E402
-from transcribe import filter_range, format_transcript, parse_vtt  # noqa: E402
+from frames import MAX_FPS, auto_fps, auto_fps_focus, burn_stamps, extract_at_timestamps, extract_keyframes, extract_scene_or_uniform, format_time, get_metadata, merge_frames, parse_time, parse_timestamps, stamp_paths  # noqa: E402
+from transcribe import deictic_cues, filter_range, format_transcript, parse_vtt  # noqa: E402
 from whisper import load_api_key, transcribe_video  # noqa: E402
 
 
@@ -29,7 +29,16 @@ def main() -> int:
     )
     ap.add_argument("source", help="Video URL or local file path")
     ap.add_argument("--max-frames", type=int, default=None, help="Override frame cap")
-    ap.add_argument("--resolution", type=int, default=512, help="Frame width in pixels (default 512)")
+    # 512 WAS BELOW THE FLOOR FOR READING A SCREEN, and it is now measured.
+    # Twelve frames of a 10-minute UI tutorial, same source, four widths, OCR'd
+    # with tesseract --psm 6: 512px yields 17 readable words, 768px yields 402,
+    # 1024px yields 637, 1536px yields 891. The step from 512 to 768 is 24x the
+    # text for 2x the bytes; every step after it costs more and returns less.
+    # A review lane had already reported screen recordings under-read and
+    # 169 of 182 frames cited nowhere; this is one reason why.
+    ap.add_argument("--resolution", type=int, default=768,
+                    help="Frame width in pixels (default 768; 512 loses nearly "
+                         "all on-screen text, 1024+ for dense UI or code)")
     ap.add_argument("--fps", type=float, default=None, help="Override auto-fps")
     ap.add_argument(
         "--detail",
@@ -65,6 +74,14 @@ def main() -> int:
         action="store_true",
         help="Disable near-duplicate frame removal. Keeps visually identical "
              "frames (static screen recordings, held slides) instead of collapsing them.",
+    )
+    ap.add_argument(
+        "--no-auto-cues",
+        action="store_true",
+        help="Do not read the transcript for moments the speaker points at the "
+             "screen ('look at this', 'as you can see'). Those moments are "
+             "pinned by default because visual selection samples by change and "
+             "pointing at a slide barely changes the picture.",
     )
     args = ap.parse_args()
 
@@ -105,6 +122,19 @@ def main() -> int:
             except Exception as exc:
                 print(f"[watch] subtitle parse failed: {exc}", file=sys.stderr)
                 transcript_segments = []
+
+    # THE SPEAKER KNOWS WHERE TO LOOK AND THE SAMPLER DOES NOT. Scene and
+    # keyframe selection both sample by visual change, and pointing at a slide
+    # is a low-change moment, so a screen recording gets frames of the cuts and
+    # none of the content. Where captions exist, the moments the speaker flags
+    # are pinned before the detail engine spends its budget. `--timestamps`
+    # still wins outright: an explicit ask is never overridden by a guess.
+    if transcript_segments and not cue_timestamps and not args.no_auto_cues:
+        cue_timestamps = deictic_cues(transcript_segments)
+        if cue_timestamps:
+            print(f"[watch] {len(cue_timestamps)} transcript cue(s) found "
+                  f"where the speaker points at the screen; pinning a frame at "
+                  f"each", file=sys.stderr)
 
     # --timestamps needs the video for frame grabs, so it overrides the
     # transcript-mode download skip (and forces a full, not audio-only, fetch).
@@ -227,9 +257,11 @@ def main() -> int:
     if cue_frames:
         frames = merge_frames(frames, cue_frames)
 
-    # Last step before reporting: every surviving frame's name states its own
-    # second, so a reader pairing images with timestamps cannot slip a batch.
-    frames = stamp_paths(frames)
+    # Last step before reporting: every surviving frame states its own second
+    # twice — in its file name, and in its own pixels. The name alone was
+    # already shipped when a whole batch shifted by one anyway, because names
+    # arrive as a separate list from the images and position does the pairing.
+    frames = burn_stamps(stamp_paths(frames))
 
     if not transcript_segments and dl.get("subtitle_path"):
         try:
@@ -277,6 +309,31 @@ def main() -> int:
             )
     elif not transcript_segments and video_path and not meta.get("has_audio"):
         print("[watch] no audio stream found — proceeding without transcription", file=sys.stderr)
+
+    # A SECOND CUE PASS, FOR THE VIDEOS THAT HAD NO CAPTIONS TO READ FIRST.
+    # The transcript that arrives from Whisper arrives after the frames are
+    # already chosen, so the pass above had nothing to scan — which is exactly
+    # the case where visual selection is on its own and most likely to miss the
+    # moments the speaker points at. Grabbing them now costs one ffmpeg seek per
+    # cue and nothing else; the detail frames already taken are kept.
+    if (transcript_segments and not cue_frames and not args.no_auto_cues
+            and not cue_timestamps and video_path and detail != "transcript"):
+        late_cues = deictic_cues(transcript_segments)
+        if late_cues:
+            late_frames, _ = extract_at_timestamps(
+                video_path,
+                work / "frames",
+                late_cues,
+                resolution=args.resolution,
+                max_frames=None,
+                start_seconds=start_sec,
+                end_seconds=end_sec,
+            )
+            if late_frames:
+                print(f"[watch] {len(late_frames)} transcript cue(s) found in the "
+                      f"Whisper transcript; frames grabbed after the fact",
+                      file=sys.stderr)
+                frames = merge_frames(frames, burn_stamps(stamp_paths(late_frames)))
 
     info = dl.get("info") or {}
 

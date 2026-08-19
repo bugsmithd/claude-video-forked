@@ -118,6 +118,58 @@ def test_clean_collapses_runs_of_whitespace():
     assert transcribe._clean("a   \t b\n") == "a b"
 
 
+# --- deictic_cues ------------------------------------------------------------
+
+class TestDeicticCues:
+    """Uniform sampling is blind to where the information is; the speaker says."""
+
+    def _seg(self, start, text):
+        return {"start": start, "end": start + 2.0, "text": text}
+
+    def test_it_finds_the_moments_the_speaker_points_at(self):
+        segments = [
+            self._seg(0.0, "Welcome everyone, thanks for coming along today."),
+            self._seg(30.0, "So if you look at this chart, the trend is obvious."),
+            self._seg(60.0, "As you can see, the number doubles every quarter."),
+            self._seg(90.0, "Anyway, that is roughly the state of the market."),
+            self._seg(120.0, "Watch what happens when I click run."),
+        ]
+        assert transcribe.deictic_cues(segments) == [30.0, 60.0, 120.0]
+
+    def test_cues_closer_than_the_gap_collapse_to_the_first(self):
+        segments = [
+            self._seg(30.0, "Look at this."),
+            self._seg(33.0, "And notice this bit here too."),
+            self._seg(95.0, "Now look at this other one."),
+        ]
+        assert transcribe.deictic_cues(segments, min_gap=20.0) == [30.0, 95.0]
+
+    def test_it_is_capped(self):
+        many = [self._seg(float(i * 60), "look at this") for i in range(40)]
+        assert len(transcribe.deictic_cues(many, limit=8)) == 8
+
+    def test_it_says_nothing_when_nobody_points(self):
+        assert transcribe.deictic_cues([self._seg(0.0, "hello there")]) == []
+
+    def test_the_phrasings_people_actually_use(self):
+        """Taken verbatim from a 9-minute UI walkthrough the first pattern missed."""
+        spoken = [
+            "Let's take a look at my inbox. Now, this is my inbox.",
+            "On this message, I see the AI has already composed an auto-draft.",
+            "Let's look at another way to reply and schedule a meeting.",
+            "we see that booking page has been saved.",
+        ]
+        segments = [self._seg(i * 60.0, text) for i, text in enumerate(spoken)]
+        assert transcribe.deictic_cues(segments) == [0.0, 60.0, 120.0, 180.0]
+
+    def test_it_does_not_fire_on_the_rhetorical_look(self):
+        segments = [
+            self._seg(0.0, "Look, the point is that nobody reads the manual."),
+            self._seg(60.0, "I see what you mean, and I agree with him."),
+        ]
+        assert transcribe.deictic_cues(segments) == []
+
+
 # --- parse_vtt ---------------------------------------------------------------
 
 def test_parse_vtt_yields_clean_timestamped_segments(tmp_path):

@@ -445,6 +445,103 @@ class TestOpenRouterBackend:
     def test_no_second_model_on_a_backend_that_has_none(self):
         assert whisper.second_model("groq") is None
 
+
+class TestDetectedLanguageIsPinned:
+    """One recording is one language; `auto` let the second model pick another."""
+
+    def test_the_first_decode_pins_the_language_for_the_rest_of_the_run(self):
+        whisper.reset_detected_language()
+        assert whisper.decode_language() == "auto"
+        whisper.remember_detected_language("en")
+        assert whisper.decode_language() == "en"
+        # A later window detecting something else does not move the pin.
+        whisper.remember_detected_language("cy")
+        assert whisper.decode_language() == "en"
+
+    def test_a_configured_language_always_wins(self, monkeypatch):
+        whisper.reset_detected_language()
+        whisper.remember_detected_language("cy")
+        monkeypatch.setenv("WHISPER_CPP_LANG", "en")
+        assert whisper.decode_language() == "en"
+
+    def test_auto_is_never_remembered_as_a_language(self):
+        whisper.reset_detected_language()
+        whisper.remember_detected_language("auto")
+        whisper.remember_detected_language("")
+        assert whisper.decode_language() == "auto"
+
+
+class TestBackendOverrideCarriesItsOwnKey:
+    """`--backend local` with a cloud key set decoded with the cloud key."""
+
+    def test_the_named_backend_gets_its_own_credential(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        monkeypatch.setenv("WHISPER_CPP_BIN", "/usr/bin/whisper-cli")
+        seen = {}
+
+        monkeypatch.setattr(whisper, "extract_audio", lambda v, o: Path(o))
+        monkeypatch.setattr(whisper, "audio_duration", lambda p: 10.0)
+
+        def fake_transcribe(backend, api_key, path, model_override=None):
+            seen["backend"], seen["key"] = backend, api_key
+            return [{"start": 0.0, "end": 1.0, "text": "hi"}]
+
+        monkeypatch.setattr(whisper, "_transcribe_file", fake_transcribe)
+        monkeypatch.setattr(whisper, "second_model", lambda b: None)
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"x" * 32)
+        whisper.transcribe_video("clip.wav", audio, backend="local")
+        assert seen["backend"] == "local"
+        assert seen["key"] == "/usr/bin/whisper-cli"
+
+
+class TestAlignRenderings:
+    """A second decode nobody compares is a doubled bill for one witness."""
+
+    def _renderings(self, tmp_path):
+        first = tmp_path / "transcript-1.json"
+        second = tmp_path / "transcript-2.json"
+        for path in (first, second):
+            path.write_text(json.dumps({"segments": []}), encoding="utf-8")
+        return first, second
+
+    def test_it_runs_the_aligner_and_keeps_the_report(self, tmp_path, monkeypatch):
+        first, second = self._renderings(tmp_path)
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "regions\n", "# ratio 0.99\n")
+
+        monkeypatch.setattr(whisper.shutil, "which",
+                            lambda _: "/usr/bin/wq-transcript-align")
+        monkeypatch.setattr(whisper.subprocess, "run", fake_run)
+        report = whisper.align_renderings(first, second, 61.0)
+        assert report == tmp_path / "transcript-align.txt"
+        assert "ratio 0.99" in report.read_text(encoding="utf-8")
+        assert str(first) in seen["cmd"] and str(second) in seen["cmd"]
+        assert "--duration" in seen["cmd"]
+
+    def test_a_missing_aligner_never_fails_the_transcription(self, tmp_path,
+                                                             monkeypatch):
+        first, second = self._renderings(tmp_path)
+        monkeypatch.setattr(whisper.shutil, "which", lambda _: None)
+        assert whisper.align_renderings(first, second, 61.0) is None
+
+    def test_a_reported_defect_still_keeps_the_report(self, tmp_path, monkeypatch):
+        first, second = self._renderings(tmp_path)
+
+        def fake_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 1, "E-TS-DIVERGENT\n", "# 2 defect(s)\n")
+
+        monkeypatch.setattr(whisper.shutil, "which",
+                            lambda _: "/usr/bin/wq-transcript-align")
+        monkeypatch.setattr(whisper.subprocess, "run", fake_run)
+        report = whisper.align_renderings(first, second, None)
+        assert report is not None
+        assert "E-TS-DIVERGENT" in report.read_text(encoding="utf-8")
+
     def test_the_preferred_provider_is_one_of_the_documented_ones(self):
         # OpenRouter documents verbose_json as available on these three only.
         # Measured 2026-08-19: the pin has no effect on this endpoint and a

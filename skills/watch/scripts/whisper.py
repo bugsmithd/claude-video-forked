@@ -852,6 +852,47 @@ def transcribe_chunks(
     return segments
 
 
+# THE LANGUAGE IS DETECTED ONCE PER RUN, NOT ONCE PER DECODE. `-l auto` asks
+# whisper.cpp to detect the language of every file it is handed, and a run now
+# hands it many: two windows per four minutes, twice over when a second model is
+# configured. On a six-minute clip of an English talk that mentions Wales and
+# the Tudors, `large-v3` detected Welsh on BOTH of its windows and returned 1,192
+# words of fluent Welsh, while `turbo` returned English. The alignment caught it
+# -- 0.2127 agreement, refused as E-TS-DIVERGENT -- which is the gate working,
+# and it is still a wasted decode and a false divergence report.
+#
+# So the first successful decode's detected language is remembered and passed
+# explicitly to every decode after it. An explicit `WHISPER_CPP_LANG` still wins
+# over both.
+_DETECTED_LANGUAGE: str | None = None
+
+
+def reset_detected_language() -> None:
+    """Forget the pin. One process, one recording; a second video re-detects."""
+    global _DETECTED_LANGUAGE
+    _DETECTED_LANGUAGE = None
+
+
+def remember_detected_language(language: str | None) -> None:
+    """Pin the FIRST real detection. Later windows do not move it."""
+    global _DETECTED_LANGUAGE
+    if _DETECTED_LANGUAGE is None and language and language != "auto":
+        _DETECTED_LANGUAGE = language
+
+
+def decode_language() -> str:
+    """Configured language, else the one this run already detected, else auto.
+
+    `WHISPER_CPP_LANG=auto` is the shipped default and is a request to detect,
+    not a language — reading it as one would out-rank the detection it asked
+    for and leave every decode detecting independently.
+    """
+    configured = _read_config_value("WHISPER_CPP_LANG")
+    if configured and configured != "auto":
+        return configured
+    return _DETECTED_LANGUAGE or "auto"
+
+
 def _run_whisper_cpp(bin_path: str, audio_path: Path,
                      model_override: str | None = None) -> list[dict]:
     """Transcribe one audio file with a local whisper.cpp binary.
@@ -893,8 +934,10 @@ def _run_whisper_cpp(bin_path: str, audio_path: Path,
         raise SystemExit(f"ffmpeg wav conversion failed: {result.stderr.strip()}")
 
     # "auto" lets whisper.cpp detect the spoken language; its own default is
-    # English, which silently mangles non-English audio.
-    language = _read_config_value("WHISPER_CPP_LANG") or "auto"
+    # English, which silently mangles non-English audio. After the first decode
+    # of a run the detection is already made and is reused -- see
+    # `_DETECTED_LANGUAGE`.
+    language = decode_language()
     threads = _read_config_value("WHISPER_CPP_THREADS") or str(os.cpu_count() or 4)
 
     # A distinct prefix per model, so a failed second decode can never be read
@@ -940,6 +983,8 @@ def _run_whisper_cpp(bin_path: str, audio_path: Path,
         data = json.loads(json_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise SystemExit(f"whisper.cpp produced unreadable JSON: {exc}")
+
+    remember_detected_language((data.get("result") or {}).get("language"))
 
     segments: list[dict] = []
     for entry in data.get("transcription") or []:
@@ -1104,6 +1149,57 @@ def write_rendering(path: Path, backend: str, model: str | None,
     return path
 
 
+ALIGN_CLI = "wq-transcript-align"
+
+
+def align_renderings(first: Path, second: Path,
+                     duration: float | None) -> Path | None:
+    """Compare the two decodes and keep the report, instead of suggesting it.
+
+    A PRINTED COMMAND DOES NOT RUN. Until now a two-model run ended by printing
+    `wq-transcript-align <a> <b>` and stopping, which makes the comparison an
+    optional step at the exact moment the operator has what they came for. A
+    second rendering nobody aligns is a doubled wall clock buying one witness,
+    and the whole reason for the second decode is that two models disagreed on
+    one recording's most-quoted sentence, one hearing the negation of the other.
+
+    `--duration` is passed when known: a decode that stops early ends cleanly
+    and looks fine on its own, and only the audio's length catches it.
+
+    NOTHING HERE CAN FAIL THE TRANSCRIPTION. A missing CLI, a crash, or a report
+    full of defects all leave both renderings on disk, and a run with two
+    transcripts and no report is worth more than a run with none. Defects are
+    printed loudly; they are not raised.
+    """
+    if shutil.which(ALIGN_CLI) is None:
+        print(f"[watch] {ALIGN_CLI} is not installed; the two renderings are "
+              f"on disk and NOTHING IS QUOTABLE until they are compared:\n"
+              f"[watch]   {ALIGN_CLI} {first} {second}", file=sys.stderr)
+        return None
+
+    cmd = [ALIGN_CLI, str(first), str(second)]
+    if duration and duration > 0:
+        cmd += ["--duration", f"{duration:.3f}"]
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError as exc:
+        print(f"[watch] alignment could not run: {exc}", file=sys.stderr)
+        return None
+
+    report = first.parent / "transcript-align.txt"
+    report.write_text((done.stderr or "") + (done.stdout or ""), encoding="utf-8")
+    for line in (done.stderr or "").splitlines():
+        if line.startswith("#"):
+            print(f"[watch] {line}", file=sys.stderr)
+    if done.returncode:
+        print(f"[watch] THE TWO DECODES DISAGREE — read {report} before quoting "
+              f"anything from either", file=sys.stderr)
+    else:
+        print(f"[watch] alignment clean; regions listed in {report}",
+              file=sys.stderr)
+    return report
+
+
 def transcribe_video(
     video_path: str,
     audio_out: Path,
@@ -1114,10 +1210,17 @@ def transcribe_video(
 
     Returns (segments, backend_used). Raises SystemExit on any failure.
     """
-    if backend is None or api_key is None:
-        detected_backend, detected_key = load_api_key()
+    # THE PREFERENCE HAS TO REACH THE LOOKUP. This asked `load_api_key()` with
+    # no argument and then kept the caller's backend beside whatever credential
+    # the unfiltered search happened to return first, so `--backend local` on a
+    # machine with an OpenRouter key ran whisper.cpp with the OpenRouter key as
+    # its binary path and failed every window: "WHISPER_CPP_BIN is not an
+    # executable path or on PATH: sk-or-v1-...". The backend and the credential
+    # are one decision and are now made in one call.
+    if api_key is None:
+        detected_backend, detected_key = load_api_key(backend)
         backend = backend or detected_backend
-        api_key = api_key or detected_key
+        api_key = detected_key
 
     if not backend or not api_key:
         setup_py = Path(__file__).resolve().parent / "setup.py"
@@ -1259,12 +1362,13 @@ def transcribe_video(
         else:
             second_path = write_rendering(
                 audio_out.parent / "transcript-2.json", backend, second, other)
-            print(
-                f"[watch] second decode: {len(other)} segments — NOTHING HERE IS "
-                f"QUOTABLE until the two agree:\n"
-                f"[watch]   wq-transcript-align {first_path} {second_path}",
-                file=sys.stderr,
-            )
+            print(f"[watch] second decode: {len(other)} segments — NOTHING HERE "
+                  f"IS QUOTABLE until the two agree", file=sys.stderr)
+            try:
+                duration = audio_duration(audio_path)
+            except SystemExit:
+                duration = None
+            align_renderings(first_path, second_path, duration)
 
     return segments, backend
 
