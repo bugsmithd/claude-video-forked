@@ -6,6 +6,27 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.6.2] — 2026-08-19
+
+### Fixed
+- **`E-SET-COUNT` fired on idioms and counted the rest of the note as their
+  members.** A cardinality inside a claim row now enumerates only a list nested
+  UNDER that row; a row's siblings are not its enumeration. Prose keeps the old
+  behaviour, because a paragraph ending "three filters:" really does introduce
+  the list at the left margin below it. The five false positives that argued for
+  this, across three recordings: `two examples:` read as 189 members,
+  `two mindsets:`
+  as 134, `both ways:` as 5, `three wishes:` as 5, `two words:` as 403. Each was
+  an idiom read as a declared count.
+- The reason this waited two versions and then did not: the corpus reworded two
+  rows to satisfy the gate the first time. A note reworded to satisfy a broken
+  gate has stopped being evidence, so the third, fourth and fifth instance were
+  left standing in the notes and the gate was fixed instead.
+
+### Notes
+- watch-quality 0.4.2. `resolve_note --selftest` covers the three real rows that
+  triggered it plus the nested-list case that must still be counted.
+
 ## [0.6.1] — 2026-08-19
 
 ### Added

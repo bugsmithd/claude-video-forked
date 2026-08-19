@@ -597,10 +597,32 @@ def check_enumerations(body: str, body_start_line: int, rel) -> list[str]:
     reference to four figures cited later, not a list of what follows. Prose
     list boundaries are not an oracle, which is exactly why the plan put the
     countable case behind a {{SET}} token instead.
+
+    A CARDINALITY INSIDE A LIST ITEM ENUMERATES ONLY A NESTED LIST. This check
+    shipped counting every item that followed, at any indent, and on a note whose
+    body IS one long list that is every remaining row:
+
+        n.md:69  declared two examples but 189 listed
+        n.md:124 declared two mindsets but 134 listed
+        n.md:149 declared both ways but 5 listed
+        (and, on an earlier note, "three wishes:" -> 5, "two words:" -> 403)
+
+    Five false positives across three recordings, every one a claim row of the
+    shape "the seller holds two mindsets: knowing the thing, and forgetting he
+    knows it", with the note's next rows read as its members. Siblings are not
+    its enumeration; only items indented UNDER it are. Prose keeps the old
+    behaviour, because a paragraph ending in "three filters:" really is
+    introducing the list at the left margin below it.
+
+    The rule the corpus learned the hard way, twice: a gate that fires on an
+    idiom teaches its reader to reword notes, and a note reworded to satisfy a
+    gate is no longer evidence of anything.
     """
     out = []
     lines = body.split("\n")
     for i, line in enumerate(lines):
+        inside_item = RE_ITEM_ANY.match(line)
+        indent = len(line) - len(line.lstrip()) if inside_item else -1
         for m in RE_ENUM.finditer(line):
             declared = NUMBER_WORDS[m.group(1).lower()]
             # a markdown list below?
@@ -611,7 +633,11 @@ def check_enumerations(body: str, body_start_line: int, rel) -> list[str]:
             while j < len(lines) and (RE_ITEM_ANY.match(lines[j])
                                       or (items and lines[j].startswith("  ")
                                           and lines[j].strip())):
-                items += RE_ITEM_ANY.match(lines[j]) is not None
+                if RE_ITEM_ANY.match(lines[j]):
+                    deeper = len(lines[j]) - len(lines[j].lstrip()) > indent
+                    if inside_item and not deeper:
+                        break            # a sibling row, not a member
+                    items += 1
                 j += 1
             if items and items != declared:
                 out.append(f"{rel}:{body_start_line + i} E-SET-COUNT declared "
@@ -1478,6 +1504,26 @@ def selftest() -> int:
     assert check_enumerations(
         "- the stated cost, first of four figures: the whole business\n", 1,
         "n.md") == []
+    cases += 1
+    # A ROW'S SIBLINGS ARE NOT ITS ENUMERATION. Same shape as the rows that
+    # tripped this in the field, where the check read 189, 134 and 5 members
+    # off the rest of the note.
+    assert check_enumerations(
+        "- `[34:29]` `SPOKEN` - the seller holds two mindsets: knowing the\n"
+        "  thing, and forgetting he knows it.\n"
+        "- `[34:59]` `SPOKEN` - a second claim at a later second.\n"
+        "- `[35:29]` `INFERRED` - and a third, reading the second.\n",
+        1, "n.md") == []
+    assert check_enumerations(
+        "- they want it both ways: the free tier is the advertisement.\n"
+        "- and the paid tier is the same data.\n", 1, "n.md") == []
+    # ...but a list nested UNDER the row still counts, and still has to match.
+    assert check_enumerations(
+        "- the seller holds two mindsets:\n  - knows everything\n"
+        "  - knows nothing\n", 1, "n.md") == []
+    assert len(check_enumerations(
+        "- the seller holds two mindsets:\n  - knows everything\n"
+        "  - knows nothing\n  - knows too much\n", 1, "n.md")) == 1
     cases += 1
     # --- --refresh-sidecar separates "changed" from "gone" ---
     with tempfile.TemporaryDirectory() as td:
