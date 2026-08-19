@@ -168,7 +168,9 @@ claimed nothing, `E-WIN-OVERFULL` a "split" where one window still holds most of
 the video, and `E-WIN-TIMELESS` a transcript whose segments share so few start
 times that no plan over it means anything. The last two exist because a plan of
 seven windows, one of which holds all 360 segments, is the single overloaded
-context these windows exist to prevent, reported as a clean table.
+context these windows exist to prevent, reported as a clean table. Orphans are
+listed ten at a time and the rest are counted out loud, because a list that stops
+at ten without saying so reads as ten orphans when it is ten of hundreds.
 
 ## Which build passed this note
 
@@ -180,7 +182,7 @@ every note keeps its old clean bill of health with nothing saying so.
 wq-resolve-note --stamp
 ```
 
-writes `graded_with: watch-quality@0.3.0` into the frontmatter of every note
+writes `graded_with: watch-quality@0.3.1` into the frontmatter of every note
 that is clean **at that moment**. A note with outstanding defects is refused
 (`E-STAMP-REFUSED`), never stamped — a stamp on a red note would read months
 later as "this version passed it", which is the exact false light the gates

@@ -6,6 +6,23 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [watch-quality 0.3.1] — 2026-08-19
+
+The plugin stays at 0.5.0: nothing under `skills/watch/` changed, only the
+packaged gates.
+
+### Fixed
+- **`wq-note-windows` crashed on every real transcript.** Its summary line
+  counted `orphans`, which the previous release turned from a list into a
+  function, so the command printed its window table and then raised `TypeError`.
+  It survived review because the selftest never called `main()` and the attack
+  replay asserted exit status alone — and a crash exits non-zero, which reads as
+  a defect caught. Nine selftest cases now run the command end-to-end and assert
+  the codes it prints, not only what it returns.
+
+### Changed
+- An orphan list that stops at ten now says how many it did not print.
+
 ## [0.5.0] — 2026-08-19
 
 ### Added

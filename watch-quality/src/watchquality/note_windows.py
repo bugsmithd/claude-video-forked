@@ -59,6 +59,9 @@ OVERLAP_SECONDS = 90.0
 # exactly the single overloaded context the windows exist to prevent, reported
 # as a clean plan of seven windows.
 OVERFULL_SHARE = 0.5
+# Orphans printed one by one before the rest are counted. Ten names the problem;
+# eight hundred would bury the window table that explains it.
+ORPHANS_SHOWN = 10
 
 
 def plan(segments: list[dict], window_seconds: float,
@@ -313,6 +316,41 @@ def selftest() -> int:
     check("...which is where the next chapter's first segment already began",
           from_chapters[1]["start"] <= 1200.0, True)
 
+    # THE COMMAND ITSELF, not only the arithmetic under it. Every case above
+    # calls plan() or orphans() directly, and a version of this file shipped
+    # with main() raising TypeError on its own summary line: it printed the
+    # window table, then died before its exit code meant anything. A replay
+    # that only asserts a non-zero exit reads that crash as a defect found.
+    import contextlib
+    import io
+    import tempfile
+
+    def run(rows: list[dict], *flags: str) -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "transcript.json"
+            path.write_text(json.dumps(rows), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main([str(path), *flags])
+        return code, out.getvalue(), err.getvalue()
+
+    code, out, err = run(long)
+    check("a healthy transcript exits clean", code, 0)
+    check("...naming no defect", "E-WIN-" in out, False)
+    check("...and counting its orphans on stderr",
+          "0 of 360 segments in no window" in err, True)
+    check("...having printed a window per planned row",
+          out.count("\n") - 2, len(plan(long, 600.0, 90.0)))
+
+    code, out, _ = run(timeless)
+    check("a timeless transcript exits 1", code, 1)
+    check("...by name", "E-WIN-TIMELESS" in out, True)
+    check("...and says the split did not happen", "E-WIN-OVERFULL" in out, True)
+
+    code, out, _ = run(long, "--json")
+    check("--json exits clean", code, 0)
+    check("...and is parseable", len(json.loads(out)), len(plan(long, 600.0, 90.0)))
+
     print(f"# selftest OK ({cases} cases)")
     return 0
 
@@ -389,7 +427,13 @@ def main(argv: list[str] | None = None) -> int:
     defects.extend(
         f"[{hms(segments[i]['start'])}] E-WIN-ORPHAN a segment lies in no "
         f"window; nothing would be written from it"
-        for i in lost[:10])
+        for i in lost[:ORPHANS_SHOWN])
+    # Said out loud. A printed list that stops at ten and does not say so reads
+    # as ten orphans when it is the first ten of hundreds.
+    if len(lost) > ORPHANS_SHOWN:
+        defects.append(
+            f"[00:00] E-WIN-ORPHAN {len(lost) - ORPHANS_SHOWN} further orphaned "
+            f"segment(s) are not listed above")
     # A plan whose windows all collapse onto one is the single overloaded
     # context this file exists to break up, wearing a table of boundaries. It
     # happens when a decoder emits every segment at the same second.
@@ -410,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"# {len(windows)} window(s), "
           f"{sum(w['words'] for w in windows)} words including overlap, "
           f"{sum(1 for w in windows if not w['segments'])} empty, "
-          f"{len(orphans)} of {len(segments)} segments in no window",
+          f"{len(lost)} of {len(segments)} segments in no window",
           file=sys.stderr)
     return 1 if defects else 0
 
