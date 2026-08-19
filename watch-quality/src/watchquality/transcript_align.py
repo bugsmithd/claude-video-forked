@@ -165,6 +165,27 @@ def load_segments(path: Path) -> list[dict]:
         from .say_captions import cues
         return [{"start": s, "end": e, "text": t} for s, e, t in cues(path)]
 
+    if path.suffix.lower() == ".tsv":
+        # The caption index a corpus keeps beside its notes is a rendering like
+        # any other: `start<TAB>end<TAB>text`, after `#` header lines. Reading it
+        # here means a coverage or alignment question can be asked of the index
+        # a note was actually graded against, not only of the run's JSON.
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3 or parts[0] == "start":
+                continue
+            try:
+                out.append({"start": float(parts[0]), "end": float(parts[1]),
+                            "text": "\t".join(parts[2:]).strip()})
+            except ValueError:
+                continue
+        if not out:
+            raise ValueError("no start/end/text rows in this .tsv")
+        return sorted([s for s in out if s["text"]], key=lambda s: s["start"])
+
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, dict) and "transcription" in raw:      # whisper.cpp -oj
         out = []

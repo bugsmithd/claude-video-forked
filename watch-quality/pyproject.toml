@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "watch-quality"
-version = "0.3.1"
+version = "0.4.0"
 description = "Evidence gates for notes made from video"
 readme = "README.md"
 requires-python = ">=3.11"          # tomllib, and `X | None` at runtime
@@ -33,6 +33,7 @@ wq-policy = "watchquality.cli:policy"
 wq-corpus-scan = "watchquality.cli:corpus_scan"
 wq-transcript-align = "watchquality.cli:transcript_align"
 wq-note-windows = "watchquality.cli:note_windows"
+wq-note-coverage = "watchquality.cli:note_coverage"
 
 [tool.setuptools.packages.find]
 where = ["src"]

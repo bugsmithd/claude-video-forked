@@ -1,6 +1,6 @@
 # watch-quality
 
-Eleven commands that refuse to let a note claim more than its evidence supports.
+Twelve commands that refuse to let a note claim more than its evidence supports.
 
 They are built for notes made from video — a `/watch` run, or anything that
 produces a transcript, a set of extracted frames, and a note that cites seconds
@@ -21,6 +21,7 @@ run actually captured.
 | `wq-policy` | Which policy file is in force, and what does it say? |
 | `wq-transcript-align` | Did this transcript decode survive, and where does a second decode of the same audio disagree with it? |
 | `wq-note-windows` | Which stretches of a long video is a note written from, and where do they overlap? |
+| `wq-note-coverage` | What did the recording say that this note never carried, and is any stretch unwritten? |
 | `wq-corpus-scan` | Has any corpus data leaked into this package's own source? |
 
 Three principles the checks are built on, because they explain the refusals:
@@ -134,8 +135,45 @@ and never inherited from the last file: the model trusted on one recording was
 the one that collapsed on the next. That is one reversal, not a rate — enough to
 stop inheriting a choice, not enough to predict which model fails next.
 
-Accepts WebVTT, whisper.cpp `-oj` JSON, Whisper `verbose_json`, or a bare list of
-`{start, end, text}`, so the renderings need no conversion step to compare.
+Accepts WebVTT, whisper.cpp `-oj` JSON, Whisper `verbose_json`, a caption-index
+`.tsv`, or a bare list of `{start, end, text}`, so the renderings need no
+conversion step to compare.
+
+## What the note left out
+
+Every other command here asks whether what a note SAYS is supported. This one
+asks the opposite question, which nothing else in the package answers: what did
+the recording say that the note never carried?
+
+```
+wq-note-coverage note.md turbo.json
+wq-note-coverage note.md turbo.json --span 59:25-1:09:33
+```
+
+Counting claims per minute cannot answer it. One argument returned as six rows
+scores the same as six claims, and a row reading "the speaker offers an example
+here" scores the same as one that reports the example. So this counts what was
+**carried, once**, across three sets a note cannot pad its way into: **figures**
+(tokens with a digit — prices, counts, years, the least paraphrasable thing a
+recording contains), **names** (tokens capitalised where no sentence just began),
+and **terms** (tokens the recording uses rarely, which is what makes them
+specific to the stretch they appear in).
+
+Two guards sit beside recall, because recall alone can be won by pasting the
+transcript into the note: **dead minutes** of the span with no anchor at all, and
+**rows that repeat a row beside them**. `E-COV-DEAD` fires on three consecutive
+unwritten minutes, `E-COV-REPEAT` on padding, `E-COV-THIN` when the span is too
+small for the figure to mean anything, and `E-COV-STAMP` on an anchor like
+`[59:99]` that no clock can say.
+
+**Recall is comparative, not a grade.** The denominator includes the recogniser's
+own mis-hearings, which no note can carry and which therefore mark every note
+down equally — so the number is worth reading between two notes over the same
+span, and not on its own. A high figure is not a good note: a note can carry
+every number in a recording and still misread the argument they were part of.
+The dead-minute count is the only absolute here, and even it is a question
+rather than a verdict — a sponsor read and a long silence are legitimately
+unwritten.
 
 ## Writing a long video in windows
 
@@ -182,7 +220,7 @@ every note keeps its old clean bill of health with nothing saying so.
 wq-resolve-note --stamp
 ```
 
-writes `graded_with: watch-quality@0.3.1` into the frontmatter of every note
+writes `graded_with: watch-quality@0.4.0` into the frontmatter of every note
 that is clean **at that moment**. A note with outstanding defects is refused
 (`E-STAMP-REFUSED`), never stamped — a stamp on a red note would read months
 later as "this version passed it", which is the exact false light the gates

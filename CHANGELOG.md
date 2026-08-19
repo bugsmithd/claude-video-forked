@@ -6,6 +6,37 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [watch-quality 0.4.0] — 2026-08-19
+
+The plugin stays at 0.5.0: nothing under `skills/watch/` changed.
+
+### Added
+- **`wq-note-coverage`** — the first check here that asks what a note LEFT OUT.
+  Everything else grades what a note says; nothing could see a stretch of the
+  recording nobody wrote from. It counts what a note carried, once, over three
+  sets a note cannot pad its way into — **figures** (tokens with a digit),
+  **names** (tokens capitalised mid-sentence) and **terms** (tokens the recording
+  uses rarely) — so splitting one claim into six rows does not move the number.
+  `E-COV-DEAD` names three consecutive unwritten minutes, `E-COV-DUMP` a note
+  that reproduces the transcript, `E-COV-LIST` a vocabulary dump wearing a
+  note's clothes, `E-COV-REPEAT` padding, `E-COV-STAMP` an anchor no clock can
+  say, and `E-COV-ROWSHAPE` a line that meant to be a claim row and did not
+  parse as one.
+- Every constant is measured over 24 real notes, and the measurements are in the
+  source beside them. Recall runs 0.189 to 0.928 across that corpus, so the
+  figure separates thin notes from thorough ones rather than scoring all alike.
+- `wq-transcript-align` and everything built on it now read a caption-index
+  `.tsv`, so a note can be measured against the same index it was graded on.
+
+### Notes
+- **Recall is comparative, not a grade.** Its denominator includes the
+  recogniser's own mis-hearings, which no note can carry. It is worth reading
+  between two notes over one span, not on its own.
+- An adversarial lane whose only instruction was to build inputs that score well
+  defeated nine of this command's promises on its first attempt — six by scoring
+  garbage clean, three by marking down notes that were correct. All nine are
+  closed and each has a selftest case; the cases outnumber the checks.
+
 ## [watch-quality 0.3.1] — 2026-08-19
 
 The plugin stays at 0.5.0: nothing under `skills/watch/` changed, only the
