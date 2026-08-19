@@ -75,3 +75,8 @@ def note_windows() -> int:
 def note_coverage() -> int:
     from .note_coverage import main
     return _run(main)
+
+
+def audit() -> int:
+    from .audit import main
+    return _run(main)

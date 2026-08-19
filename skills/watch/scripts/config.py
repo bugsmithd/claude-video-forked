@@ -13,6 +13,18 @@ DEFAULT_DETAIL = "balanced"
 
 DETAILS = {"transcript", "efficient", "balanced", "token-burner"}
 
+# WHERE A DURABLE RUN LANDS. The default path is deliberately generic and
+# configurable: a run kept for a note belongs wherever that person keeps them,
+# and hardcoding one installation's directory into a shared script is how a
+# private path ends up in a public repository.
+DEFAULT_NOTE_DIR = Path.home() / "watch-runs"
+# The resolution floor for a durable run, measured rather than chosen. Twelve
+# frames of a UI tutorial OCR'd at four widths gave 17 readable words at 512px,
+# 402 at 768, 637 at 1024 and 891 at 1536. A note anchors claims to pixels, so
+# it buys the text the ordinary token budget declines to pay for.
+NOTE_RESOLUTION = 1024
+DEFAULT_RESOLUTION = 768
+
 
 def read_env_file(path: Path | None = None) -> dict[str, str]:
     if path is None:
@@ -60,6 +72,29 @@ def get_config() -> dict[str, object]:
         "detail": detail,
         "config_file": str(CONFIG_FILE),
     }
+
+
+def note_dir() -> Path:
+    """The root a durable run is kept under, from `WATCH_NOTE_DIR` or the default."""
+    raw = (os.environ.get("WATCH_NOTE_DIR")
+           or read_env_file().get("WATCH_NOTE_DIR") or "")
+    return Path(raw).expanduser() if raw.strip() else DEFAULT_NOTE_DIR
+
+
+def note_run_dir(root: Path, video_id: str) -> Path:
+    """`<root>/<video_id>/run-NN`, the next free NN.
+
+    Numbered and not timestamped so a second run of the same video is
+    obviously a second run, and so the same inputs give the same name in a
+    test. Nothing here ever overwrites an earlier run: the evidence a note
+    resolves against is the one thing this mode exists to stop destroying.
+    """
+    base = root.expanduser() / (video_id or "unknown")
+    for n in range(1, 1000):
+        candidate = base / f"run-{n:02d}"
+        if not candidate.exists():
+            return candidate
+    raise SystemExit(f"{base} already holds 999 runs; move some aside")
 
 
 def frame_cap(detail: str) -> int | None:

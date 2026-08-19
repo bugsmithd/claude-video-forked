@@ -34,6 +34,7 @@ wq-corpus-scan = "watchquality.cli:corpus_scan"
 wq-transcript-align = "watchquality.cli:transcript_align"
 wq-note-windows = "watchquality.cli:note_windows"
 wq-note-coverage = "watchquality.cli:note_coverage"
+watch-audit = "watchquality.cli:audit"
 
 [tool.setuptools.packages.find]
 where = ["src"]

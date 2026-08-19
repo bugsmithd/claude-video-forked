@@ -150,6 +150,28 @@ Optional flags:
 - `--whisper groq|openai|local` — force a specific Whisper backend (default: prefer Groq, then OpenAI, then local whisper.cpp)
 - `--no-whisper` — disable the Whisper fallback entirely (frames-only if no captions)
 - `--no-dedup` — keep near-duplicate frames. By default a frame-delta pass drops frames that are visually near-identical to the previous kept one (held slides, static screen recordings, paused video) so the frame budget goes to distinct content; the report's **Frames** line notes how many were dropped. Pass this only if the user needs every sampled frame (e.g. judging subtle frame-to-frame motion).
+- `--make-note` — keep the run instead of throwing it away. See "Note mode" below. Costs more tokens and more disk; changes nothing when absent.
+
+### Note mode (`--make-note`)
+
+Use it when the output is a **file the user keeps**, not an answer in chat — a research note whose claims have to still be checkable months from now. Do not use it for ordinary questions: it is more expensive on every axis.
+
+Ordinary `/watch` is built to throw the evidence away — a temp directory, a "delete when done" line, collapsed near-duplicate frames, a report that is prose. Every one of those is right for answering a question and wrong for a note whose claims resolve against pixels and seconds. `--make-note` inverts that trade for one run:
+
+- The working directory is **durable**, under `WATCH_NOTE_DIR` (default `~/watch-runs`), as `<video_id>/run-NN`. Nothing overwrites an earlier run and nothing is deleted for the user.
+- `--resolution` floors at **1024** instead of 768, because a note anchors claims to on-screen text. An explicit `--resolution` still wins.
+- The seconds the dedup pass collapsed are **recorded, not just counted**, so a held slide can be described across the whole span it was up.
+- A `run.json` is written: a sha256 per frame and for the source, the transcript backend, and every second the transcript starts on — which are the only seconds a claim may be anchored to.
+
+**Then read `NOTE.md` beside this file and follow it instead of Step 4.** It carries the note contract: evidence classes, the verbatim-quote rule, hedges, the do-not-name-the-speaker rule, and how to read frames in batches. The report prints the `run.json` path and points at it.
+
+Check the finished note with one command:
+
+```bash
+watch-audit <note.md>
+```
+
+Exit 0 = every gate passed. Exit 1 = defects, printed above. **Exit 2 = a gate could not run, which is not a pass.** Fix what it finds before calling the note done.
 
 ### Focusing on a section (higher frame rate)
 

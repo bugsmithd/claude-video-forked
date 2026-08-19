@@ -621,7 +621,8 @@ def _thumb_frames(paths: list[Path]) -> list[bytes]:
 
 
 def dedupe_perceptual(
-    candidates: list[dict], threshold: float = DEDUP_THRESHOLD
+    candidates: list[dict], threshold: float = DEDUP_THRESHOLD,
+    dropped_out: list[float] | None = None,
 ) -> tuple[list[dict], int]:
     """Drop near-identical frames from a chronological candidate list.
 
@@ -629,11 +630,17 @@ def dedupe_perceptual(
     per-pixel difference from the last kept one is within ``threshold``. Returns
     ``(survivors, dropped_count)``; a no-op (unchanged list) when thumbnails are
     unavailable or there are fewer than two candidates.
+
+    ``dropped_out``, when given, is extended with the SECOND of each frame that
+    was collapsed. A count is enough to explain a token saving and not enough
+    for a note: a held slide collapses to one second, and every other second of
+    that slide silently becomes uncitable. Recording which seconds existed is
+    what lets a note say the slide was on screen from here to here.
     """
     if len(candidates) <= 1:
         return candidates, 0
     thumbs = _thumb_frames([Path(c["path"]) for c in candidates])
-    return _dedupe_by_deltas(candidates, thumbs, threshold)
+    return _dedupe_by_deltas(candidates, thumbs, threshold, dropped_out)
 
 
 def _is_blank(thumb: bytes) -> bool:
@@ -652,7 +659,8 @@ def _is_blank(thumb: bytes) -> bool:
 
 
 def _dedupe_by_deltas(
-    candidates: list[dict], thumbs: list[bytes], threshold: float = DEDUP_THRESHOLD
+    candidates: list[dict], thumbs: list[bytes], threshold: float = DEDUP_THRESHOLD,
+    dropped_out: list[float] | None = None,
 ) -> tuple[list[dict], int]:
     """Greedily drop frames within ``threshold`` mean per-pixel difference of the
     last *kept* frame, plus any near-uniform blank frame. Deletes dropped JPEGs
@@ -683,6 +691,8 @@ def _dedupe_by_deltas(
         dropped.extend(c for c in kept if c not in survivors)
         kept = survivors
 
+    if dropped_out is not None:
+        dropped_out.extend(sorted(float(c["timestamp_seconds"]) for c in dropped))
     for cand in dropped:
         try:
             Path(cand["path"]).unlink()
@@ -725,14 +735,18 @@ def extract_scene_or_uniform(
         end_seconds=end_seconds,
     )
     scene_count = len(scene_frames)
+    dropped_seconds: list[float] = []
     if scene_count >= SCENE_MIN_FRAMES:
-        deduped, n_dropped = dedupe_perceptual(scene_frames) if dedup else (scene_frames, 0)
+        deduped, n_dropped = (dedupe_perceptual(scene_frames,
+                                                dropped_out=dropped_seconds)
+                              if dedup else (scene_frames, 0))
         cap = len(deduped) if max_frames is None else max_frames
         selected = _even_sample(deduped, cap)
         return selected, {
             "engine": "scene",
             "candidate_count": scene_count,
             "deduped_count": n_dropped,
+            "deduped_seconds": dropped_seconds,
             "selected_count": len(selected),
             "fallback": False,
         }
@@ -749,11 +763,12 @@ def extract_scene_or_uniform(
     )
     n_dropped = 0
     if dedup:
-        frames, n_dropped = dedupe_perceptual(frames)
+        frames, n_dropped = dedupe_perceptual(frames, dropped_out=dropped_seconds)
     return frames, {
         "engine": "uniform",
         "candidate_count": scene_count,
         "deduped_count": n_dropped,
+        "deduped_seconds": dropped_seconds,
         "selected_count": len(frames),
         "fallback": True,
     }
@@ -843,12 +858,15 @@ def extract_keyframes(
             end_seconds=end_seconds,
         )
         n_dropped = 0
+        dropped_seconds: list[float] = []
         if dedup:
-            frames_out, n_dropped = dedupe_perceptual(frames_out)
+            frames_out, n_dropped = dedupe_perceptual(
+                frames_out, dropped_out=dropped_seconds)
         return frames_out, {
             "engine": "uniform",
             "candidate_count": len(candidates),
             "deduped_count": n_dropped,
+            "deduped_seconds": dropped_seconds,
             "selected_count": len(frames_out),
             "fallback": True,
         }
@@ -856,13 +874,16 @@ def extract_keyframes(
     # Detect-all, drop near-duplicates, then even-sample down to the cap (first +
     # last always kept). ``max_frames is None`` (uncapped) keeps every keyframe.
     candidate_count = len(candidates)
-    deduped, n_dropped = dedupe_perceptual(candidates) if dedup else (candidates, 0)
+    dropped_seconds = []
+    deduped, n_dropped = (dedupe_perceptual(candidates, dropped_out=dropped_seconds)
+                          if dedup else (candidates, 0))
     cap = len(deduped) if max_frames is None else max_frames
     selected = _even_sample(deduped, cap)
     return selected, {
         "engine": "keyframe",
         "candidate_count": candidate_count,
         "deduped_count": n_dropped,
+        "deduped_seconds": dropped_seconds,
         "selected_count": len(selected),
         "fallback": False,
     }

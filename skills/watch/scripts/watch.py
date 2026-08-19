@@ -15,8 +15,9 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config import frame_cap, get_config  # noqa: E402
+from config import DEFAULT_RESOLUTION, NOTE_RESOLUTION, frame_cap, get_config, note_dir, note_run_dir  # noqa: E402
 from download import download, fetch_captions, is_url  # noqa: E402
+from notemode import build_run, rehome, video_id_of, write_run  # noqa: E402
 from frames import MAX_FPS, auto_fps, auto_fps_focus, burn_stamps, extract_at_timestamps, extract_keyframes, extract_scene_or_uniform, format_time, get_metadata, merge_frames, parse_time, parse_timestamps, stamp_paths  # noqa: E402
 from transcribe import deictic_cues, filter_range, format_transcript, parse_vtt  # noqa: E402
 from whisper import load_api_key, transcribe_video  # noqa: E402
@@ -36,9 +37,13 @@ def main() -> int:
     # text for 2x the bytes; every step after it costs more and returns less.
     # A review lane had already reported screen recordings under-read and
     # 169 of 182 frames cited nowhere; this is one reason why.
-    ap.add_argument("--resolution", type=int, default=768,
-                    help="Frame width in pixels (default 768; 512 loses nearly "
-                         "all on-screen text, 1024+ for dense UI or code)")
+    # Left as None so `--make-note` can raise the floor without overriding a
+    # width the user asked for. A default resolved at parse time cannot tell
+    # "the user typed 768" from "nobody said".
+    ap.add_argument("--resolution", type=int, default=None,
+                    help=f"Frame width in pixels (default {DEFAULT_RESOLUTION}, "
+                         f"or {NOTE_RESOLUTION} under --make-note; 512 loses "
+                         f"nearly all on-screen text, 1024+ for dense UI or code)")
     ap.add_argument("--fps", type=float, default=None, help="Override auto-fps")
     ap.add_argument(
         "--detail",
@@ -83,7 +88,22 @@ def main() -> int:
              "pinned by default because visual selection samples by change and "
              "pointing at a slide barely changes the picture.",
     )
+    ap.add_argument(
+        "--make-note",
+        action="store_true",
+        help="Keep the run instead of throwing it away: a durable working "
+             "directory under WATCH_NOTE_DIR, a higher resolution floor, the "
+             "seconds the dedup pass collapsed recorded rather than discarded, "
+             "and a run.json a note's claims can later be checked against. "
+             "Costs more tokens and more disk; changes nothing when absent.",
+    )
     args = ap.parse_args()
+
+    make_note = args.make_note
+    resolution = args.resolution
+    if resolution is None:
+        resolution = NOTE_RESOLUTION if make_note else DEFAULT_RESOLUTION
+    args.resolution = resolution
 
     config = get_config()
     detail = args.detail or str(config["detail"])
@@ -97,14 +117,21 @@ def main() -> int:
     budget_cap = max_frames if max_frames is not None else 100
     cue_timestamps = parse_timestamps(args.timestamps)
 
+    url_source = is_url(args.source)
+    note_root = note_dir() if make_note else None
     if args.out_dir:
         work = Path(args.out_dir).expanduser().resolve()
+    elif make_note and not url_source:
+        # A local file's id is a digest of its path, so it is known now and the
+        # directory never has to move.
+        work = note_run_dir(note_root, video_id_of(args.source, {}))
+    elif make_note:
+        work = note_run_dir(note_root, "pending")
     else:
         work = Path(tempfile.mkdtemp(prefix="watch-"))
     work.mkdir(parents=True, exist_ok=True)
     print(f"[watch] working dir: {work}", file=sys.stderr)
 
-    url_source = is_url(args.source)
     dl: dict = {"subtitle_path": None, "info": {}, "downloaded": False}
     transcript_segments: list[dict] = []
     transcript_text: str | None = None
@@ -114,6 +141,10 @@ def main() -> int:
     if url_source:
         print("[watch] checking metadata/captions via yt-dlp…", file=sys.stderr)
         dl = fetch_captions(args.source, work / "download")
+        if make_note and not args.out_dir:
+            work = rehome(work, note_run_dir(
+                note_root, video_id_of(args.source, dl.get("info") or {})), dl)
+            print(f"[watch] durable run: {work}", file=sys.stderr)
         if dl.get("subtitle_path"):
             try:
                 transcript_segments = parse_vtt(dl["subtitle_path"])
@@ -454,8 +485,45 @@ def main() -> int:
 
     print()
     print("---")
-    print(f"_Work dir: `{work}` — delete when done._")
+    if not make_note:
+        print(f"_Work dir: `{work}` — delete when done._")
+        return 0
 
+    run = build_run(
+        source=args.source,
+        video_id=video_id_of(args.source, info),
+        work=work,
+        info=info,
+        duration=full_duration,
+        resolution=args.resolution,
+        detail=detail,
+        video_path=video_path,
+        frames=frames,
+        dropped_seconds=frame_meta.get("deduped_seconds") or [],
+        transcript_source=transcript_source,
+        transcript_segments=transcript_segments,
+        subtitle_path=dl.get("subtitle_path"),
+    )
+    run_path = write_run(work, run)
+    dropped = run["deduped_seconds"]
+    print(f"_Work dir: `{work}` — **kept**, not a temp dir. Nothing here is "
+          f"deleted for you: a note's claims resolve against these files._")
+    print()
+    print("## Note mode")
+    print()
+    print(f"- **Run record:** `{run_path}` — {len(run['frames'])} frame(s) with "
+          f"a sha256 each, {run['transcript']['segments']} transcript segment "
+          f"start(s), source digest `{run['video_sha256'] or 'n/a'}`.")
+    if dropped:
+        print(f"- **Collapsed seconds:** {len(dropped)} second(s) existed and "
+              f"were merged into a neighbouring frame as near-identical. They "
+              f"are listed in `run.json` under `deduped_seconds`; a held slide "
+              f"was on screen across them even though only one frame survives.")
+    print(f"- **Anchors:** a claim may only be stamped at a second the "
+          f"transcript actually starts on. Those seconds are in `run.json` "
+          f"under `transcript.segment_starts`.")
+    print(f"- **The note contract is not in this report.** Read `NOTE.md` "
+          f"beside this skill and follow it instead of Step 4.")
     return 0
 
 
