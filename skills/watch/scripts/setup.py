@@ -52,6 +52,28 @@ ENV_TEMPLATE = """# /watch API configuration
 GROQ_API_KEY=
 OPENAI_API_KEY=
 
+# OpenRouter: one key and one balance in front of several providers. Preferred
+# when set, because a hosted decode has not been measured collapsing the way a
+# long local one does.
+#
+# Get a key:  https://openrouter.ai/keys
+#
+# WHAT MATTERS HERE IS TIMESTAMPS. A transcript with no seconds in it cannot be
+# anchored, quoted or graded, so /watch refuses a response without them rather
+# than writing it. The provider preference below is sent as a request and was
+# measured having no effect on this endpoint (every pin billed at the cheapest
+# provider's rate), so treat it as documentation of intent, not a guarantee.
+# OPENROUTER_API_KEY=
+# WATCH_OPENROUTER_MODEL=openai/whisper-large-v3
+# WATCH_OPENROUTER_PROVIDER=groq
+# Seconds of audio per request. The provider behind the router gives up after
+# about 60 seconds of processing, so a long recording is split.
+# WATCH_OPENROUTER_MAX_SECONDS=600
+# A SECOND decode, opt-in, written beside the first and never merged into it.
+# Prefer a different model family here: two whisper variants are one witness
+# counted twice, and this doubles the bill.
+# WATCH_OPENROUTER_MODEL_2=openai/gpt-4o-transcribe
+
 # Fully local, offline transcription via whisper.cpp — no API key, audio never
 # leaves the machine. Point these at a whisper-cli executable and a ggml model
 # (e.g. ggml-small.en.bin from huggingface.co/ggerganov/whisper.cpp).
@@ -125,6 +147,11 @@ def _read_env_key(name: str) -> str | None:
 
 
 def _have_api_key() -> tuple[bool, str | None]:
+    # Same order as whisper.load_api_key, and it has to stay that way: a
+    # preflight that names a different backend than the run will use is a
+    # preflight nobody can act on.
+    if _read_env_key("OPENROUTER_API_KEY"):
+        return True, "openrouter"
     if _read_env_key("GROQ_API_KEY"):
         return True, "groq"
     if _read_env_key("OPENAI_API_KEY"):
@@ -291,7 +318,8 @@ def cmd_check() -> int:
     if s["missing_binaries"]:
         parts.append(f"missing binaries: {', '.join(s['missing_binaries'])}")
     if not s["has_api_key"] and not s["setup_complete"]:
-        parts.append("no Whisper API key (GROQ_API_KEY or OPENAI_API_KEY)")
+        parts.append("no Whisper API key (OPENROUTER_API_KEY, GROQ_API_KEY "
+                     "or OPENAI_API_KEY)")
     installer = Path(__file__).resolve()
     sys.stderr.write(
         f"[watch] setup incomplete ({'; '.join(parts)}). "
@@ -357,9 +385,11 @@ def cmd_install() -> int:
     print("")
     print("[setup] one step left: add a Whisper API key.")
     print("")
-    print(f"  Edit {CONFIG_FILE} and set either:")
-    print("    GROQ_API_KEY=...    (preferred — cheaper, faster; get one at console.groq.com/keys)")
-    print("    OPENAI_API_KEY=...  (fallback; get one at platform.openai.com/api-keys)")
+    print(f"  Edit {CONFIG_FILE} and set one of:")
+    print("    OPENROUTER_API_KEY=...  (preferred — one balance, several providers;")
+    print("                             get one at openrouter.ai/keys)")
+    print("    GROQ_API_KEY=...        (cheap and fast; console.groq.com/keys)")
+    print("    OPENAI_API_KEY=...      (fallback; platform.openai.com/api-keys)")
     print("")
     print("  Without a key, /watch still works but videos without captions come back frames-only.")
     return 3

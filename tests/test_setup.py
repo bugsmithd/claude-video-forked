@@ -14,9 +14,13 @@ def _run(args, *, home=None, extra_env=None):
     env = dict(os.environ)
     env.pop("WATCH_DETAIL", None)
     # Don't let a real key in the developer's shell env leak into the test.
-    env.pop("GROQ_API_KEY", None)
-    env.pop("OPENAI_API_KEY", None)
-    env.pop("SETUP_COMPLETE", None)
+    # EVERY backend's variable, not the two that existed when this was written:
+    # an exported OPENROUTER_API_KEY silently turned three keyless cases into
+    # ready ones, and the tests failed on the machine that had the key rather
+    # than on the change that broke them.
+    for name in ("OPENROUTER_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY",
+                 "WHISPER_CPP_BIN", "WHISPER_CPP_MODEL", "SETUP_COMPLETE"):
+        env.pop(name, None)
     if home is not None:
         env["HOME"] = str(home)
         env["USERPROFILE"] = str(home)  # Windows

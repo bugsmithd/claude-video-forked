@@ -1,6 +1,8 @@
 """Whisper auto-chunking: plan, split, and timestamp stitching."""
 from __future__ import annotations
 
+import base64
+import json
 import math
 import subprocess
 from pathlib import Path
@@ -28,7 +30,10 @@ class TestPlanChunks:
         assert len(plan) == 3
 
     def test_chunks_are_contiguous_and_cover_full_duration(self):
-        total = 3600.0
+        # 7742s over 71 MB: a duration that does not divide evenly, which is
+        # where independently rounded offsets and durations used to leave a
+        # millisecond hole at every seam.
+        total = 7742.0
         plan = whisper.plan_chunks(total_seconds=total, total_bytes=71 * MB, max_bytes=24 * MB)
         # Offsets start at 0 and each picks up where the previous ended.
         assert plan[0][0] == 0.0
@@ -363,3 +368,143 @@ class TestTranscribeChunksWithKeeps:
 
         assert whisper.transcribe_chunks(chunks, fake_transcribe) == [
             {"start": 0.0, "end": 1.0, "text": "kept"}]
+
+
+class TestPlanBySeconds:
+    def test_short_audio_is_one_request(self):
+        assert whisper.plan_by_seconds(300.0, 600.0) == [(0.0, 300.0)]
+
+    def test_long_audio_splits_below_the_cap(self):
+        plan = whisper.plan_by_seconds(3600.0, 600.0)
+        assert len(plan) == 6
+        assert all(dur <= 600.0 for _off, dur in plan)
+
+    def test_chunks_are_contiguous_and_cover_the_duration(self):
+        total = 7742.0
+        plan = whisper.plan_by_seconds(total, 600.0)
+        assert plan[0][0] == 0.0
+        for (off, dur), (next_off, _) in zip(plan, plan[1:]):
+            assert math.isclose(off + dur, next_off)
+        assert math.isclose(plan[-1][0] + plan[-1][1], total)
+
+    def test_chunks_are_even_rather_than_max_sized(self):
+        # 3601s at a 600s cap is seven chunks of ~514s, not six of 600 plus
+        # one of 1: a one-second tail chunk is a fragment of a sentence.
+        plan = whisper.plan_by_seconds(3601.0, 600.0)
+        assert min(dur for _off, dur in plan) > 500.0
+
+    def test_a_cap_of_zero_is_refused(self):
+        with pytest.raises(ValueError):
+            whisper.plan_by_seconds(600.0, 0.0)
+
+
+class TestOpenRouterSegments:
+    """A transcript with no times must never be written, only refused."""
+
+    def test_timestamped_segments_are_read(self):
+        data = {"segments": [{"start": 1.0, "end": 2.0, "text": " hello "}]}
+        assert whisper._segments_from_response(data, allow_untimed=False) == [
+            {"start": 1.0, "end": 2.0, "text": "hello"}]
+
+    def test_text_without_segments_is_refused(self):
+        data = {"text": "a wall of words with no seconds in it"}
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "WATCH_OPENROUTER_PROVIDER" in str(caught.value)
+
+    def test_the_old_behaviour_survives_where_it_is_allowed(self):
+        data = {"text": "a wall of words"}
+        assert whisper._segments_from_response(data) == [
+            {"start": 0.0, "end": 0.0, "text": "a wall of words"}]
+
+    def test_an_empty_response_is_empty_either_way(self):
+        assert whisper._segments_from_response({}, allow_untimed=False) == []
+
+
+class TestOpenRouterBackend:
+    def test_the_key_selects_the_backend(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        assert whisper.load_api_key()[0] == "openrouter"
+
+    def test_it_is_preferred_over_groq(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
+        assert whisper.load_api_key()[0] == "openrouter"
+
+    def test_a_preference_still_wins(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
+        assert whisper.load_api_key("groq")[0] == "groq"
+
+    def test_the_second_model_is_opt_in(self, monkeypatch):
+        monkeypatch.delenv("WATCH_OPENROUTER_MODEL_2", raising=False)
+        assert whisper.second_model("openrouter") is None
+        monkeypatch.setenv("WATCH_OPENROUTER_MODEL_2", "openai/gpt-4o-transcribe")
+        assert whisper.second_model("openrouter") == "openai/gpt-4o-transcribe"
+
+    def test_no_second_model_on_a_backend_that_has_none(self):
+        assert whisper.second_model("groq") is None
+
+    def test_the_preferred_provider_is_one_of_the_documented_ones(self):
+        # OpenRouter documents verbose_json as available on these three only.
+        # Measured 2026-08-19: the pin has no effect on this endpoint and a
+        # provider outside the list returned timestamps anyway, so this asserts
+        # the preference is coherent, NOT that routing is guaranteed.
+        assert whisper.OPENROUTER_TIMESTAMPED_PROVIDERS == (
+            "openai", "groq", "together")
+        assert whisper.OPENROUTER_PROVIDER in whisper.OPENROUTER_TIMESTAMPED_PROVIDERS
+
+    def test_the_request_asks_for_timestamps_and_pins_the_provider(
+            self, monkeypatch, tmp_path):
+        """The request body is the whole contract with OpenRouter."""
+        audio = tmp_path / "a.mp3"
+        audio.write_bytes(b"\x00\x01\x02")
+        sent: dict = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"segments": [{"start": 0, "end": 1, "text": "hi"}]}'
+
+        def fake_urlopen(request, timeout=None, context=None):
+            sent["url"] = request.full_url
+            sent["body"] = json.loads(request.data)
+            sent["headers"] = request.headers
+            return FakeResponse()
+
+        monkeypatch.setattr(whisper, "urlopen", fake_urlopen)
+        out = whisper._post_openrouter("sk-or-test", "openai/whisper-large-v3",
+                                       audio)
+
+        assert out["segments"][0]["text"] == "hi"
+        assert sent["url"] == whisper.OPENROUTER_ENDPOINT
+        assert sent["body"]["response_format"] == "verbose_json"
+        assert sent["body"]["provider"]["only"] == ["groq"]
+        assert sent["body"]["provider"]["allow_fallbacks"] is False
+        assert sent["body"]["input_audio"]["format"] == "mp3"
+        assert base64.b64decode(sent["body"]["input_audio"]["data"]) == b"\x00\x01\x02"
+
+    def test_a_provider_outside_the_documented_list_is_warned_about(
+            self, monkeypatch, tmp_path, capsys):
+        audio = tmp_path / "a.mp3"
+        audio.write_bytes(b"\x00")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"segments": []}'
+
+        monkeypatch.setattr(whisper, "urlopen",
+                            lambda *a, **k: FakeResponse())
+        whisper._post_openrouter("sk", "m", audio, provider="deepinfra")
+        assert "deepinfra" in capsys.readouterr().err

@@ -224,11 +224,12 @@ The script gets a timestamped transcript in one of two ways:
 
 1. **Native captions (free, preferred).** yt-dlp pulls manual or auto-generated subtitles from the source platform if available.
 2. **Whisper fallback.** If no captions came back (or the source is a local file), the script extracts audio (`ffmpeg -vn -ac 1 -ar 16000 -b:a 64k`, ~0.5 MB/min) and transcribes it with whichever Whisper backend is configured:
-   - **Groq** — `whisper-large-v3`. Preferred default: cheaper, faster. Get a key at console.groq.com/keys.
+   - **OpenRouter** — `openai/whisper-large-v3` through one key and one balance. Preferred when `OPENROUTER_API_KEY` is set. **What the run depends on is segment timestamps, and a response without them is refused rather than written** — a transcript with no seconds in it cannot be anchored, quoted or graded. A provider preference is sent (`WATCH_OPENROUTER_PROVIDER`, default `groq`) but was measured having no effect on this endpoint: pinned to `groq`, `deepinfra` and `together` in turn, the same clip came back timestamped every time and billed at one provider's rate. Override the model with `WATCH_OPENROUTER_MODEL`. A long recording is split into `WATCH_OPENROUTER_MAX_SECONDS` (default 600) per request, because providers behind the router time out after about 60 seconds of processing. `WATCH_OPENROUTER_MODEL_2` adds an opt-in second decode written beside the first and never merged into it; prefer a different model family there, such as `openai/gpt-4o-transcribe`.
+   - **Groq** — `whisper-large-v3`. Cheap and fast. Get a key at console.groq.com/keys.
    - **OpenAI** — `whisper-1`. Fallback. Get a key at platform.openai.com/api-keys.
    - **Local whisper.cpp** — fully offline, no API key, audio never leaves the machine. Set `WHISPER_CPP_BIN` (a whisper-cli executable: a path, or a name on `PATH`) and `WHISPER_CPP_MODEL` (a ggml model file) in `~/.config/watch/.env`; optional `WHISPER_CPP_LANG` (default `auto` detects the spoken language) and `WHISPER_CPP_THREADS`. No 25 MB upload cap applies, so long videos go through in one pass; progress prints to stderr as it runs.
 
-All settings live in `~/.config/watch/.env`. The script prefers Groq, then OpenAI, then local; override with `--whisper openai` or `--whisper local` to force one. When a cloud backend fails mid-run (rate limit, network) and a local install is configured, the script automatically retries locally. Use `--no-whisper` to skip the fallback entirely.
+All settings live in `~/.config/watch/.env`. The script prefers OpenRouter, then Groq, then OpenAI, then local; override with `--whisper openrouter|groq|openai|local` to force one. When a cloud backend fails mid-run (rate limit, network) and a local install is configured, the script automatically retries locally. Use `--no-whisper` to skip the fallback entirely.
 
 ## Failure modes and handling
 
@@ -252,7 +253,8 @@ If you already watched a video this session and the user asks a follow-up, do **
 **What this skill does:**
 - Runs `yt-dlp` locally to download the video and pull native captions when the source supports them (public data; the request goes directly to whatever host the URL points at)
 - Runs `ffmpeg` / `ffprobe` locally to extract frames as JPEGs and, when Whisper is needed, a mono 16 kHz audio clip
-- Sends the extracted audio clip to Groq's Whisper API (`api.groq.com/openai/v1/audio/transcriptions`) when `GROQ_API_KEY` is set (preferred — cheaper, faster)
+- Sends the extracted audio clip to OpenRouter (`openrouter.ai/api/v1/audio/transcriptions`) when `OPENROUTER_API_KEY` is set (preferred), base64-encoded in a JSON body, routed to a pinned provider with fallbacks off
+- Sends the extracted audio clip to Groq's Whisper API (`api.groq.com/openai/v1/audio/transcriptions`) when `GROQ_API_KEY` is set and OpenRouter is not
 - Sends the extracted audio clip to OpenAI's audio transcription API (`api.openai.com/v1/audio/transcriptions`) when `OPENAI_API_KEY` is set and Groq is not, or when `--whisper openai` is forced
 - Writes the downloaded video, frames, audio, and an intermediate transcript to a working directory under the system temp dir (or `--out-dir` if specified) so Claude can `Read` them
 - Reads / creates `~/.config/watch/.env` (mode `0600`) to store the Whisper API key(s) and a `SETUP_COMPLETE` marker. As a fallback, also reads `.env` in the current working directory

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Transcribe a video via Groq or OpenAI Whisper API.
+"""Transcribe a video via OpenRouter, Groq, OpenAI, or local whisper.cpp.
 
-Strategy: extract audio (mono 16kHz mp3, tiny payload), upload to whichever
-API has a key. Returns segments in the same shape as transcribe.parse_vtt so
-the rest of the pipeline (filter_range, format_transcript) doesn't care where
-the transcript came from.
+Strategy: extract audio (mono 16kHz mp3, tiny payload), send it to whichever
+backend has a key, and fall back to a local decode when none does. Returns
+segments in the same shape as transcribe.parse_vtt so the rest of the pipeline
+(filter_range, format_transcript) doesn't care where the transcript came from.
+
+WHAT EVERY BACKEND HERE MUST RETURN IS TIMES, not words. A transcript with no
+seconds in it cannot be anchored, quoted or graded, so a route that can silently
+produce one is refused rather than written -- see `_post_openrouter`.
 
 Pure stdlib — no `pip install groq` or `pip install openai` needed.
 """
@@ -32,6 +36,48 @@ GROQ_MODEL = "whisper-large-v3"
 
 OPENAI_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions"
 OPENAI_MODEL = "whisper-1"
+
+# OpenRouter fronts several transcription providers behind one key and one
+# balance. It is OpenAI-shaped, so almost nothing below changes -- except the
+# one thing this pipeline cannot do without.
+#
+# TIMESTAMPS ARE THE WHOLE CATCH, and the documentation and the wire disagree
+# about them. OpenRouter's speech-to-text guide says `verbose_json` -- the
+# response format carrying segment timestamps -- "is only available on
+# OpenAI-compatible providers (OpenAI, Groq, Together). Other providers reject
+# it with a 400."
+#
+# MEASURED 2026-08-19, and it did not hold. Four requests for the same 4.891s
+# clip, pinned in turn to groq, deepinfra and together, all returned two
+# timestamped segments and all billed 3.66825e-05 -- which is 4.891 x
+# 0.0000075, DeepInfra's per-second rate, and 1/200th of Together's. So the
+# `provider` block below is IGNORED on this endpoint, every request went to the
+# cheapest provider, and that provider returned timestamps the documentation
+# says it refuses.
+#
+# Two consequences, and the second is the one that matters:
+#   1. Pinning a provider here is a request, not a guarantee. It is still sent,
+#      because it costs nothing and will start working if routing arrives.
+#   2. The only real guard is checking the RESPONSE for timestamps and refusing
+#      it when they are missing -- see `_segments_from_response`. A transcript
+#      with no seconds in it cannot be anchored, cited or graded, and every
+#      check downstream of this file is about a second in a recording.
+OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/audio/transcriptions"
+OPENROUTER_MODEL = "openai/whisper-large-v3"
+OPENROUTER_PROVIDER = "groq"
+# The providers OpenRouter documents as returning `verbose_json`. Kept as the
+# preference and as the text of the error message, not as a belief: the
+# measurement above found a provider outside this list returning timestamps
+# anyway. Asking for one of these is the cheap precaution; the refusal in
+# `_segments_from_response` is the check.
+OPENROUTER_TIMESTAMPED_PROVIDERS = ("openai", "groq", "together")
+# Seconds of audio per request. OpenRouter's guide: "Recordings longer than
+# about a minute of processing time should be split anyway, since upstream
+# providers time out after 60 seconds per request." Ten minutes of audio is
+# seconds of work for a batched provider and leaves a wide margin; the byte cap
+# alone would allow ~50 minutes of this pipeline's 64 kbps mono mp3 in one
+# request, which is exactly the request that times out.
+OPENROUTER_MAX_SECONDS = 600.0
 
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
@@ -86,13 +132,47 @@ def plan_chunks(
 
     n = math.ceil(total_bytes / max_bytes)
     chunk = total_seconds / n
-    plan: list[tuple[float, float]] = []
-    for i in range(n):
-        offset = i * chunk
-        # The last chunk absorbs any rounding remainder so durations sum exactly.
-        duration = (total_seconds - offset) if i == n - 1 else chunk
-        plan.append((round(offset, 3), round(duration, 3)))
-    return plan
+    # The same seam rule as `plan_by_seconds`: a duration is the distance to the
+    # next rounded offset, so consecutive chunks meet exactly. Rounding the two
+    # numbers independently left a sub-second hole at every join.
+    offsets = [round(i * chunk, 3) for i in range(n)]
+    return [
+        (offsets[i],
+         round((offsets[i + 1] if i + 1 < n else total_seconds) - offsets[i], 3))
+        for i in range(n)
+    ]
+
+
+def plan_by_seconds(total_seconds: float,
+                    max_seconds: float) -> list[tuple[float, float]]:
+    """Split a duration into contiguous (offset, duration) chunks of at most
+    `max_seconds`, evenly sized.
+
+    Separate from `plan_chunks` because the two limits are different animals: a
+    byte cap is about what an upload accepts, a second cap is about how long a
+    provider will work before it gives up. This pipeline's audio is small enough
+    that the byte cap alone would hand a provider fifty minutes in one request.
+
+    Evenly sized rather than max-sized: eight chunks of nine minutes retry
+    better than seven of ten plus one of two, and the tail chunk is the one most
+    likely to be a fragment of a sentence.
+    """
+    if max_seconds <= 0:
+        raise ValueError(f"a chunk of {max_seconds}s holds no audio")
+    if total_seconds <= max_seconds or total_seconds <= 0:
+        return [(0.0, total_seconds)]
+
+    n = math.ceil(total_seconds / max_seconds)
+    chunk = total_seconds / n
+    # EACH DURATION IS THE GAP TO THE NEXT ROUNDED OFFSET, not the unrounded
+    # chunk length. Rounding offset and duration independently leaves a
+    # millisecond gap or overlap at every seam -- a few words a file, silently.
+    offsets = [round(i * chunk, 3) for i in range(n)]
+    return [
+        (offsets[i],
+         round((offsets[i + 1] if i + 1 < n else total_seconds) - offsets[i], 3))
+        for i in range(n)
+    ]
 
 
 def plan_windows(
@@ -271,13 +351,19 @@ def _read_config_value(name: str) -> str | None:
 
 
 def load_api_key(preferred: str | None = None) -> tuple[str, str] | tuple[None, None]:
-    """Return (backend, api_key). Prefers Groq, then OpenAI, then local whisper.cpp.
+    """Return (backend, api_key). OpenRouter, then Groq, then OpenAI, then local.
 
-    If `preferred` is "groq", "openai", or "local", only that backend is
-    considered. For the "local" backend the second tuple element is the path to
-    the whisper.cpp binary (WHISPER_CPP_BIN) rather than an API key.
+    If `preferred` is "openrouter", "groq", "openai", or "local", only that
+    backend is considered. For the "local" backend the second tuple element is
+    the path to the whisper.cpp binary (WHISPER_CPP_BIN) rather than an API key.
+
+    OpenRouter sits first because setting its key is already a decision to pay
+    for transcription, and because a hosted decode has not been measured
+    collapsing the way a long local one does. Having no key at all remains the
+    normal state, and the local backend remains the one that needs nothing.
     """
     candidates = (
+        ("OPENROUTER_API_KEY", "openrouter"),
         ("GROQ_API_KEY", "groq"),
         ("OPENAI_API_KEY", "openai"),
         ("WHISPER_CPP_BIN", "local"),
@@ -487,6 +573,101 @@ def _post_whisper(endpoint: str, api_key: str, model: str, audio_path: Path) -> 
     )
 
 
+def _post_openrouter(api_key: str, model: str, audio_path: Path,
+                     provider: str | None = None) -> dict:
+    """One transcription request to OpenRouter, on the base64 JSON path.
+
+    THE JSON PATH RATHER THAN MULTIPART, because only the JSON body documents a
+    `provider` object. Base64 costs a third more bytes on the wire -- about
+    1.5 MB extra on a ten-minute chunk of this pipeline's 64 kbps mono mp3.
+
+    The `provider` block was MEASURED HAVING NO EFFECT on this endpoint (see the
+    note beside OPENROUTER_PROVIDER: three different pins, one provider's
+    price). It is sent anyway because it costs nothing and documents the intent,
+    and because routing arriving later should not need a code change. What
+    actually protects the run is the caller asking `_segments_from_response` to
+    refuse a response with no timestamps in it.
+    """
+    import base64
+
+    provider = provider or OPENROUTER_PROVIDER
+    if provider not in OPENROUTER_TIMESTAMPED_PROVIDERS:
+        print(
+            f"[watch] WATCH_OPENROUTER_PROVIDER={provider!r} is outside the "
+            f"providers OpenRouter documents as returning segment timestamps "
+            f"({', '.join(OPENROUTER_TIMESTAMPED_PROVIDERS)}). One outside it "
+            f"returned them anyway when this was measured, so this is a "
+            f"heads-up and not a refusal; a response without timestamps is "
+            f"what gets refused.",
+            file=sys.stderr,
+        )
+
+    payload = {
+        "model": model,
+        "input_audio": {
+            "data": base64.b64encode(audio_path.read_bytes()).decode("ascii"),
+            "format": audio_path.suffix.lstrip(".").lower() or "mp3",
+        },
+        "response_format": "verbose_json",
+        "temperature": 0,
+        "provider": {"only": [provider], "order": [provider],
+                     "allow_fallbacks": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "watch-skill/1.0 (+claude-code; python-urllib)",
+        # Identifies the caller on OpenRouter's dashboards. Optional there,
+        # useful when a bill needs explaining.
+        "X-Title": "watch-skill",
+    }
+
+    context = ssl.create_default_context()
+    last_exc: Exception | None = None
+    last_detail = ""
+    for attempt in range(MAX_ATTEMPTS):
+        request = Request(OPENROUTER_ENDPOINT, data=body, headers=headers,
+                          method="POST")
+        try:
+            with urlopen(request, timeout=300, context=context) as response:
+                payload_text = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            detail = _read_error_body(exc)
+            last_exc, last_detail = exc, detail
+            if exc.code == 400:
+                raise SystemExit(
+                    f"OpenRouter rejected the request: {exc}{detail}\n"
+                    f"If it names response_format, the provider {provider!r} "
+                    f"does not return segment timestamps. Set "
+                    f"WATCH_OPENROUTER_PROVIDER to one of "
+                    f"{', '.join(OPENROUTER_TIMESTAMPED_PROVIDERS)}."
+                )
+            if 400 <= exc.code < 500 and exc.code != 429:
+                raise SystemExit(f"OpenRouter request failed: {exc}{detail}")
+            delay = (_retry_after(exc) or RETRY_BASE_DELAY * (2 ** attempt))
+        except (urllib.error.URLError, TimeoutError, ConnectionResetError,
+                OSError) as exc:
+            last_exc, last_detail = exc, ""
+            delay = RETRY_BASE_DELAY * (attempt + 1)
+        else:
+            try:
+                return json.loads(payload_text)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(
+                    f"OpenRouter returned non-JSON: {exc}: {payload_text[:200]}")
+
+        if attempt < MAX_ATTEMPTS - 1:
+            print(f"[watch] openrouter error ({last_exc}) — retrying in "
+                  f"{delay:.1f}s (attempt {attempt + 2}/{MAX_ATTEMPTS})",
+                  file=sys.stderr)
+            time.sleep(delay)
+
+    raise SystemExit(
+        f"OpenRouter request failed after {MAX_ATTEMPTS} attempts: "
+        f"{last_exc}{last_detail}")
+
+
 def _read_error_body(exc: urllib.error.HTTPError) -> str:
     try:
         body = exc.read()
@@ -528,8 +709,16 @@ def shift_segments(segments: list[dict], offset_seconds: float) -> list[dict]:
     ]
 
 
-def _segments_from_response(data: dict) -> list[dict]:
-    """Convert Whisper verbose_json into our {start, end, text} segment format."""
+def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict]:
+    """Convert Whisper verbose_json into our {start, end, text} segment format.
+
+    `allow_untimed` decides what happens when the response carries text but no
+    segments. The old behaviour -- one segment spanning 0.0 to 0.0 holding the
+    whole transcript -- keeps a caller working, and it also produces a file that
+    every downstream check will grade as if it had times. On a route where an
+    untimed response means the request was routed to the wrong provider, that is
+    a silent wrong answer, so that route asks for it to be refused instead.
+    """
     out: list[dict] = []
     for seg in data.get("segments") or []:
         text = (seg.get("text") or "").strip()
@@ -543,6 +732,15 @@ def _segments_from_response(data: dict) -> list[dict]:
 
     if not out:
         full = (data.get("text") or "").strip()
+        if full and not allow_untimed:
+            raise SystemExit(
+                f"the transcription came back with text and no segment "
+                f"timestamps ({len(full)} characters). Nothing downstream can "
+                f"anchor, cite or grade a transcript with no seconds in it, so "
+                f"this is refused rather than written. Set "
+                f"WATCH_OPENROUTER_PROVIDER to one of "
+                f"{', '.join(OPENROUTER_TIMESTAMPED_PROVIDERS)}."
+            )
         if full:
             out.append({"start": 0.0, "end": 0.0, "text": full})
 
@@ -742,6 +940,14 @@ def _transcribe_file(backend: str, api_key: str, audio_path: Path,
         response = _post_whisper(GROQ_ENDPOINT, api_key, GROQ_MODEL, audio_path)
     elif backend == "openai":
         response = _post_whisper(OPENAI_ENDPOINT, api_key, OPENAI_MODEL, audio_path)
+    elif backend == "openrouter":
+        response = _post_openrouter(
+            api_key,
+            model_override or _read_config_value("WATCH_OPENROUTER_MODEL")
+            or OPENROUTER_MODEL,
+            audio_path,
+            _read_config_value("WATCH_OPENROUTER_PROVIDER"))
+        return _segments_from_response(response, allow_untimed=False)
     elif backend == "local":
         return _run_whisper_cpp(api_key, audio_path, model_override)
     else:
@@ -784,6 +990,27 @@ def second_model_path() -> str | None:
     return _read_config_value("WHISPER_CPP_MODEL_2")
 
 
+def second_model(backend: str) -> str | None:
+    """The model for the second decode on this backend, or None.
+
+    Opt-in on every backend, because a second decode doubles both the wall clock
+    and, on a paid route, the bill.
+
+    ON THE PAID ROUTE THE SECOND MODEL CAN BE A DIFFERENT FAMILY, and that is
+    worth more than a second whisper. Two whisper variants are one witness class
+    counted twice -- the thing this repo keeps re-learning. `openai/whisper-1`
+    and `openai/gpt-4o-transcribe` are both reachable through the same key, and
+    the second is a different architecture rather than another size of the same
+    one. Set WATCH_OPENROUTER_MODEL_2 to whichever you want; nothing is chosen
+    for you, and neither rendering is merged into the other.
+    """
+    if backend == "local":
+        return second_model_path()
+    if backend == "openrouter":
+        return _read_config_value("WATCH_OPENROUTER_MODEL_2")
+    return None
+
+
 def write_rendering(path: Path, backend: str, model: str | None,
                     segments: list[dict]) -> Path:
     """Write one decode where `wq-transcript-align` can read it."""
@@ -811,7 +1038,8 @@ def transcribe_video(
     if not backend or not api_key:
         setup_py = Path(__file__).resolve().parent / "setup.py"
         raise SystemExit(
-            "No Whisper backend available. Set GROQ_API_KEY (preferred) or OPENAI_API_KEY, "
+            "No Whisper backend available. Set OPENROUTER_API_KEY (preferred), "
+            "GROQ_API_KEY or OPENAI_API_KEY, "
             "or WHISPER_CPP_BIN + WHISPER_CPP_MODEL for offline whisper.cpp, "
             "in the environment or in ~/.config/watch/.env. "
             f"Run `python3 {setup_py}` to configure."
@@ -877,6 +1105,32 @@ def transcribe_video(
                 keeps=[(keep_from, keep_to) for _, _, keep_from, keep_to in windows],
                 retry_window=retry_window)
 
+        # SPLIT BY TIME, not only by size, on the routed cloud path. The
+        # provider behind OpenRouter times out after 60 seconds of processing,
+        # and this pipeline's audio is small enough that the byte cap would let
+        # a single request carry the better part of an hour.
+        if backend == "openrouter":
+            max_seconds = _config_float("WATCH_OPENROUTER_MAX_SECONDS",
+                                        OPENROUTER_MAX_SECONDS)
+            duration = audio_duration(audio_path)
+            try:
+                plan = plan_by_seconds(duration, max_seconds)
+            except ValueError as exc:
+                raise SystemExit(f"WATCH_OPENROUTER_MAX_SECONDS: {exc}")
+            if len(plan) == 1:
+                print(f"[watch] audio: {duration:.0f}s — one request to "
+                      f"openrouter…", file=sys.stderr)
+                return transcribe_one(audio_path)
+            print(
+                f"[watch] audio: {duration:.0f}s — {len(plan)} requests of "
+                f"about {plan[0][1]:.0f}s each; one long request is what the "
+                f"provider times out on",
+                file=sys.stderr,
+            )
+            return transcribe_chunks(
+                split_audio(audio_path, audio_out.parent / work_name, plan),
+                transcribe_one)
+
         if audio_bytes <= MAX_UPLOAD_BYTES:
             verb = "transcribing locally with" if backend == "local" else "uploading to"
             print(
@@ -902,11 +1156,14 @@ def transcribe_video(
 
     print(f"[watch] transcribed {len(segments)} segments via {backend}", file=sys.stderr)
 
-    second = second_model_path() if backend == "local" else None
+    second = second_model(backend)
     if second:
+        first_model = (_read_config_value("WHISPER_CPP_MODEL")
+                       if backend == "local"
+                       else _read_config_value("WATCH_OPENROUTER_MODEL")
+                       or OPENROUTER_MODEL)
         first_path = write_rendering(
-            audio_out.parent / "transcript-1.json", backend,
-            _read_config_value("WHISPER_CPP_MODEL"), segments)
+            audio_out.parent / "transcript-1.json", backend, first_model, segments)
         # A second decode that dies must not take the first one's transcript
         # with it. A run with one rendering is worse than a run with two and
         # says so; a run with none is a wasted download.
@@ -930,7 +1187,8 @@ def transcribe_video(
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("usage: whisper.py <video-path> [<audio-out.mp3>] [--backend groq|openai]", file=sys.stderr)
+        print("usage: whisper.py <video-path> [<audio-out.mp3>] "
+              "[--backend openrouter|groq|openai|local]", file=sys.stderr)
         raise SystemExit(2)
 
     video = sys.argv[1]
