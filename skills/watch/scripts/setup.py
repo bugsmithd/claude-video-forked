@@ -58,11 +58,13 @@ OPENAI_API_KEY=
 #
 # Get a key:  https://openrouter.ai/keys
 #
-# WHAT MATTERS HERE IS TIMESTAMPS. A transcript with no seconds in it cannot be
-# anchored, quoted or graded, so /watch refuses a response without them rather
-# than writing it. The provider preference below is sent as a request and was
-# measured having no effect on this endpoint (every pin billed at the cheapest
-# provider's rate), so treat it as documentation of intent, not a guarantee.
+# WHAT MATTERS HERE IS TIMESTAMPS, and there are two ways to lose them. A
+# response with no seconds at all is refused. So is one whose seconds are too
+# coarse to point at anything — a single segment covering minutes places every
+# claim inside a stretch nobody can check. The provider preference below is sent
+# as a request and was measured having no effect on this endpoint (every pin
+# billed at the cheapest provider's rate), so treat it as documentation of
+# intent, not a guarantee.
 # OPENROUTER_API_KEY=
 # WATCH_OPENROUTER_MODEL=openai/whisper-large-v3
 # WATCH_OPENROUTER_PROVIDER=groq
@@ -71,8 +73,11 @@ OPENAI_API_KEY=
 # WATCH_OPENROUTER_MAX_SECONDS=600
 # A SECOND decode, opt-in, written beside the first and never merged into it.
 # Prefer a different model family here: two whisper variants are one witness
-# counted twice, and this doubles the bill.
-# WATCH_OPENROUTER_MODEL_2=openai/gpt-4o-transcribe
+# counted twice, and this doubles the bill. Qwen3-ASR is the one measured
+# working through this key. Its timestamps are coarse, which is fine in THIS
+# slot and refused in the one above: a second witness is read for the words it
+# disagrees about, and every stamp comes from the first decode.
+# WATCH_OPENROUTER_MODEL_2=Qwen/Qwen3-ASR-1.7B
 
 # Fully local, offline transcription via whisper.cpp — no API key, audio never
 # leaves the machine. Point these at a whisper-cli executable and a ggml model

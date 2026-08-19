@@ -64,6 +64,8 @@ ALLOW: dict[str, str] = {
                    "inherited with the fork and present in no private corpus",
     "colorE5E5E5": "a WebVTT cue-tag colour class, not an id -- the shape test "
                    "cannot tell hex from base64 and is not asked to",
+    "Qwen3-ASR-1": "the first eleven characters of the Qwen/Qwen3-ASR-1.7B "
+                   "model slug, a published name on a public model router",
 }
 
 # What counts as a published file. Everything in a public repository is
@@ -147,6 +149,11 @@ def selftest() -> int:
     check("an id in a comment is caught too",
           n_hits("# measured on Hd5Jq7Vt1Nz"), 1)
     check("an allowed fixture passes", n_hits('"-Xk4Rm2Qp7Z"'), 0)
+    # A PUBLISHED MODEL SLUG has the shape and none of the risk, and this is the
+    # first false positive that could not be reworded away: the eleven
+    # characters between the slash and the dot are the model's name.
+    check("a model slug passes",
+          n_hits('MODEL_2 = "Qwen/Qwen3-ASR-1.7B"'), 0)
     # Shape, not vocabulary: these are the near-misses that would make the gate
     # unusable if it fired on them.
     check("an all-lower word passes", n_hits("resolve_note"), 0)

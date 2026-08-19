@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import ssl
+import statistics
 import subprocess
 import sys
 import time
@@ -78,6 +79,31 @@ OPENROUTER_TIMESTAMPED_PROVIDERS = ("openai", "groq", "together")
 # alone would allow ~50 minutes of this pipeline's 64 kbps mono mp3 in one
 # request, which is exactly the request that times out.
 OPENROUTER_MAX_SECONDS = 600.0
+
+# HOW COARSE A RENDERING IS ALLOWED TO BE, which is a different question from
+# whether it has timestamps at all and was learned the hard way.
+#
+# MEASURED 2026-08-19 through OpenRouter, same script read twice at two lengths:
+#                             29.6s clip                 89.5s clip
+#   openai/whisper-large-v3   8 segments, median 2.26s   17 segments, median 3.06s
+#   Qwen/Qwen3-ASR-1.7B       2 segments, median 14.81s   4 segments, median 27.30s
+# Both pass the refusal in `_segments_from_response`, because both carry
+# timestamps. Only one of them can be anchored. A rendering whose typical
+# segment is half a minute says a thing was said somewhere in a paragraph, and
+# every check downstream of this file is about a second.
+#
+# THE DISCRIMINATOR IS THE MEDIAN SEGMENT, and the first attempt at this rule
+# got it wrong. Measuring the share of the request its LONGEST segment covers
+# separated the two models at 29.6s (27% against 93%) and stopped separating
+# them at 89.5s (31% against 31%), because the coarse model's segments cap out
+# around 27s while the request keeps growing. A share that shrinks as the file
+# grows is a gate that fires on short files and sleeps on long ones -- exactly
+# backwards. The median does not move with length: 2-3s against 15-27s at both.
+#
+# Below `COARSE_MIN_SECONDS` the rule is off. On a tail chunk that short, one
+# blob costs at most half a minute of anchor precision.
+COARSE_MEDIAN_SECONDS = 10.0
+COARSE_MIN_SECONDS = 30.0
 
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
@@ -929,30 +955,79 @@ def _run_whisper_cpp(bin_path: str, audio_path: Path,
     return segments
 
 
+def segment_shape(segments: list[dict]) -> tuple[float, float, float]:
+    """(median segment seconds, longest segment seconds, span covered).
+
+    The span is measured from the segments themselves rather than from the
+    audio, so this needs nothing but what came back.
+    """
+    if not segments:
+        return 0.0, 0.0, 0.0
+    spans = sorted(s["end"] - s["start"] for s in segments)
+    return (statistics.median(spans), spans[-1],
+            segments[-1]["end"] - segments[0]["start"])
+
+
+def check_granularity(segments: list[dict], model: str | None,
+                      *, refuse: bool) -> None:
+    """Stop a rendering too coarse to anchor -- or, on a second decode, say so.
+
+    THE SECOND DECODE IS ALLOWED TO BE COARSE and the first is not, because the
+    two are read for different things. `wq-transcript-align` stamps every
+    divergence from the BASE rendering's clock; the other decode contributes
+    words, and its own timestamps are never used for a stamp. So a coarse model
+    is a usable second witness and an unusable primary.
+    """
+    median, longest, covered = segment_shape(segments)
+    if covered <= COARSE_MIN_SECONDS or median <= COARSE_MEDIAN_SECONDS:
+        return
+
+    detail = (f"{model or 'the model'} returned {len(segments)} segment(s) for "
+              f"{covered:.0f}s of audio; the typical one spans {median:.0f}s "
+              f"and the longest {longest:.0f}s")
+    if refuse:
+        raise SystemExit(
+            f"the transcription is too coarse to anchor: {detail}. A claim can "
+            f"only be cited to a second, and this one places everything inside "
+            f"a stretch tens of seconds long. Use a model that segments -- "
+            f"{OPENROUTER_MODEL} does, at a typical 2-3s -- or keep this one as "
+            f"WATCH_OPENROUTER_MODEL_2, where coarse timestamps do no harm.")
+    print(f"[watch] second decode is coarse: {detail}. Fine for cross-checking "
+          f"words, which is all it is read for; its own stamps are not used.",
+          file=sys.stderr)
+
+
 def _transcribe_file(backend: str, api_key: str, audio_path: Path,
                      model_override: str | None = None) -> list[dict]:
     """Transcribe one audio file and return its 0-based segments.
 
     For cloud backends `api_key` is the API key; for "local" it is the
-    whisper.cpp binary path.
+    whisper.cpp binary path. `model_override` set means this is the SECOND
+    decode, which is held to a looser bar -- see `check_granularity`.
     """
     if backend == "groq":
-        response = _post_whisper(GROQ_ENDPOINT, api_key, GROQ_MODEL, audio_path)
+        model = GROQ_MODEL
+        segments = _segments_from_response(
+            _post_whisper(GROQ_ENDPOINT, api_key, GROQ_MODEL, audio_path))
     elif backend == "openai":
-        response = _post_whisper(OPENAI_ENDPOINT, api_key, OPENAI_MODEL, audio_path)
+        model = OPENAI_MODEL
+        segments = _segments_from_response(
+            _post_whisper(OPENAI_ENDPOINT, api_key, OPENAI_MODEL, audio_path))
     elif backend == "openrouter":
-        response = _post_openrouter(
-            api_key,
-            model_override or _read_config_value("WATCH_OPENROUTER_MODEL")
-            or OPENROUTER_MODEL,
-            audio_path,
-            _read_config_value("WATCH_OPENROUTER_PROVIDER"))
-        return _segments_from_response(response, allow_untimed=False)
+        model = (model_override or _read_config_value("WATCH_OPENROUTER_MODEL")
+                 or OPENROUTER_MODEL)
+        segments = _segments_from_response(
+            _post_openrouter(api_key, model, audio_path,
+                             _read_config_value("WATCH_OPENROUTER_PROVIDER")),
+            allow_untimed=False)
     elif backend == "local":
-        return _run_whisper_cpp(api_key, audio_path, model_override)
+        model = model_override or _read_config_value("WHISPER_CPP_MODEL")
+        segments = _run_whisper_cpp(api_key, audio_path, model_override)
     else:
         raise SystemExit(f"Unknown whisper backend: {backend}")
-    return _segments_from_response(response)
+
+    check_granularity(segments, model, refuse=model_override is None)
+    return segments
 
 
 def _config_float(name: str, default: float) -> float:
@@ -998,11 +1073,20 @@ def second_model(backend: str) -> str | None:
 
     ON THE PAID ROUTE THE SECOND MODEL CAN BE A DIFFERENT FAMILY, and that is
     worth more than a second whisper. Two whisper variants are one witness class
-    counted twice -- the thing this repo keeps re-learning. `openai/whisper-1`
-    and `openai/gpt-4o-transcribe` are both reachable through the same key, and
-    the second is a different architecture rather than another size of the same
-    one. Set WATCH_OPENROUTER_MODEL_2 to whichever you want; nothing is chosen
-    for you, and neither rendering is merged into the other.
+    counted twice -- the thing this repo keeps re-learning.
+
+    `Qwen/Qwen3-ASR-1.7B` is the one measured here: reachable through the same
+    key, a different architecture rather than another size of the same one, and
+    the same 3.7e-05 for a five-second clip. Its timestamps are COARSE -- one
+    segment covering 93% of a half-minute clip where whisper-large-v3 returned
+    eight -- which is why it belongs in this slot and not the other one. A
+    second witness is read for the words it disagrees about; the stamps come
+    from the base rendering. `qwen/qwen3-asr` and `qwen/qwen3-asr-flash` are
+    also live but reject `verbose_json` outright, so they are refused before
+    anything is written.
+
+    Set WATCH_OPENROUTER_MODEL_2 to whichever you want; nothing is chosen for
+    you, and neither rendering is merged into the other.
     """
     if backend == "local":
         return second_model_path()

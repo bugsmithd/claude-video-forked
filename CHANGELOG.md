@@ -6,6 +6,41 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.6.1] — 2026-08-19
+
+### Added
+- **A second way to lose timestamps, and a gate for it.** A response can carry
+  segment times and still be unanchorable. `Qwen/Qwen3-ASR-1.7B` returns a
+  typical segment of 15-27 seconds where `openai/whisper-large-v3` returns 2-3;
+  both pass the has-timestamps refusal, and only one can be cited to a second.
+  The primary decode now refuses a rendering whose median segment exceeds
+  10 seconds, and the second decode only warns — a second witness is read for
+  the words it disagrees about, and every stamp comes from the first decode.
+- `Qwen/Qwen3-ASR-1.7B` is documented as the second witness for
+  `WATCH_OPENROUTER_MODEL_2`, measured live through the same key at the same
+  price. `qwen/qwen3-asr` and `qwen/qwen3-asr-flash` are live too and reject
+  `verbose_json` outright, so they are refused before anything is written.
+
+### Notes
+- The first version of this gate judged the SHARE of a request covered by its
+  longest segment. It separated the two models on a 30-second clip (27% against
+  93%) and stopped separating them on a 90-second one (31% against 31%), because
+  the coarse model's segments cap out near 27s while the request keeps growing —
+  a gate that fires on short files and sleeps on long ones. The median does not
+  move with length and replaced it before either shipped.
+
+## [watch-quality 0.4.1] — 2026-08-19
+
+The plugin's own version moves separately; see 0.6.1 above.
+
+### Fixed
+- `wq-corpus-scan` called `Qwen/Qwen3-ASR-1.7B` a video id. The eleven
+  characters between the slash and the dot have exactly the shape the gate
+  refuses, and this is the first false positive that could not be reworded away
+  — a model's published name is the one string that has to appear verbatim. It
+  is allowed by name, with its reason, and has a selftest case. A floor that is
+  permanently red is a floor everyone learns to step over.
+
 ## [watch-quality 0.4.0] — 2026-08-19
 
 The plugin stays at 0.5.0: nothing under `skills/watch/` changed.

@@ -508,3 +508,80 @@ class TestOpenRouterBackend:
                             lambda *a, **k: FakeResponse())
         whisper._post_openrouter("sk", "m", audio, provider="deepinfra")
         assert "deepinfra" in capsys.readouterr().err
+
+
+def _segments(spans):
+    return [{"start": a, "end": b, "text": "x"} for a, b in spans]
+
+
+class TestGranularity:
+    """Timestamps a run cannot point with are the second way to lose them.
+
+    Measured 2026-08-19 through OpenRouter, one script read at two lengths:
+    whisper-large-v3 gave a median segment of 2.26s and 3.06s, Qwen3-ASR-1.7B
+    14.81s and 27.30s. Both carry timestamps. Only one can be anchored.
+    """
+
+    def test_a_normal_rendering_passes(self):
+        # Whisper's shape: many short segments over a long file.
+        spans = [(i * 5.0, i * 5.0 + 4.5) for i in range(40)]
+        whisper.check_granularity(_segments(spans), "whisper", refuse=True)
+
+    def test_a_coarse_rendering_is_refused(self):
+        with pytest.raises(SystemExit) as caught:
+            whisper.check_granularity(
+                _segments([(0.0, 27.6), (27.6, 54.9), (54.9, 82.2),
+                           (82.2, 89.46)]), "coarse/model", refuse=True)
+        assert "too coarse to anchor" in str(caught.value)
+        assert "coarse/model" in str(caught.value)
+
+    def test_the_same_rendering_only_warns_on_a_second_decode(self, capsys):
+        whisper.check_granularity(
+            _segments([(0.0, 27.6), (27.6, 54.9), (54.9, 82.2),
+                       (82.2, 89.46)]), "coarse/model", refuse=False)
+        assert "coarse" in capsys.readouterr().err
+
+    def test_a_short_clip_is_left_alone(self):
+        # One segment covering all of it, under the floor: a tail chunk that
+        # short costs at most half a minute, so the rule is off.
+        whisper.check_granularity(_segments([(0.0, 29.6)]), "m", refuse=True)
+
+    def test_an_empty_rendering_is_not_a_granularity_problem(self):
+        whisper.check_granularity([], "m", refuse=True)
+
+    def test_the_median_separates_the_two_at_both_lengths(self):
+        """The rule this replaced did not, which is why it is the median.
+
+        Judging the SHARE of the request covered by the longest segment
+        separated these two at 29.6s and stopped separating them at 89.5s --
+        31% against 31% -- because the coarse model's segments cap out near 27s
+        while the request keeps growing. These are the measured shapes.
+        """
+        short_whisper = _segments([(0.0, 1.56), (1.89, 7.97), (8.28, 11.24),
+                                   (11.52, 13.02), (13.3, 17.0), (17.2, 21.0),
+                                   (21.2, 25.0), (25.2, 29.61)])
+        short_qwen = _segments([(0.0, 27.6), (27.6, 29.63)])
+        long_whisper = _segments([(i * 5.26, i * 5.26 + 3.06)
+                                  for i in range(17)])
+        long_qwen = _segments([(0.0, 27.6), (27.6, 54.9), (54.9, 82.2),
+                               (82.2, 89.46)])
+
+        for fine, coarse in ((short_whisper, short_qwen),
+                             (long_whisper, long_qwen)):
+            assert whisper.segment_shape(fine)[0] < whisper.COARSE_MEDIAN_SECONDS
+            assert whisper.segment_shape(coarse)[0] > whisper.COARSE_MEDIAN_SECONDS
+
+    def test_the_second_decode_is_the_one_that_may_be_coarse(self, monkeypatch,
+                                                             tmp_path, capsys):
+        """`model_override` set means second decode, and only it survives."""
+        audio = tmp_path / "a.mp3"
+        audio.write_bytes(b"\x00")
+        blob = {"segments": [{"start": 0.0, "end": 600.0, "text": "everything"}]}
+        monkeypatch.setattr(whisper, "_post_openrouter", lambda *a, **k: blob)
+        monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
+
+        assert whisper._transcribe_file("openrouter", "sk", audio,
+                                        "Qwen/Qwen3-ASR-1.7B")
+        assert "coarse" in capsys.readouterr().err
+        with pytest.raises(SystemExit):
+            whisper._transcribe_file("openrouter", "sk", audio)
