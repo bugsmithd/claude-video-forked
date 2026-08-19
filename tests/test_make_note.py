@@ -148,6 +148,24 @@ def test_rehome_moves_the_directory_and_fixes_the_paths(tmp_path: Path):
     assert dl["subtitle_path"].startswith(str(target))
 
 
+def test_rehome_takes_the_staging_dir_with_it(tmp_path: Path):
+    """`pending/` is scaffolding, and scaffolding left standing after every URL
+    run reads like a second run that failed."""
+    work = tmp_path / "pending" / "run-01"
+    work.mkdir(parents=True)
+    notemode.rehome(work, tmp_path / "abc123" / "run-01", {})
+    assert not (tmp_path / "pending").exists()
+
+
+def test_rehome_leaves_a_staging_dir_another_run_is_using(tmp_path: Path):
+    work = tmp_path / "pending" / "run-01"
+    work.mkdir(parents=True)
+    inflight = tmp_path / "pending" / "run-02"
+    inflight.mkdir()
+    notemode.rehome(work, tmp_path / "abc123" / "run-01", {})
+    assert inflight.is_dir()
+
+
 def test_rehome_keeps_the_run_when_the_move_fails(tmp_path: Path):
     """Losing a run to a tidy-up is the one failure this mode cannot have."""
     work = tmp_path / "pending" / "run-01"

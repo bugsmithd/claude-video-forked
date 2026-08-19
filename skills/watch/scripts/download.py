@@ -124,6 +124,15 @@ def _read_info(info_path: Path, url: str) -> dict:
         try:
             raw = json.loads(info_path.read_text(encoding="utf-8"))
             info = {
+                # `id` IS LOAD-BEARING, not metadata. Note mode names a run
+                # directory after it, and while this projection dropped the key
+                # every URL run fell through to the fallback meant for local
+                # files -- `--make-note` on a YouTube link filed itself under
+                # `local-<digest of the URL>` and reported nothing wrong.
+                # video_id_of's unit test passed throughout, because it was
+                # handed a dict this function never produced.
+                "id": raw.get("id"),
+                "display_id": raw.get("display_id"),
                 "title": raw.get("title"),
                 "uploader": raw.get("uploader") or raw.get("channel"),
                 "duration": raw.get("duration"),

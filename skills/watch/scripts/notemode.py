@@ -78,6 +78,13 @@ def rehome(work: Path, target: Path, dl: dict) -> Path:
         value = dl.get(key)
         if isinstance(value, str) and value.startswith(str(work)):
             dl[key] = str(target) + value[len(str(work)):]
+    # The staging parent has served its purpose. rmdir and not rmtree, because
+    # it must refuse when another run is staging under it right now; a run in
+    # flight is exactly what the tidy-up may not touch.
+    try:
+        work.parent.rmdir()
+    except OSError:
+        pass
     return target
 
 

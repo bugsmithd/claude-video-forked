@@ -10,6 +10,7 @@ for the original track plus English as a fallback, which resolves to two tracks
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "skills" / "watch" / "scr
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import download  # noqa: E402
+import notemode  # noqa: E402
 
 URL = "https://www.youtube.com/watch?v=rlOpbu3Enkw"
 
@@ -76,3 +78,50 @@ def test_pick_subtitle_prefers_original_over_translation(tmp_path):
     for name in ("video.en.vtt", "video.tr-orig.vtt"):
         (tmp_path / name).write_text("WEBVTT\n", encoding="utf-8")
     assert download._pick_subtitle(tmp_path).name == "video.tr-orig.vtt"
+
+
+# --- what the projection is allowed to drop ----------------------------------
+# `_read_info` narrows yt-dlp's info.json down to the handful of fields the
+# report and the run record read. Narrowing is right, and it is also silent: a
+# key dropped here fails somewhere that never mentions download.py. `id` was
+# dropped, so `--make-note` on a YouTube link filed its run under
+# `local-<digest>` and reported no error at all. `video_id_of`'s own unit test
+# passed the whole time, because it was handed a dict this function never
+# produces. These go through the real json instead.
+
+def _info_json(tmp_path: Path, **fields) -> Path:
+    path = tmp_path / "video.info.json"
+    path.write_text(json.dumps(fields), encoding="utf-8")
+    return path
+
+
+def test_the_platform_id_survives_the_projection(tmp_path: Path):
+    info = download._read_info(
+        _info_json(tmp_path, id="dQw4w9WgXcQ", display_id="dQw4w9WgXcQ",
+                   title="A Tutorial", uploader="Someone", duration=562.9,
+                   webpage_url=URL),
+        URL)
+    assert info["id"] == "dQw4w9WgXcQ"
+
+
+def test_a_url_run_is_named_after_the_video_not_a_digest(tmp_path: Path):
+    """The composition, which is where the defect lived: each half was right
+    and the pair was not."""
+    info = download._read_info(
+        _info_json(tmp_path, id="dQw4w9WgXcQ", title="A Tutorial",
+                   webpage_url=URL),
+        URL)
+    assert notemode.video_id_of(URL, info) == "dQw4w9WgXcQ"
+
+
+def test_display_id_alone_still_names_the_run(tmp_path: Path):
+    """Both keys are carried, and each has to earn its line: some extractors
+    give `display_id` and no `id` at all."""
+    info = download._read_info(
+        _info_json(tmp_path, display_id="some-slug", title="A Tutorial"), URL)
+    assert notemode.video_id_of(URL, info) == "some-slug"
+
+
+def test_a_source_with_no_id_still_falls_back(tmp_path: Path):
+    info = download._read_info(_info_json(tmp_path, title="A Tutorial"), URL)
+    assert notemode.video_id_of(URL, info).startswith("local-")
