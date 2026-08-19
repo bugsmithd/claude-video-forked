@@ -12,5 +12,12 @@ htmlcov/
 # build artifact from scripts/build-skill.sh
 /dist/
 
+# Setuptools writes this beside the source, and its PKG-INFO carries a version.
+# A committed copy goes stale the moment pyproject.toml is bumped, and then it
+# SHADOWS the installed metadata for anything run with src/ on PYTHONPATH: one
+# tracked at 0.2.0 against a pyproject at 0.4.2 failed every note in a corpus
+# with E-GRADE-STALE — thirty defects, none of them real.
+*.egg-info/
+
 # local Claude Code settings
 .claude/settings.local.json

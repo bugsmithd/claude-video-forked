@@ -173,6 +173,8 @@ watch-audit <note.md>
 
 Exit 0 = every gate passed. Exit 1 = defects, printed above. **Exit 2 = a gate could not run, which is not a pass.** Fix what it finds before calling the note done.
 
+The gates prove a note is well-formed, never that it is right — a wrong attribution, a dropped hedge and a confidently stated inference pass all of them. When the user asks for a review, or the note is going somewhere it will be trusted without being re-derived, read `REVIEW.md` beside this file: three fresh readers, refute-by-default, frames in bounded batches. **It is opt-in and never automatic** — three agents is a real cost and the user's to approve.
+
 ### Focusing on a section (higher frame rate)
 
 When the user asks about a specific moment — "what happens at the 2 minute mark?", "zoom into 0:45 to 1:00", "the first 10 seconds" — pass `--start` and/or `--end`. The script switches to focused-mode budgets, which are denser than full-video budgets (still capped at 2 fps, and still bounded by the detail-mode cap — the counts below assume the default `balanced` cap of 100; `efficient` tops out at 50):

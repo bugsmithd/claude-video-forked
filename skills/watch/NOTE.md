@@ -89,5 +89,10 @@ assumes the exit code was 0.
 The gates check that anchors resolve, that quotes are verbatim, that classes are
 present and that counts match their lists. **They cannot tell whether the note
 is right.** A wrong attribution, a dropped hedge and a confidently stated
-inference all pass every one of them. That is what a second reader is for, and
-if the note matters, get one.
+inference all pass every one of them.
+
+That is what a second reader is for. `REVIEW.md` beside this file is the
+template: three fresh readers who cannot see each other, refute-by-default,
+frames in bounded batches, and a repair policy that stops a review from
+smuggling in claims nobody checked. It is opt-in — ask the user before spending
+three agents on it.
