@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -130,6 +131,90 @@ and record which lane was wrong and why — that is how the briefs get better.
 """
 
 
+RE_ANCHOR = re.compile(r"`\[(\d{1,2}:\d{2}(?::\d{2})?)\]`")
+
+
+def anchor_seconds(text: str) -> list[int]:
+    """Every `[MM:SS]` or `[H:MM:SS]` in the note, as whole seconds."""
+    out = []
+    for stamp in RE_ANCHOR.findall(text):
+        parts = [int(p) for p in stamp.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        out.append(parts[0] * 3600 + parts[1] * 60 + parts[2])
+    return out
+
+
+def reach(note: Path, run: dict) -> dict | None:
+    """How much of this note the RUN can answer, before any lane starts.
+
+    A note is only fully reviewable against the run it was written from, and
+    `review.py` will take any run.json handed to it. Pointing it at a
+    re-capture of the same video is the easy mistake — same title, same
+    duration, different frames — and the lanes discover it one claim at a time,
+    each concluding UNTESTABLE without knowing the others did too. Counting it
+    once, here, costs nothing and puts the number in every brief.
+
+    None when the note cannot be read; a run is not blocked by a missing note.
+    """
+    try:
+        text = note.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    anchors = anchor_seconds(text)
+    if not anchors:
+        return None
+    frames = {int(f["seconds"]) for f in run.get("frames") or []}
+    starts = {int(s) for s in run.get("transcript", {}).get("segment_starts") or []}
+    return {
+        "anchors": len(anchors),
+        "framed": sum(1 for s in anchors if s in frames),
+        "spoken": sum(1 for s in anchors if s in starts),
+        "gap": widest_gap(sorted(frames), float(run.get("duration_seconds") or 0)),
+    }
+
+
+def widest_gap(frame_seconds: list[int], duration: float) -> tuple[int, int]:
+    """The longest stretch of runtime with no frame in it, as (start, end).
+
+    `(0, 0)` means there is nothing to measure — no frames and no duration —
+    and callers must print nothing rather than print a zero-width gap. A run
+    with no frames and a known duration correctly reports the whole runtime.
+    """
+    edges = [0, *frame_seconds, int(duration or 0)]
+    worst = (0, 0)
+    for a, b in zip(edges, edges[1:]):
+        if b - a > worst[1] - worst[0]:
+            worst = (a, b)
+    return worst
+
+
+def reach_section(stats: dict | None) -> list[str]:
+    if not stats:
+        return []
+    n, framed, spoken = stats["anchors"], stats["framed"], stats["spoken"]
+    lo, hi = stats["gap"]
+    lines = [
+        "",
+        "## How much of the note this run can answer",
+        "",
+        f"- The note carries {n} anchor(s). {framed} of them fall on a second "
+        f"this run kept a frame for; {spoken} fall on a transcript segment "
+        f"start.",
+    ]
+    if hi > lo:
+        lines.append(f"- The longest stretch of runtime with no frame at all is "
+                     f"{lo}s to {hi}s.")
+    if framed * 2 < n:
+        lines.append(
+            f"- **Most of this note's anchors have no frame in this run.** That "
+            f"is a fact about the run, not about the note: a claim you cannot "
+            f"reach is UNTESTABLE here and must not be reported as refuted. If "
+            f"the note was written from a different capture of the same video, "
+            f"say so in your findings rather than grading around it.")
+    return lines
+
+
 def load_run(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -192,6 +277,7 @@ def brief(lane: str, run: dict, note: Path, run_path: Path) -> str:
             f"neighbouring frame and have no frame of their own. A claim about "
             f"what was on screen across them is legitimate; an `ON-SCREEN` "
             f"anchor at one of them is not.")
+    parts += reach_section(reach(note, run))
     if spec["frames"]:
         parts += ["", "## Frames", "", frame_section(run.get("frames") or [])]
     parts += [
@@ -251,7 +337,24 @@ def selftest() -> int:
     check("the repair policy forbids authoring",
           "may not write a claim the rows do not carry" in DISPOSITION)
 
-    print(f"# 9 case(s), {failures} failure(s)")
+    check("anchors are read in both shapes",
+          anchor_seconds("`[02:58]` and `[1:02:58]`") == [178, 3778])
+    check("the widest gap is the widest one",
+          widest_gap([1, 2, 50, 51], 60.0) == (2, 50))
+    # A run that cannot reach the note it was handed says so in every brief,
+    # because the alternative is three lanes each discovering it alone.
+    reached = reach_section({"anchors": 10, "framed": 2, "spoken": 9,
+                             "gap": (100, 200)})
+    check("a run that cannot reach the note says so",
+          any("no frame in this run" in line for line in reached))
+    check("a run that can reach the note does not nag",
+          not any("no frame in this run" in line for line in
+                  reach_section({"anchors": 10, "framed": 9, "spoken": 9,
+                                 "gap": (1, 2)})))
+    check("a note that cannot be read does not block the briefs",
+          reach(Path("/no/such/note.md"), run) is None)
+
+    print(f"# 14 case(s), {failures} failure(s)")
     return 1 if failures else 0
 
 

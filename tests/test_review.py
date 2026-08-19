@@ -153,3 +153,90 @@ def test_a_malformed_run_json_is_refused_not_guessed(tmp_path: Path):
 
 def test_selftest_passes():
     assert review.selftest() == 0
+
+
+# --- whether this run can reach this note ------------------------------------
+# The first real lane run was pointed at a re-capture of the video rather than
+# at the run the note was written from, because that note predates run.json and
+# there was no other brief to build. All three lanes worked it out separately,
+# one UNTESTABLE claim at a time. The count belongs in the brief.
+
+def _note(tmp_path: Path, seconds: list[int]) -> Path:
+    rows = "\n".join(f"- a claim `[{s // 60:02d}:{s % 60:02d}]`" for s in seconds)
+    path = tmp_path / "n.md"
+    path.write_text(f"---\nvideo_id: x\n---\n\n{rows}\n", encoding="utf-8")
+    return path
+
+
+def test_anchors_are_read_in_both_shapes():
+    assert review.anchor_seconds("`[02:58]` `[1:02:58]` `[00:00]`") == [178, 3778, 0]
+
+
+def test_prose_that_looks_like_a_time_is_not_an_anchor():
+    assert review.anchor_seconds("at 02:58 he says, and [02:58] too") == []
+
+
+def test_the_widest_gap_is_the_widest_one():
+    assert review.widest_gap([10, 20, 300, 310], 320.0) == (20, 300)
+
+
+def test_no_frames_makes_the_whole_runtime_the_gap():
+    assert review.widest_gap([], 600.0) == (0, 600)
+
+
+def test_a_gap_of_nothing_is_not_printed(tmp_path: Path):
+    """With no frames and no duration there is nothing to measure, and `0s to
+    0s` reads as "this run covers everything" — the opposite of the truth."""
+    run = _run(0)
+    run["duration_seconds"] = 0.0
+    assert review.widest_gap([], 0.0) == (0, 0)
+    text = review.brief("facts", run, _note(tmp_path, [0, 100]), Path("r.json"))
+    assert "The note carries 2 anchor(s)" in text
+    assert "0s to 0s" not in text
+    assert "longest stretch" not in text
+
+
+def test_the_spoken_count_is_the_segment_starts(tmp_path: Path):
+    """`framed` and `spoken` answer different questions, and the fixture keeps
+    them unequal so that swapping the two would fail rather than pass."""
+    run = _run(3)                      # frames at 0s, 10s, 20s
+    run["transcript"]["segment_starts"] = [0.0, 5.0, 9.5]   # whole seconds 0, 5, 9
+    note = _note(tmp_path, [0, 5, 10, 20, 100])
+    stats = review.reach(note, run)
+    assert stats["anchors"] == 5
+    assert stats["framed"] == 3        # 0s, 10s, 20s have frames
+    assert stats["spoken"] == 2        # 0s and 5s are segment starts; 10s is not
+    text = review.brief("facts", run, note, Path("r.json"))
+    assert "3 of them fall on a second this run kept a frame for" in text
+    assert "2 fall on a transcript segment start" in text
+
+
+def test_a_run_that_cannot_reach_the_note_says_so(tmp_path: Path):
+    run = _run(3)  # frames at 0s, 10s, 20s only
+    text = review.brief("facts", run, _note(tmp_path, [0, 100, 200, 300]),
+                        Path("r.json"))
+    assert "The note carries 4 anchor(s). 1 of them" in text
+    assert "Most of this note's anchors have no frame in this run." in text
+    assert "must not be reported as refuted" in text
+
+
+def test_a_run_that_reaches_the_note_does_not_nag(tmp_path: Path):
+    text = review.brief("facts", _run(), _note(tmp_path, [0, 10, 20, 30]),
+                        Path("r.json"))
+    assert "The note carries 4 anchor(s). 4 of them" in text
+    assert "Most of this note's anchors" not in text
+
+
+def test_a_missing_note_does_not_block_the_briefs(tmp_path: Path):
+    text = review.brief("facts", _run(), tmp_path / "gone.md", Path("r.json"))
+    assert "REFUTE BY DEFAULT" in text
+    assert "How much of the note this run can answer" not in text
+
+
+def test_the_reach_count_reaches_the_lane_with_no_frames(tmp_path: Path):
+    """The quality lane gets no frame list and needs this number most: a note
+    that is nearly all ON-SCREEN claims leaves it very little it may grade."""
+    text = review.brief("quality", _run(3), _note(tmp_path, [0, 100, 200]),
+                        Path("r.json"))
+    assert "The note carries 3 anchor(s)" in text
+    assert "/f/000.jpg" not in text
