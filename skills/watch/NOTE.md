@@ -94,5 +94,17 @@ inference all pass every one of them.
 That is what a second reader is for. `REVIEW.md` beside this file is the
 template: three fresh readers who cannot see each other, refute-by-default,
 frames in bounded batches, and a repair policy that stops a review from
-smuggling in claims nobody checked. It is opt-in — ask the user before spending
-three agents on it.
+smuggling in claims nobody checked.
+
+**Run it. It is not optional and it is not something to ask about.** Generate
+the briefs, dispatch one fresh-context agent per lane in parallel, file each
+report under the corpus review directory, and only then list the lanes in the
+note's `reviews:` field:
+
+    review.py <run.json> <note.md>
+
+This used to say "opt-in — ask the user first", and the predictable thing
+happened: a note was written, gated, stamped and filed with the whole review
+layer skipped, and nothing anywhere said so. `watch-audit` now refuses a note
+that is short a required lane (`E-LANE-UNREVIEWED`), so skipping the reviewers
+is a failing exit code rather than a thing the next reader has to notice.

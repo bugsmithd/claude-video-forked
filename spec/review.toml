@@ -1,0 +1,781 @@
+# Layer 4 — the review roll-call, the two header fields that cause something,
+# and the publication gate.
+#
+# Promoted from `proposed-l4.toml`. Every row below carries at least three
+# neighbours and every neighbour has a case that exists, which is the only
+# condition on being here: `tests/test_spec_conformance.py` refuses
+# `kind = "none"`, so a neighbour without a case is a red row rather than a
+# review finding four rounds later.
+#
+# Source of truth for every row: the package at watch-quality/src/watchquality/,
+# branch review-gate-rounds. Each `refuses` line was re-derived by reading the
+# owner rather than by trusting the draft; the ones that came out differently
+# are listed in the gap block at the bottom.
+#
+# `test` spellings, and why they are not the draft's:
+#   kind = "pytest"    `tests/<file>.py::<function>`, resolved by AST.
+#   kind = "selftest"  `<module stem>::<label>`, where the label is the FIRST
+#                      STRING ARGUMENT of a call inside that module's
+#                      `selftest`. The draft wrote `<path>::selftest#<comment>`
+#                      and no such anchor is visible to the conformance run.
+#                      Only `wq_corpus_scan` labels its checks with a sentence;
+#                      `resolve_note` passes its fixture text first, so its
+#                      "labels" are note bodies and cannot name a case. Every
+#                      neighbour the draft pinned to a `resolve_note` selftest
+#                      is therefore written as a pytest case here, in
+#                      `tests/test_spec_review.py`.
+
+# --- the roll-call, before any report is opened -----------------------------
+
+[[rule]]
+id = "LANE-MALFORMED"
+code = "E-LANE-MALFORMED"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "a note carries a reviews: key and the roll-call reads it"
+refuses = "a lane list that cannot be read — block style, a quoted item, a value that is not a bracketed list, an entry that is not a lane id, or one id declared twice — and returns before any lane is looked for"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a block-style list, which is legal YAML declaring real lanes and used to parse as zero"
+test = "tests/test_review_gate.py::test_a_block_style_review_list_is_not_read_as_no_lanes"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a quoted item whose comma splits inside the quotes and invents a second lane, refused for the QUOTE and not by the lane-id check one line below it"
+test = "tests/test_spec_review.py::test_a_quoted_item_is_refused_as_quoted_and_not_as_a_bad_lane_id"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value that is not a bracketed list at all, where the brackets are what stops `facts` from being read as the lane `act`"
+test = "tests/test_spec_review.py::test_a_lane_list_that_is_not_bracketed_is_refused_as_unbracketed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an entry that is not a lane id, named in the line so the typo is repairable"
+test = "tests/test_spec_review.py::test_an_entry_that_is_not_a_lane_id_is_refused_by_name"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a legal list with a trailing comment, which must NOT be refused"
+test = "tests/test_review_gate.py::test_a_trailing_comment_is_not_a_malformed_list"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one lane id declared twice, which is unreadable rather than a smaller claim"
+test = "tests/test_spec_review.py::test_one_lane_declared_twice_is_unreadable_not_a_shorter_list"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the key absent altogether, which is not a defect and must NOT be refused"
+test = "tests/test_spec_review.py::test_a_note_that_never_mentions_reviews_is_not_a_malformed_one"
+kind = "pytest"
+[[rule.neighbour]]
+case = "check_lanes printing this code and stopping, rather than lane_ids returning an error string nobody reports"
+test = "tests/test_spec_review.py::test_an_unreadable_lane_list_stops_the_roll_call_before_it_starts"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-TWOVIDEOS"
+code = "E-LANE-TWOVIDEOS"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "the frontmatter is read for the video the roll-call is addressed to"
+refuses = "more than one video_id: row naming more than one DISTINCT video, because only the first is read and the reviews would be looked for under the other; identical repeated rows stay legal"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "two rows naming two videos, where only the first was ever read"
+test = "tests/test_spec_review.py::test_two_video_ids_in_one_frontmatter_are_refused_before_any_lane"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same id written twice, a repetition and not a contradiction, which must NOT be refused"
+test = "tests/test_spec_review.py::test_the_same_video_id_written_twice_is_a_repetition_not_a_contradiction"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two rows whose ids differ only in letter case, which are two videos to this matcher"
+test = "tests/test_spec_review.py::test_two_ids_differing_only_in_letter_case_are_two_videos_here"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a third row agreeing with the first two, where the row count differs from the distinct count"
+test = "tests/test_spec_review.py::test_a_third_row_agreeing_is_counted_apart_from_the_distinct_answers"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-NOVIDEO"
+code = "E-LANE-NOVIDEO"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "a note declares lanes and carries no video_id: row"
+refuses = "a NON-EMPTY declaration by a note with no video id, because no report can be looked for and the note is its own witness"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "lanes declared with the video id line deleted, which used to disarm the roll-call entirely"
+test = "tests/test_review_gate.py::test_declaring_lanes_without_a_video_id_is_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "neither a video id nor lanes, which is the ordinary unreviewed note and must NOT be refused"
+test = "tests/test_review_gate.py::test_a_note_with_neither_a_video_id_nor_lanes_is_still_quiet"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an empty bracketed list and no video id, which declares nothing and must NOT be refused"
+test = "tests/test_spec_review.py::test_an_empty_list_without_a_video_id_declares_nothing_and_stays_clean"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unreadable lane list and no video id, where the malformed answer comes first"
+test = "tests/test_spec_review.py::test_an_unreadable_list_without_a_video_id_is_reported_as_unreadable"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-AMBIGUOUS"
+code = "E-LANE-AMBIGUOUS"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "one declared lane is matched against the reports filed under its video"
+refuses = "a lane matched by more than one report, because which one carries the verdict is unread; no debt row stands this down"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "two reports with one filename in two subdirectories"
+test = "tests/test_review_gate.py::test_two_reports_with_one_filename_are_ambiguous_and_not_shared"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the two reports named apart in the message instead of one name printed twice"
+test = "tests/test_review_gate.py::test_two_reports_with_one_filename_are_named_apart_in_the_message"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a lane id ending in another declared lane's id, where the longer lane owns the report and this must NOT fire"
+test = "tests/test_spec_review.py::test_a_lane_ending_in_another_lanes_id_does_not_make_the_report_ambiguous"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a lost_reviews row for the same lane, which does NOT reach this rule because the lane has reports"
+test = "tests/test_spec_review.py::test_a_row_admitting_a_lost_report_does_not_reach_a_lane_with_two"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-MISSING"
+code = "E-LANE-MISSING"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "a declared lane has matched no report on disk"
+refuses = "a lane the note declared with nothing answering for it — the lane died, or was never dispatched — unless a dated lost_reviews row for THIS video and THIS lane reaches this note"
+excused_by = ["lost_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a directory named like a report, which the walk yields and which is not a file"
+test = "tests/test_review_gate.py::test_a_directory_named_like_a_report_does_not_satisfy_a_lane"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a symlink to the null device named like a report, which is not a regular file either"
+test = "tests/test_review_gate.py::test_a_symlink_to_dev_null_does_not_satisfy_a_lane"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a report whose name lacks the dash before the lane id, so the lane is short and the file is undeclared"
+test = "tests/test_spec_review.py::test_a_report_name_without_the_dash_answers_for_no_lane"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a lost_reviews row filed under a different video, which excuses nothing here"
+test = "tests/test_spec_review.py::test_a_lost_report_row_filed_under_another_video_excuses_nothing_here"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unheadered_reviews row for this video, which buys a header bypass and does NOT reach this rule"
+test = "tests/test_spec_review.py::test_a_row_excusing_a_missing_header_does_not_excuse_a_missing_report"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unreviewed_notes row for this lane, which excuses the declaration floor and not a dead lane"
+test = "tests/test_spec_review.py::test_a_row_admitting_a_lane_never_ran_does_not_excuse_one_that_died"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-UNDECLARED"
+code = "E-LANE-UNDECLARED"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "the roll-call has finished and reports remain that no declared lane claimed"
+refuses = "a report at ANY depth under this video's review directory that the note does not own up to having run, where a report is a `.md` FILE: `lane_reports` yields `*.md` only, so a `facts.txt` beside it answers for no lane and is not reported here either"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a report filed one directory deeper, which one directory creation used to hide"
+test = "tests/test_spec_review.py::test_a_report_one_directory_deeper_is_still_seen_by_the_roll_call"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a report for a lane the note never declared, named in the line so a reader can act"
+test = "tests/test_spec_review.py::test_a_report_for_a_lane_nobody_declared_is_named_in_the_line"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same buried report once its lane is declared, which must NOT be refused"
+test = "tests/test_spec_review.py::test_the_same_buried_report_is_clean_once_its_lane_is_declared"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the second of two files answering one lane, printed by its path rather than its bare name"
+test = "tests/test_review_gate.py::test_two_reports_with_one_filename_are_named_apart_in_the_message"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a report filed under another video's directory, which this note is never asked about"
+test = "tests/test_spec_review.py::test_a_report_filed_under_another_videos_directory_is_not_this_notes"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a file under this video's directory with any other suffix, which is not a report in either direction"
+test = "tests/test_spec_review.py::test_a_report_that_is_not_markdown_answers_for_no_lane"
+kind = "pytest"
+
+
+# --- a report has to BE a review --------------------------------------------
+
+[[rule]]
+id = "LANE-UNPARSED"
+code = "E-LANE-UNPARSED"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "a report claimed by a declared lane is opened and its header is read"
+refuses = "a file that is not a review: unreadable bytes, no header block, or a header field that cannot be read as its type"
+excused_by = ["unheadered_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "three zero-byte files, which bought a stamped and gated clean note"
+test = "tests/test_review_gate.py::test_three_zero_byte_reports_are_not_a_review_layer"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a verdict outside the vocabulary, which is unreadable rather than a smaller claim"
+test = "tests/test_review_gate.py::test_an_unknown_verdict_is_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a field present and empty, which cannot be its type"
+test = "tests/test_review_gate.py::test_a_header_field_present_but_empty_is_not_a_field"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a claim count in digits Python calls digits and the header does not"
+test = "tests/test_review_gate.py::test_a_count_is_ascii_digits_not_anything_python_calls_a_digit"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the word that stands for an unstated count, which must NOT be refused"
+test = "tests/test_review_gate.py::test_an_unstated_claim_count_is_allowed_and_an_invented_one_is_not"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unheadered_reviews row older than the note, which excuses this and stops at notes filed later"
+test = "tests/test_spec_review.py::test_the_header_bypass_stops_at_a_note_filed_after_the_row"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-MISLABELLED"
+code = "E-LANE-MISLABELLED"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "a report parses and its lane field is compared with the lane the file was spent on"
+# ONE FILE IS SPENT ON EXACTLY ONE LANE, and the old wording said otherwise.
+# The comparison reads `fields["lane"] not in lanes`, which looks like
+# membership in a list -- but the list is built by `claimed.setdefault(h,
+# []).append(lane)` guarded by `max((d for d in ids if lane_matches([h], d)),
+# key=len) == lane`, and no two distinct declared ids can match one filename at
+# the same length: one is the whole stem, the other is a `-<id>.md` suffix and
+# strictly shorter. So the list always holds one name, `not in` and `!= the one
+# name` can never disagree, and the sentence the gap block below says it went
+# back and corrected described a case no input can produce. What IS worth
+# stating is which of two matching lanes the file went to.
+refuses = "a header whose lane: value is not the lane the file was spent on, which is the LONGEST declared lane id the filename matches; a shorter lane that also matches is left short a report of its own"
+excused_by = ["unheadered_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a header naming another lane the same note declared"
+test = "tests/test_review_gate.py::test_a_header_naming_another_lane_is_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a header naming the SHORTER lane that also matches the filename, which the file was not spent on"
+test = "tests/test_spec_review.py::test_a_header_naming_the_shorter_lane_the_file_was_not_spent_on"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a header naming the lane that claimed it, which must NOT be refused"
+test = "tests/test_spec_review.py::test_a_header_answering_for_the_lane_that_claimed_it_is_clean"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a header naming a lane no note declares anywhere, which is the same branch and reads differently"
+test = "tests/test_spec_review.py::test_a_header_naming_a_lane_no_note_declares_names_both_sides"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a lane field differing only in letter case from the lane that claimed it, which never reaches this comparison"
+test = "tests/test_spec_review.py::test_a_lane_field_differing_only_in_case_is_refused_as_unreadable"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-STALE"
+code = "E-LANE-STALE"
+layer = "review"
+owner = "resolve_note.check_lanes"
+trigger = "a report parses, answers for its own lane, and pins a note body"
+refuses = "a header pinning a body hash other than the note on disk, machine marks removed, so the note changed after the lane read it"
+excused_by = ["unheadered_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a header pinned to a different note body"
+test = "tests/test_review_gate.py::test_a_header_naming_another_note_is_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one edit to the note, which turns every report on it red at once"
+test = "tests/test_spec_review.py::test_one_edit_to_the_note_turns_every_report_on_it_red_at_once"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a machine mark the demotion renderer wrote, which is not prose and must NOT be refused"
+test = "tests/test_spec_review.py::test_a_mark_a_script_wrote_is_not_an_edit_a_lane_has_to_read_again"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a report that is stale AND names a dead oracle, which must report both and not one per round"
+test = "tests/test_header_consequence.py::test_a_report_can_be_stale_and_name_a_dead_oracle_at_once"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a report that is mislabelled AND stale, where the chain reports only the first"
+test = "tests/test_spec_review.py::test_a_report_that_is_mislabelled_and_stale_is_reported_as_mislabelled"
+kind = "pytest"
+
+
+# --- the floor a roll-call of declarations cannot see ------------------------
+
+[[rule]]
+id = "LANE-UNREVIEWED"
+code = "E-LANE-UNREVIEWED"
+layer = "review"
+owner = "resolve_note.check_required_lanes"
+trigger = "the corpus policy requires lanes and a note is checked"
+refuses = "a required lane this note never declared, which the roll-call of declarations is unable to see; only a dated unreviewed_notes row reaches it"
+excused_by = ["unreviewed_notes"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a note that declares no lanes at all, which passed the roll-call clean"
+test = "tests/test_spec_review.py::test_a_note_that_declared_nothing_is_short_of_every_required_lane"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the reviews: key absent, which is the same absence as an empty list"
+test = "tests/test_spec_review.py::test_an_absent_reviews_key_is_the_same_absence_as_an_empty_list"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one declaration offered against two required lanes, where the shorter lane stays short"
+test = "tests/test_review_gate.py::test_one_declaration_cannot_satisfy_two_required_lanes"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a family declaration covering its own required lane, which must NOT be refused"
+test = "tests/test_review_gate.py::test_a_family_declaration_still_covers_its_own_lane"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the stamping entry point, which must grade this as hard as a check run does"
+test = "tests/test_spec_review.py::test_the_floor_reaches_the_stamp_entry_point_and_stops_the_write"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a lost_reviews row for the required lane, which does NOT reach this rule"
+test = "tests/test_spec_review.py::test_a_row_admitting_a_lost_report_does_not_excuse_never_declaring_it"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the only exit this rule has, working: a dated unreviewed_notes row for this video and this lane"
+test = "tests/test_spec_review.py::test_a_dated_row_admitting_a_lane_never_ran_clears_the_floor"
+kind = "pytest"
+[[rule.neighbour]]
+case = "that same row against a note filed after it, where it stops reaching"
+test = "tests/test_spec_review.py::test_the_row_admitting_a_lane_never_ran_stops_at_a_later_note"
+kind = "pytest"
+
+
+# --- the two header fields that cause something ------------------------------
+
+[[rule]]
+id = "LANE-ORACLE-MISSING"
+code = "E-LANE-ORACLE-MISSING"
+layer = "review"
+owner = "resolve_note.check_consequences"
+trigger = "a report parses and its oracle: value is opened against the corpus root"
+refuses = "a value that opens as no file, so a placeholder is refused for naming nothing rather than for being on a list"
+excused_by = ["unresolvable_runs", "unheadered_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a well-typed placeholder, which satisfies the type and names nothing"
+test = "tests/test_header_consequence.py::test_a_well_typed_placeholder_no_longer_passes"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a directory, which resolves perfectly and is not the artifact a lane read"
+test = "tests/test_header_consequence.py::test_a_directory_is_not_an_oracle"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value Python refuses to expand, which must red the note and may not abort the gate"
+test = "tests/test_header_consequence.py::test_a_value_that_is_not_even_a_path_reds_the_note_instead_of_crashing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unresolvable_runs row for this video, which must NOT be refused"
+test = "tests/test_header_consequence.py::test_a_run_the_corpus_has_written_off_is_excused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same row against a note filed later, where the row stops reaching"
+test = "tests/test_header_consequence.py::test_the_excuse_does_not_reach_a_note_filed_after_it"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a relative value read against the corpus root and not the directory the gate ran from"
+test = "tests/test_header_consequence.py::test_a_relative_oracle_is_read_against_the_corpus_not_the_cwd"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-ORACLE-UNRELATED"
+code = "E-LANE-ORACLE-UNRELATED"
+layer = "review"
+owner = "resolve_note.check_consequences"
+trigger = "the oracle: value opens as a file, or a written-off run excuses its absence"
+refuses = "a resolved path that does not carry the video id as a whole component, or that sits inside the notes directory it grades"
+excused_by = ["unheadered_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a real file that is a rendering of nothing, one keystroke from the fixtures"
+test = "tests/test_header_consequence.py::test_a_real_file_that_is_not_this_run_is_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the id as a substring of a path name rather than a whole one"
+test = "tests/test_header_consequence.py::test_the_id_has_to_be_a_whole_name_on_the_path"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a symlink whose own path carries the id while its target does not"
+test = "tests/test_header_consequence.py::test_a_symlink_cannot_launder_an_oracle_either"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the report naming itself, where the id IS on the path and the file is the thing being judged"
+test = "tests/test_header_consequence.py::test_a_report_naming_itself_is_not_its_own_oracle"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a written-off run plus a value that opens fine, which this rule must still refuse"
+test = "tests/test_header_consequence.py::test_the_excuse_covers_a_missing_run_and_not_any_value_at_all"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path walking back out of the run directory, which the raw string and the resolved path used to disagree about"
+test = "tests/test_header_consequence.py::test_walking_out_of_the_run_directory_does_not_launder_an_oracle"
+kind = "pytest"
+
+[[rule]]
+id = "LANE-BLOCKED"
+code = "E-LANE-BLOCKED"
+layer = "review"
+owner = "resolve_note.check_consequences"
+trigger = "a report parses and its verdict field is read"
+refuses = "a lane that refused the note, which may not sit under a clean audit; no debt ledger excuses it and only a skipped header does"
+excused_by = ["unheadered_reviews"]
+exit = 1
+
+[[rule.neighbour]]
+case = "the three verdicts that are not a refusal, which must NOT be refused"
+test = "tests/test_header_consequence.py::test_the_three_verdicts_that_are_not_a_refusal_stay_clean"
+kind = "pytest"
+[[rule.neighbour]]
+case = "every debt ledger loaded at once, none of which may reach a live finding"
+test = "tests/test_header_consequence.py::test_no_debt_ledger_can_excuse_a_block"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the exit code a gate runner actually reads, with one field changed and nothing else"
+test = "tests/test_header_consequence.py::test_a_block_reaches_the_exit_code_a_gate_reads"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unheadered_reviews row, which is not a debt ledger and DOES skip this verdict with the whole header"
+test = "tests/test_header_consequence.py::test_a_corpus_row_excusing_the_whole_header_still_excuses_both"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the refusing lane named in the line, so a reader knows which one refused"
+test = "tests/test_header_consequence.py::test_a_blocked_lane_is_named_so_a_reader_knows_which_one"
+kind = "pytest"
+
+
+# --- the publication gate ----------------------------------------------------
+
+[[rule]]
+id = "CORPUS-VIDEO-ID"
+code = "E-CORPUS-VIDEO-ID"
+layer = "review"
+owner = "wq_corpus_scan.scan_text"
+trigger = "a published text file is read line by line"
+refuses = "an eleven-character token carrying a digit and both letter cases, bounded by non-token characters, unless it is on the allow list"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a token one character short, which is not the shape"
+test = "wq_corpus_scan::ten chars is not an id"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a token of the right length with no capital, which an ordinary name would be"
+test = "wq_corpus_scan::no uppercase is not an id"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a published model name of exactly this shape, which must NOT be refused"
+test = "wq_corpus_scan::a model slug passes"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the shape inside a longer token, which must NOT be refused"
+test = "wq_corpus_scan::a longer token is not scanned inside"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a token on the allow list, which must NOT be refused"
+test = "wq_corpus_scan::an allowed fixture passes"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a pytest asserting the code and the line number, rather than the module's own suite alone"
+test = "tests/test_spec_review.py::test_an_id_shaped_token_is_refused_and_the_line_is_named"
+kind = "pytest"
+
+[[rule]]
+id = "CORPUS-DATED-EXEMPTION"
+code = "E-CORPUS-DATED-EXEMPTION"
+layer = "review"
+owner = "wq_corpus_scan.scan_text"
+trigger = "a published text file is read line by line"
+# "a date SHAPE", not "a calendar date". The pattern is `\d{4}-\d{2}-\d{2}` and
+# `9999-99-99` satisfies it. `spec/gate.toml` uses "a date the calendar
+# refuses" for the POLICY loader, which really does parse the day, and the two
+# files were using one word for two rules. This gate is asking whether a dated
+# excuse was written into published source; whether the day is real makes no
+# difference to that question, and narrowing the pattern would let a row dodge
+# the gate by naming an impossible month.
+refuses = "a date-SHAPED token and a word of excuse WITHIN EIGHTY CHARACTERS of each other on one line, in either order, because that row belongs in the policy file where it ages"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "the reason written before the date, which is how a person actually writes the sentence"
+test = "wq_corpus_scan::...and the reason may come first"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a plain date with no word of excuse, which must NOT be refused"
+test = "wq_corpus_scan::a plain date passes"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a word of excuse with no date, which must NOT be refused"
+test = "wq_corpus_scan::a reason with no date still passes"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the edge of the window measured exactly -- eighty characters apart refused, eighty-one clean -- in both orders"
+test = "tests/test_spec_review.py::test_a_date_and_an_excuse_too_far_apart_are_not_one_sentence"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a date no calendar has, which this gate still refuses because it reads a shape"
+test = "tests/test_spec_review.py::test_an_impossible_date_beside_an_excuse_is_still_refused_here"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the date and the word on two consecutive lines, which this rule reads one line at a time"
+test = "tests/test_spec_review.py::test_a_date_and_an_excuse_on_two_lines_are_not_one_row"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a pytest asserting the code and the line number, rather than the module's own suite alone"
+test = "tests/test_spec_review.py::test_a_dated_excuse_written_into_source_is_refused_and_the_line_is_named"
+kind = "pytest"
+
+
+# --- the policy, which raises rather than prints -----------------------------
+#
+# The two codes this package shares with wq_policy are E-LANE-MALFORMED and
+# E-LANE-UNREVIEWED, and wq_policy prints NEITHER: it refuses the policy file up
+# front so a corpus can never be caught between them. Both rows below have an
+# empty `code` for that reason, exactly as the raise-rather-than-print rows in
+# gate.toml do.
+#
+# AND `exit = 2` IS THE CODE AN ENTRY POINT REACHES AFTER CATCHING THAT RAISE,
+# not something the loader returns. Only two entry points catch it --
+# `audit.main` and `wq_corpus_scan.main`, both returning 2. `resolve_note`
+# loads its policy at import and names PolicyError nowhere, so the note gate
+# never reaches 2: the exception escapes as a traceback and the process exits
+# 1, which is the code that means "defects found". Eleven neighbours across
+# these two rows and POLICY-DATED-EXEMPTION in gate.toml asserted a raise and
+# not one asserted a code; the two cases that now do are named on that row,
+# because the boundary is one boundary and belongs in one place.
+
+[[rule]]
+id = "POLICY-UNSATISFIABLE-LANE"
+code = ""
+layer = "review"
+owner = "wq_policy._validate"
+trigger = "a policy file is loaded and its required_lanes list is read"
+refuses = "an entry that is not a string, or a string that is not a lane id a note could legally declare, whose only exit would be a debt row for a typo"
+excused_by = []
+exit = 2
+
+[[rule.neighbour]]
+case = "an id with a capital letter, unsatisfiable in both directions at once"
+test = "tests/test_review_gate.py::test_a_policy_cannot_require_a_lane_no_note_can_declare"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a family id, which a note can declare and which must NOT be refused"
+test = "tests/test_review_gate.py::test_a_policy_cannot_require_a_lane_no_note_can_declare"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a required lane that is not a string at all, which the id pattern cannot even be asked about"
+test = "tests/test_spec_review.py::test_a_required_lane_that_is_not_a_string_is_refused_at_load_time"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an id starting with a dash, which the note-side id rule also refuses"
+test = "tests/test_spec_review.py::test_a_required_lane_starting_with_a_dash_is_refused_at_load_time"
+kind = "pytest"
+
+[[rule]]
+id = "POLICY-LEDGERS-OVERLAP"
+code = ""
+layer = "review"
+owner = "wq_policy._validate"
+trigger = "a policy file is loaded and both nested ledgers are read"
+refuses = "one (video, lane) PAIR claimed as both lost and never dispatched, so each admission covers for the other"
+excused_by = []
+exit = 2
+
+[[rule.neighbour]]
+case = "the same video and lane on both ledgers, where the roll-call and the floor each stand down"
+test = "tests/test_review_gate.py::test_a_lane_cannot_be_both_lost_and_never_dispatched"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same video on both ledgers under two different lanes, which must NOT be refused"
+test = "tests/test_spec_review.py::test_one_video_may_lose_one_lane_and_never_dispatch_another"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same lane on both ledgers under two different videos, which must NOT be refused"
+test = "tests/test_spec_review.py::test_one_lane_may_be_lost_for_one_video_and_never_dispatched_for_another"
+kind = "pytest"
+
+
+# =============================================================================
+# THE GAP BLOCK
+# =============================================================================
+#
+# 1. RULES LEFT IN THE DRAFT. None. All seventeen rows the draft carried are
+#    promoted here, and the ninety-three neighbours they now name all have a
+#    case. Six of those were added by an independent refutation pass, which
+#    found rows whose stated boundary no case could tell from its opposite.
+#
+# 2. NEIGHBOURS THAT COULD NOT BE WRITTEN WITHOUT CHANGING SOURCE. None. The
+#    twelve neighbours the draft pinned to a `resolve_note` selftest are
+#    written as pytest cases instead, in `tests/test_spec_review.py`, because
+#    that module's selftest passes its FIXTURE TEXT as the first argument and
+#    the conformance run reads the first argument as the label. Adding a real
+#    label there would be a source change, so the case was written on this side
+#    of the line rather than that one.
+#
+# 3. WHERE THE CODE AND ITS PROSE DISAGREE.
+#
+#    Every line anchor below was re-resolved against HEAD. Three of the six
+#    this block used to carry were stale -- a citation that has drifted is a
+#    citation nobody can check, which is the same failure as a neighbour with
+#    no case, one file over.
+#
+#    a. `resolve_note.check_consequences` docstring names its two rules
+#       ORACLE-MISSING and ORACLE-UNRELATED
+#       (watch-quality/src/watchquality/resolve_note.py:1696 and :1700) while
+#       the code prints E-LANE-ORACLE-MISSING and E-LANE-ORACLE-UNRELATED
+#       (:1738 and :1746). `spec/unspecified.toml` carries a bare
+#       E-LANE-ORACLE against resolve_note that no code path can print; the
+#       likely origin is that docstring. NO ROW IS WRITTEN FOR IT. Two cases
+#       assert the string E-LANE-ORACLE as a SUBSTRING and both pass on
+#       E-LANE-ORACLE-MISSING:
+#         tests/test_header_consequence.py::test_a_value_that_is_not_even_a_path_reds_the_note_instead_of_crashing
+#         and the matching case in resolve_note's own selftest (:2955).
+#       Tightening both assertions to the full code, and dropping the debt row,
+#       is the repair. Not done here: both files are outside this lane.
+#
+#    b. `spec/unspecified.toml` carries E-LANE-SHARED against resolve_note and
+#       no code path can print it either. The three surviving mentions in
+#       resolve_note.py are comments recording its removal
+#       (watch-quality/src/watchquality/resolve_note.py:1827, :1830 and
+#       :1840), and the argument they record is sound: it fired only when the
+#       loose suffix matcher let one report answer two declared lanes, and the
+#       lane left without a report is convicted by E-LANE-MISSING instead. NO
+#       ROW IS WRITTEN. The debt row should be dropped rather than specified.
+#
+#    c. Two paragraphs stood here describing rows `spec/unspecified.toml` no
+#       longer holds -- E-LANE-MISSING against demote_note, and
+#       E-LANE-MALFORMED and E-LANE-UNREVIEWED against wq_policy. That file now
+#       holds exactly three rows: E-LANE-ORACLE, E-LANE-SHARED and E-WIN, both
+#       named above. They are struck rather than rewritten, because
+#       `test_the_debt_list_holds_no_code_that_is_already_specified` would be
+#       red if either were still true.
+#
+#    d. Nothing else. POLICY-UNSATISFIABLE-LANE and POLICY-LEDGERS-OVERLAP
+#       above carry the two wq_policy rules with an empty `code`, for the
+#       reason stated over them: that module raises rather than printing.
+#
+# 4. `refuses` LINES REWRITTEN BECAUSE THE DRAFT HAD THEM WRONG OR SHORT.
+#
+#    LANE-MALFORMED   the draft said only "a lane list that cannot be read".
+#                     `lane_ids` has five distinct refusals and `check_lanes`
+#                     RETURNS on any of them; both halves are now stated,
+#                     because the early return is what the last neighbour on
+#                     the row exists to hold.
+#    LANE-TWOVIDEOS   the draft said "two video_id: rows naming two different
+#                     videos". The condition is `len(found) > 1 and
+#                     len(set(found)) > 1`, so identical repeated rows are
+#                     legal and three rows naming two videos also fire.
+#    LANE-NOVIDEO     the draft refused "any value at all". `check_lanes`
+#                     reaches NOVIDEO only when `ids` is truthy, so an empty
+#                     declaration with no video id is clean.
+#    LANE-UNDECLARED  "at ANY depth" added: `lane_reports` uses `rglob`, and
+#                     the depth is the whole content of the neighbour above it.
+#                     "a `.md` FILE" added later, by the refutation pass: the
+#                     glob is `*.md`, so a file with another suffix in the same
+#                     directory is not a report in either direction and nothing
+#                     said so.
+#    LANE-MISLABELLED rewritten TWICE, and the second time undid the first. The
+#                     draft said "a header answering for a lane other than the
+#                     one that claimed the file"; this file changed it to
+#                     membership in a list of claiming lanes, on the strength
+#                     of the `not in lanes` spelling. That was reading the code
+#                     rather than the behaviour: the list is built so that one
+#                     file goes to exactly one lane, so membership and equality
+#                     cannot be told apart by any input, and `!= lanes[0]`
+#                     passed the whole suite. What was worth stating is WHICH
+#                     lane, and the row now says it: the longest declared id
+#                     the filename matches. The lesson is the file's own --
+#                     a sentence no case can distinguish from its opposite is
+#                     not a specification.
+#    LANE-STALE       "machine marks removed" added: `note_body_sha256` strips
+#                     them before hashing, which is why a rendered note does
+#                     not red every report on it.
+#    CORPUS-VIDEO-ID  "bounded by non-token characters" added: `RE_ID` uses
+#                     look-around, which is what makes the shape inside a
+#                     longer token clean.
+#    CORPUS-DATED-EXEMPTION
+#                     the window is eighty characters and the draft did not say
+#                     so, which left the two neighbours about the edge of the
+#                     window unanchored to anything measurable. Writing the
+#                     number down was not enough on its own: the cases still
+#                     used a 120-character gap, so the window could be widened
+#                     to 118 with nothing going red, and they now measure 80
+#                     against 81. "calendar date" also became "date-SHAPED
+#                     token", because the pattern is a shape and `gate.toml`
+#                     uses the same word for a rule that really does parse the
+#                     day.
+#    LANE-UNREVIEWED  the row's six neighbours proved the refusal five times
+#                     over and never once showed its only exit working, and
+#                     the stamp neighbour named the one of two stamp cases in
+#                     which this rule cannot fire. Both repaired; the `refuses`
+#                     line was already right.
+#    POLICY-UNSATISFIABLE-LANE
+#                     the type check is half the rule and the draft named only
+#                     the pattern check. `exit = 2` is unchanged and now has
+#                     the comment above the two rows explaining which entry
+#                     points reach it, plus a case on each side.
+#    POLICY-LEDGERS-OVERLAP
+#                     "PAIR" made explicit, because the two neighbours that
+#                     must NOT fire are exactly the ones a video-keyed or
+#                     lane-keyed reading would refuse.
+#
+# 5. WHAT THIS LAYER STILL CANNOT SEE, stated so it is not mistaken for
+#    coverage.
+#
+#    a. A note that declares no lanes is caught by LANE-UNREVIEWED only when
+#       the corpus policy requires lanes. The package default is an empty
+#       required list, so in a corpus that never opted in, a note with the
+#       whole review layer skipped is clean and no rule in this file fires.
+#       That is the design, and it is the largest hole in the layer.
+#    b. Of the six ledgers in the policy, two never reach this layer at all:
+#       unattributed_notes and unfilled_oracles. No rule here names them and no
+#       case proves they stay out.
+#    c. The refused-word half of the publication gate is specified in
+#       gate.toml, not here, and it cannot be exercised from this checkout: the
+#       word list belongs to the caller and writing one down here would publish
+#       the string the rule exists to keep out.
+#    d. Three rules are pinned by their OWN suite plus this file and nothing
+#       else in between: LANE-TWOVIDEOS, CORPUS-VIDEO-ID and
+#       CORPUS-DATED-EXEMPTION had no pytest at all before today. They now do,
+#       but every case on them lives in one file, so a mistake in this file's
+#       fixtures is a mistake in the only pytest coverage those rules have.

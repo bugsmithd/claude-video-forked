@@ -1,0 +1,1572 @@
+# Layer 1 — the note contract.
+#
+# Promoted from `spec/proposed-l1.toml`. Every row below names a rule the
+# package implements, the neighbouring wrong answers it must ALSO refuse, and
+# a case for each of them. `tests/test_spec_conformance.py` reads this file and
+# fails when a neighbour names a case that does not exist, which is the whole
+# mechanism: an unlisted neighbour is a red row rather than a review finding
+# four rounds later.
+#
+# SOURCE-OF-TRUTH: watch-quality/src/watchquality/, branch review-gate-rounds.
+# Every `refuses` line below was re-derived against the code by driving the
+# owning function, not read off the draft. Where the draft and the code
+# disagreed, the row states the CODE's behaviour and the gap list at the end
+# names the disagreement.
+#
+# Every `exit` was read off resolve_note.main: each of --check, --report,
+# --write, --stamp and --refresh-sidecar ends `return 1 if defects else 0`, and
+# the four sibling gates that inherit E-READ / E-FRONTMATTER / E-NO-VIDEO-ID
+# (anchor_manifest, ocr_vote, spoken_vote, wq_corpus_scan) end the same way.
+# Exit 2 is reserved for usage and IO — an unknown path, an empty corpus, or
+# --stamp with the distribution not installed — and no rule here reaches it.
+#
+# ONE ROW CARRIES NO `exit` AT ALL: CITE-PKGSPEC. Its code cannot be printed by
+# any run — every production caller applies the same address pattern before
+# calling, so the branch is reachable only by calling the resolver directly —
+# and a number there would claim a run that does not exist. The row says so in
+# its `refuses` line and its fourth neighbour proves it.
+#
+# THE DRAFT'S SELFTEST ADDRESSES DID NOT SURVIVE PROMOTION. It spelled them
+# `resolve_note.py::selftest:<line>`, and the conformance reader derives a
+# selftest label as `<module>::<the first string argument of a call inside
+# selftest>` — so no line-numbered address is in the pool and every one of them
+# would have been a red row. `resolve_note.selftest` has no `check(...)`
+# comparator either: it asserts inline, so the only labels it offers are the
+# defect-code prefixes its assertions happen to pass to `startswith`, and four
+# distinct neighbours would collapse onto one address. Every neighbour here is
+# therefore a pytest case, written by hand against the module. That also pays
+# down the draft's own second gap: this layer had four pytest cases in total
+# and thirty-two rules pinned only where pytest never looks.
+#
+# Examples are invented (VID, docs/x.md, fakepkg@1.0.0). Nothing here opens a
+# note under notes/.
+
+# --- reading the file at all -------------------------------------------------
+
+[[rule]]
+id = "READ"
+code = "E-READ"
+layer = "note-contract"
+owner = "resolve_note.safe_read"
+trigger = "any gate opens a note, before anything in it is parsed"
+refuses = "a file whose bytes cannot be turned into text, naming the reason instead of raising"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note with one byte that is not valid UTF-8, named by its offset"
+test = "tests/test_spec_note_contract.py::test_a_note_with_one_undecodable_byte_is_named_rather_than_raised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a directory handed in where a note was expected, which fails as an OS error rather than a decode error"
+test = "tests/test_spec_note_contract.py::test_a_directory_where_a_note_was_expected_reads_as_an_os_error"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that opens with a UTF-8 byte order mark, which decodes and must NOT be refused here"
+test = "tests/test_spec_note_contract.py::test_a_byte_order_mark_decodes_and_is_not_a_read_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same undecodable note reached through anchor_manifest, ocr_vote and spoken_vote, which call this guard themselves and print the reason it hands back, word for word"
+test = "tests/test_spec_note_contract.py::test_the_three_sibling_gates_print_this_code_from_their_own_copy_of_the_guard"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same undecodable note reached through wq_corpus_scan, which does NOT share the guard: it re-reads the bytes lossily and refuses nothing, and prints this code only when the file cannot be opened at all"
+test = "tests/test_spec_note_contract.py::test_the_corpus_scanner_does_not_share_the_guard_and_reads_bad_bytes_lossily"
+kind = "pytest"
+
+[[rule]]
+id = "FRONTMATTER"
+code = "E-FRONTMATTER"
+layer = "note-contract"
+owner = "resolve_note.split_frontmatter"
+trigger = "a note has been read and its YAML block is looked for; check_note, write_note, refresh_sidecar and stamp_note each print this code from their own call, and anchor_manifest, ocr_vote and spoken_vote inherit the same rule"
+refuses = "a file whose first line is not three dashes, or that never closes the block with a second three dashes"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note with a blank line before the opening three dashes"
+test = "tests/test_spec_note_contract.py::test_a_blank_line_before_the_opening_marker_is_no_frontmatter"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note opening with four dashes, which is not the marker"
+test = "tests/test_spec_note_contract.py::test_four_dashes_are_not_the_opening_marker"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note whose opening marker carries trailing spaces, which IS the marker and must not be refused"
+test = "tests/test_spec_note_contract.py::test_trailing_spaces_after_the_marker_still_open_the_block"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a review report filed under a dated note-shaped name, which is not a note and must reach this code from no gate at all"
+test = "tests/test_review_gate.py::test_a_report_is_not_a_note_even_when_the_gate_is_pointed_at_reviews"
+kind = "pytest"
+
+[[rule]]
+id = "NO-VIDEO-ID"
+code = "E-NO-VIDEO-ID"
+layer = "note-contract"
+owner = "resolve_note.write_note"
+trigger = "a render is about to discard citation quotes and needs somewhere to record them; anchor_manifest, ocr_vote and spoken_vote print the same code when they cannot address their own index"
+refuses = "writing a note that has citations to render and no video_id: field to address the audit sidecar with"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note with sets but no citations and no video_id, which is written and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_note_with_sets_and_no_citations_is_written_without_a_video_id"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the field spelled Video_id:, which is not the field"
+test = "tests/test_spec_note_contract.py::test_the_field_spelled_with_a_capital_v_is_not_the_field"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an empty video_id: whose value sits on the next line, which the anchored pattern reads as absent"
+test = "tests/test_spec_note_contract.py::test_a_video_id_whose_value_sits_on_the_next_line_reads_as_absent"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a video_id: of TODO, which is present, meaningless, and accepted"
+test = "tests/test_spec_note_contract.py::test_a_video_id_of_todo_is_present_and_meaningless_and_accepted"
+kind = "pytest"
+
+# --- the runtime, which is the only denominator density has -------------------
+
+[[rule]]
+id = "DURATION"
+code = "E-DURATION"
+layer = "note-contract"
+owner = "resolve_note.parse_duration"
+trigger = "a note's frontmatter is read for the runtime the whole density check divides by"
+refuses = "a duration: field that is absent, or present and not one to three colon-separated groups where only the leading group may exceed 59"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "four groups, which used to parse as a runtime of over two days"
+test = "tests/test_spec_note_contract.py::test_four_colon_separated_groups_are_not_a_runtime"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a minutes group of 75, which is not a clock reading"
+test = "tests/test_spec_note_contract.py::test_a_minutes_group_of_seventy_five_is_not_a_clock_reading"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value on the NEXT line, which a newline-blind pattern would read as the runtime"
+test = "tests/test_spec_note_contract.py::test_a_duration_whose_value_sits_on_the_next_line_is_not_read"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a leading group of 90, which is ninety minutes and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_leading_group_of_ninety_is_ninety_minutes"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value of n/a, which is refused only because it holds no digits, not because anything read it"
+test = "tests/test_spec_note_contract.py::test_a_duration_of_n_slash_a_holds_no_digits_for_the_pattern"
+kind = "pytest"
+
+[[rule]]
+id = "DURATION-ZERO"
+code = "E-DURATION-ZERO"
+layer = "note-contract"
+owner = "resolve_note.check_note"
+trigger = "the runtime parsed cleanly and is about to be used as a divisor"
+refuses = "a runtime of zero seconds, because density then has no denominator"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a duration of 0:00"
+test = "tests/test_spec_note_contract.py::test_a_two_group_zero_runtime_leaves_density_no_denominator"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a duration of 0:00:00, the same zero spelled with three groups"
+test = "tests/test_spec_note_contract.py::test_a_three_group_zero_runtime_is_the_same_zero"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a duration of 0:01, which is one second and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_runtime_of_one_second_still_has_a_denominator"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note with a zero runtime and an anchor past it, where this code returns first and the anchor is never looked at"
+test = "tests/test_spec_note_contract.py::test_a_zero_runtime_returns_before_any_anchor_is_looked_at"
+kind = "pytest"
+
+# --- the numbers the note states about itself --------------------------------
+
+[[rule]]
+id = "DENSITY-MISSING"
+code = "E-DENSITY-MISSING"
+layer = "note-contract"
+owner = "resolve_note.check_note"
+trigger = "a note passed the runtime checks and the caller has not asked for density to be optional"
+refuses = "a note whose body states no sentence about density that also states a word count, a number of video-minutes, or a rate in words per video-minute — those three phrasings are the whole vocabulary, and a number in any other shape declares nothing"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note that says density and gives no number at all"
+test = "tests/test_spec_note_contract.py::test_the_word_density_with_no_number_declares_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that says density and gives a number in none of the three phrasings, which is refused exactly as the numberless one is"
+test = "tests/test_spec_note_contract.py::test_a_density_sentence_whose_number_is_in_no_declaring_shape_declares_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that states one number only, which counts as a declaration and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_density_sentence_stating_one_number_is_a_declaration"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run asked for --no-require-density, where the same note passes"
+test = "tests/test_spec_note_contract.py::test_a_run_that_did_not_ask_for_density_accepts_a_note_without_one"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the word density inside a fenced code block, which nothing strips and which therefore satisfies the rule"
+test = "tests/test_spec_note_contract.py::test_a_density_line_inside_a_fenced_block_still_counts_as_declared"
+kind = "pytest"
+
+[[rule]]
+id = "DENSITY-WORDS"
+code = "E-DENSITY-WORDS"
+layer = "note-contract"
+owner = "resolve_note.check_note"
+trigger = "a density sentence states a word count"
+refuses = "any stated word count that is not exactly the count of whitespace-split tokens in the rendered body once the marks a script wrote into it are removed — the ORPHAN and auto-demoted markers, the integrity blockquote and the Speculation heading, all four written by the demotion renderer"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a body carrying the integrity blockquote the demotion renderer wrote, whose tokens are the tool's and are not counted, so a render does not move the number the note declares"
+test = "tests/test_spec_note_contract.py::test_the_marks_the_demotion_renderer_wrote_are_not_the_authors_words"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a hedged count written with a tilde, which is the estimate the whole check exists to kill"
+test = "tests/test_spec_note_contract.py::test_a_hedged_word_count_is_read_as_the_exact_number_it_states"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a count that is off by one, which the zero tolerance still refuses"
+test = "tests/test_spec_note_contract.py::test_a_word_count_off_by_one_is_refused_by_the_zero_tolerance"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a decimal count, which must parse as itself rather than as its last digit"
+test = "tests/test_spec_note_contract.py::test_a_decimal_word_count_parses_as_itself"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a second, unrelated word count later in the same paragraph, which is outside the sentence and must NOT be read as the declaration"
+test = "tests/test_spec_note_contract.py::test_a_later_unrelated_word_count_is_outside_the_declaring_sentence"
+kind = "pytest"
+
+[[rule]]
+id = "DENSITY-MINUTES"
+code = "E-DENSITY-MINUTES"
+layer = "note-contract"
+owner = "resolve_note.check_note"
+trigger = "a density sentence states a number of video-minutes"
+refuses = "a stated minute count more than half a minute away from the runtime the frontmatter declares"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a stated minute count wrong by two minutes"
+test = "tests/test_spec_note_contract.py::test_a_minute_count_wrong_by_two_minutes_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a stated minute count wrong by exactly half a minute, which is the boundary and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_minute_count_wrong_by_exactly_half_a_minute_is_the_boundary"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a declaration written before the sentence, reading backwards from the word density"
+test = "tests/test_spec_note_contract.py::test_a_declaration_written_before_the_word_density_is_still_read"
+kind = "pytest"
+[[rule.neighbour]]
+case = "video-minute in the singular, which the pattern also accepts"
+test = "tests/test_spec_note_contract.py::test_video_minute_in_the_singular_is_also_a_declaration"
+kind = "pytest"
+
+[[rule]]
+id = "DENSITY-WPM"
+code = "E-DENSITY-WPM"
+layer = "note-contract"
+owner = "resolve_note.check_note"
+trigger = "a density sentence states words per video-minute"
+refuses = "a stated rate more than half a word per minute away from the counted words divided by the runtime"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a rate that is wrong and stated in bold, where the emphasis markers must not hide the number"
+test = "tests/test_spec_note_contract.py::test_emphasis_markers_do_not_hide_a_wrong_rate"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a rate whose phrase wraps across a hard-wrapped line"
+test = "tests/test_spec_note_contract.py::test_a_rate_phrase_that_wraps_across_a_line_is_still_read"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a rate wrong by exactly half a word per minute, which is the boundary and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_rate_wrong_by_exactly_half_a_word_per_minute_is_the_boundary"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note stating the rate three times, where every wrong statement has to be reported and not just the first"
+test = "tests/test_spec_note_contract.py::test_every_wrong_rate_statement_is_reported_not_only_the_first"
+kind = "pytest"
+
+# --- citations of a file in this repository ----------------------------------
+
+[[rule]]
+id = "CITE-EMPTY"
+code = "E-CITE-EMPTY"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "a well-formed citation token has been found and its quote is about to be looked for"
+refuses = "a quote that has nothing left in it once whitespace, asterisks and backticks are removed"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a quote of no characters at all"
+test = "tests/test_spec_note_contract.py::test_a_citation_quoting_nothing_at_all_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a quote of one space, which normalises to nothing"
+test = "tests/test_spec_note_contract.py::test_a_quote_of_one_space_normalises_to_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a quote of only emphasis characters, which also normalises to nothing"
+test = "tests/test_spec_note_contract.py::test_a_quote_of_only_emphasis_characters_normalises_to_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a quote of a single visible character, which is meaningless and is NOT refused"
+test = "tests/test_spec_note_contract.py::test_a_quote_of_a_single_visible_character_is_not_empty"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-MALFORMED"
+code = "E-CITE-MALFORMED"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "the body is swept a second time for text that opens a citation"
+refuses = "anything that starts a citation and never closes as a path, a hash and a quoted phrase, so a typo cannot pass as zero citations"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a token whose closing quote is missing"
+test = "tests/test_spec_note_contract.py::test_a_citation_whose_closing_quote_is_missing_is_reported"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a token written with a space instead of a colon after the keyword"
+test = "tests/test_spec_note_contract.py::test_a_space_instead_of_a_colon_after_the_keyword_is_reported"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unclosed token followed by a good one, which must report two defects and not swallow the second"
+test = "tests/test_spec_note_contract.py::test_an_unclosed_token_does_not_swallow_the_citation_after_it"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the keyword in lower case, which the strict pattern will not read and the loose sweep will"
+test = "tests/test_spec_note_contract.py::test_a_lower_case_keyword_is_read_only_by_the_loose_sweep"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a stray closing marker with no opening one, which nothing sweeps for and which passes"
+test = "tests/test_spec_note_contract.py::test_a_stray_closing_marker_is_swept_for_by_nothing"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-PATH"
+code = "E-CITE-PATH"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "a citation names something that is not a package address, so it is joined to the corpus root"
+refuses = "a cited path that lands outside the repository once symlinks and dot segments are resolved"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a path climbing out with parent-directory segments"
+test = "tests/test_spec_note_contract.py::test_a_cited_path_climbing_out_with_parent_segments_is_outside"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an absolute path, which replaces the root entirely when joined"
+test = "tests/test_spec_note_contract.py::test_an_absolute_cited_path_replaces_the_root_entirely"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a link inside the repository pointing at a file outside it"
+test = "tests/test_spec_note_contract.py::test_a_link_inside_the_repository_pointing_out_of_it_is_outside"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a package address, which is routed to the installed distribution instead and resolves there — asserting the absence of this code would prove nothing, because a package address joined to the corpus root still lands INSIDE it"
+test = "tests/test_spec_note_contract.py::test_a_package_address_is_outside_the_repository_on_purpose"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-NOFILE-REPO"
+code = "E-CITE-NOFILE"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "a cited repository path is inside the repository and is about to be opened"
+refuses = "a path that names no file, so the claim has no document behind it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a path that never existed"
+test = "tests/test_spec_note_contract.py::test_a_cited_path_that_never_existed_has_no_document_behind_it"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path that names a directory, which exists and is still not a file"
+test = "tests/test_spec_note_contract.py::test_a_cited_path_naming_a_directory_exists_and_is_not_a_file"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a token that wrapped between its path and its hash, where the collapsed path does exist and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_token_wrapped_before_its_hash_still_names_the_real_path"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an empty path with a real quote, which joins to the root itself and is not a file"
+test = "tests/test_spec_note_contract.py::test_an_empty_cited_path_joins_to_the_root_and_is_not_a_file"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-NOMATCH"
+code = "E-CITE-NOMATCH"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "the cited file opened and its text has been normalised with block boundaries marked"
+refuses = "a quote that does not occur in the cited file inside one markdown block, which is a claim attributed to a document that never made it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "words that read plausibly and are not in the document in that order"
+test = "tests/test_spec_note_contract.py::test_a_plausible_quote_absent_from_the_cited_file_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "words that all appear but sit either side of a blank line and a table header"
+test = "tests/test_spec_note_contract.py::test_a_quote_spanning_a_blank_line_and_a_table_header_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a quote missing an underscore, which used to match the real identifier"
+test = "tests/test_spec_note_contract.py::test_a_quote_missing_an_underscore_no_longer_matches_the_identifier"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a correct quote that wraps across a hard-wrapped newline, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_correct_quote_that_wraps_across_a_newline_still_resolves"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-SELF"
+code = "E-CITE-SELF"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "a citation has resolved to a real file and the note being checked is known"
+refuses = "a note citing itself, because a note is not evidence for itself"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note citing its own filename"
+test = "tests/test_spec_note_contract.py::test_a_note_citing_its_own_filename_is_not_evidence_for_itself"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note citing itself through a path with dot segments, which resolves to the same file"
+test = "tests/test_spec_note_contract.py::test_a_note_citing_itself_through_dot_segments_is_the_same_file"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two notes citing each other, which is not self-citation and is NOT refused"
+test = "tests/test_spec_note_contract.py::test_two_notes_citing_each_other_is_not_self_citation"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note checked with no note argument supplied, where the same self-citation passes"
+test = "tests/test_spec_note_contract.py::test_a_check_with_no_note_supplied_cannot_see_self_citation"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-UNREADABLE"
+code = "E-CITE-UNREADABLE"
+layer = "note-contract"
+owner = "resolve_note.resolve_citations"
+trigger = "a cited file exists and its text is being read"
+refuses = "a cited file whose bytes are not text, which is a different failure from the file being absent"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a cited file holding a byte that is not valid UTF-8"
+test = "tests/test_spec_note_contract.py::test_a_cited_file_with_an_undecodable_byte_is_a_different_failure"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a cited file the process may not open"
+test = "tests/test_spec_note_contract.py::test_a_cited_file_the_process_may_not_open_is_reported_as_unreadable"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a cited file that is empty, which reads fine and must fail as a missing quote instead"
+test = "tests/test_spec_note_contract.py::test_an_empty_cited_file_reads_fine_and_fails_as_a_missing_quote"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a cited file inside an installed package that is not text, which reaches the same reader by the other path"
+test = "tests/test_spec_note_contract.py::test_an_undecodable_file_inside_an_installed_package_reaches_the_same_reader"
+kind = "pytest"
+
+# --- citations of INSTALLED code, which is a different resolution path --------
+# Which path a citation takes is decided by ONE test: the whole value matching
+# name@version:relpath. Match, and the citation is resolved against the
+# installed distribution and can only reach E-CITE-PKGSPEC, E-CITE-NOPKG,
+# E-CITE-VERSION or E-CITE-NOFILE. No match, and it is joined to the corpus
+# root and can only reach E-CITE-PATH, E-CITE-NOFILE, E-CITE-SELF,
+# E-CITE-UNREADABLE or E-CITE-NOMATCH. E-CITE-EMPTY is decided before either.
+#
+# A VALUE CAN BE AMBIGUOUS, and the package path wins. A repository file whose
+# own name carries an at sign and a colon — `a@1.0:b.md` at the top of the
+# corpus — matches the package pattern, so the citation is sent to look for a
+# distribution called `a` and comes back as not installed. The repository file
+# is never opened and the reader is told the wrong reason.
+
+[[rule]]
+id = "CITE-PKGSPEC"
+code = "E-CITE-PKGSPEC"
+layer = "note-contract"
+owner = "resolve_note.package_target"
+trigger = "a value is handed to the installed-code resolver"
+refuses = "a value that is not a distribution name, an at sign, a version and a path — reachable only by calling the resolver directly, because all three production callers apply the same pattern before calling, so no run can print this code and no run exits on it"
+excused_by = []
+
+[[rule.neighbour]]
+case = "a value with no at sign at all"
+test = "tests/test_spec_note_contract.py::test_a_package_address_with_no_at_sign_is_not_an_address"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value with a version and no path after the colon"
+test = "tests/test_spec_note_contract.py::test_a_package_address_with_no_path_after_the_colon_is_not_an_address"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value with an empty version between the at sign and the colon"
+test = "tests/test_spec_note_contract.py::test_a_package_address_with_an_empty_version_is_not_an_address"
+kind = "pytest"
+[[rule.neighbour]]
+case = "any value reaching this from an ordinary run, which cannot happen: every production caller applies the same pattern before calling, so only a direct call can raise it"
+test = "tests/test_spec_note_contract.py::test_no_ordinary_run_can_reach_the_package_address_complaint"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-NOPKG"
+code = "E-CITE-NOPKG"
+layer = "note-contract"
+owner = "resolve_note.package_target"
+trigger = "a citation addresses installed code and the distribution is being located"
+refuses = "resolving against a distribution that is not installed here, saying the claim is uncheckable rather than false"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a distribution nobody has installed"
+test = "tests/test_spec_note_contract.py::test_a_distribution_nobody_has_installed_is_uncheckable_here"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a distribution name spelled with an underscore where the installed one uses a dash, which packaging calls the same name and which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_an_underscore_spelling_names_the_same_installed_distribution"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a repository file whose own name carries an at sign and a colon, which is sent down this path and reported as an absent package"
+test = "tests/test_spec_note_contract.py::test_a_repository_file_named_with_an_at_sign_is_sent_down_the_package_path"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the distribution installed in editable form, where the file list holds only a loader shim and the citation must still resolve"
+test = "tests/test_spec_note_contract.py::test_an_editable_install_still_resolves_through_the_import_system"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-VERSION"
+code = "E-CITE-VERSION"
+layer = "note-contract"
+owner = "resolve_note.package_target"
+trigger = "the cited distribution is installed and its version is compared with the one in the address"
+refuses = "resolving against any version other than the one the citation was resolved against, because the quote may still be present, at a new line, meaning something else"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a version that was never released"
+test = "tests/test_spec_note_contract.py::test_a_version_that_was_never_released_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the installed version with a trailing zero added, which is the same release under packaging rules and is still refused here because the comparison is string equality"
+test = "tests/test_spec_note_contract.py::test_a_version_with_a_trailing_zero_added_is_refused_by_string_equality"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the exact installed version, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_the_exact_installed_version_resolves"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a sidecar row citing a version that has since moved, which cannot be refreshed and must stay a defect"
+test = "tests/test_spec_note_contract.py::test_a_sidecar_row_citing_a_moved_version_cannot_be_refreshed"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-NOFILE-PKG"
+code = "E-CITE-NOFILE"
+layer = "note-contract"
+owner = "resolve_note.package_target"
+trigger = "the cited distribution is installed at the exact version named"
+refuses = "a path that release does not ship"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a module name that does not exist in that release"
+test = "tests/test_spec_note_contract.py::test_a_module_that_release_does_not_ship_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path naming a directory inside the package"
+test = "tests/test_spec_note_contract.py::test_a_path_naming_a_directory_inside_the_package_is_not_a_file"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path that is only a suffix of a real shipped path, which the endswith rule must not accept"
+test = "tests/test_spec_note_contract.py::test_a_path_that_is_only_a_suffix_of_a_shipped_path_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a real module reached only through the import system because the install is editable, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_shipped_module_is_found_even_when_the_file_list_is_a_shim"
+kind = "pytest"
+
+# --- the audit sidecar, which is what survives a render ----------------------
+
+[[rule]]
+id = "CITE-STALE"
+code = "E-CITE-STALE"
+layer = "note-contract"
+owner = "resolve_note.check_sidecar"
+trigger = "a citation resolved on an earlier run is re-checked from the recorded audit row"
+refuses = "a recorded row whose cited file has since changed or gone, which a rendered citation can no longer show any other way"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "the cited file edited so its recorded hash no longer matches"
+test = "tests/test_spec_note_contract.py::test_a_cited_file_edited_after_resolution_no_longer_matches_its_hash"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the cited file deleted"
+test = "tests/test_spec_note_contract.py::test_a_cited_file_that_has_gone_is_reported_as_stale"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the cited file edited above the quote so the quote moves but survives, which a refresh must repair rather than leave red"
+test = "tests/test_spec_note_contract.py::test_an_edit_above_the_quote_is_repaired_by_a_refresh"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the cited file edited so its length is unchanged, where only the hash can notice"
+test = "tests/test_spec_note_contract.py::test_an_edit_that_leaves_the_length_unchanged_is_caught_by_the_hash"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note with no sidecar at all, where nothing is checked and nothing is refused"
+test = "tests/test_spec_note_contract.py::test_a_note_with_no_sidecar_has_nothing_to_re_check"
+kind = "pytest"
+
+[[rule]]
+id = "CITE-UNRESOLVED"
+code = "E-CITE-UNRESOLVED"
+layer = "note-contract"
+owner = "resolve_note.write_note"
+trigger = "a render is about to rewrite a note in place"
+refuses = "writing any note that still holds a broken citation or a broken set, because a half-rendered note hides the defect it was meant to surface"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note with one good citation and one that names no file, where the good one must not be rendered either"
+test = "tests/test_spec_note_contract.py::test_one_broken_citation_stops_the_good_one_being_rendered"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note whose only defect is a malformed set, which blocks the write just as a citation does"
+test = "tests/test_spec_note_contract.py::test_a_malformed_set_blocks_a_write_just_as_a_citation_does"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note with no citations and no sets, which is left untouched and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_note_with_no_citations_and_no_sets_is_left_untouched"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that is red for density or status, which does not block a write because the write only reads these two families"
+test = "tests/test_spec_note_contract.py::test_a_note_red_for_status_is_still_written"
+kind = "pytest"
+
+[[rule]]
+id = "SIDECAR-ROW-SHORT"
+code = "E-SIDECAR-ROW"
+layer = "note-contract"
+owner = "resolve_note.check_sidecar"
+trigger = "an audit row is read during an ordinary check"
+refuses = "a row with fewer than three tab-separated columns, so a truncated row cannot be padded out and blamed on the cited document"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a row holding only a path"
+test = "tests/test_spec_note_contract.py::test_an_audit_row_holding_only_a_path_is_too_short_to_read"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row of exactly three columns, which passes here and is refused by the refresh path"
+test = "tests/test_spec_note_contract.py::test_an_audit_row_of_exactly_three_columns_passes_the_ordinary_check"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row whose columns are separated by spaces rather than tabs"
+test = "tests/test_spec_note_contract.py::test_audit_columns_separated_by_spaces_read_as_one_column"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a comment row or a blank row, which is skipped and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_comment_or_blank_audit_row_is_skipped"
+kind = "pytest"
+
+[[rule]]
+id = "SIDECAR-ROW-OUTSIDE"
+code = "E-SIDECAR-ROW"
+layer = "note-contract"
+owner = "resolve_note.check_sidecar"
+trigger = "an audit row names a repository path rather than a package address"
+refuses = "a recorded path that lands outside the repository, which no note could legally have cited"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a recorded path climbing out with parent-directory segments"
+test = "tests/test_spec_note_contract.py::test_a_recorded_path_climbing_out_with_parent_segments_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a recorded absolute path"
+test = "tests/test_spec_note_contract.py::test_a_recorded_absolute_path_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a recorded package address, which is outside the repository on purpose and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_recorded_package_address_is_outside_the_repository_on_purpose"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a recorded path that is inside the repository and simply gone, which is reported as staleness instead"
+test = "tests/test_spec_note_contract.py::test_a_recorded_path_inside_the_repository_and_gone_is_staleness"
+kind = "pytest"
+
+[[rule]]
+id = "SIDECAR-ROW-REFRESH"
+code = "E-SIDECAR-ROW"
+layer = "note-contract"
+owner = "resolve_note.refresh_sidecar"
+trigger = "an audit row is read in order to re-resolve its quote and rewrite the hash"
+refuses = "a row with fewer than four columns, because a refresh needs the recorded quote and a shorter row has none"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a row of three columns, which the ordinary check accepts"
+test = "tests/test_spec_note_contract.py::test_a_three_column_row_has_no_quote_for_a_refresh_to_re_resolve"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row with an empty fourth column, which has four columns and is NOT refused — the empty quote then matches at offset zero and the row refreshes to line 1"
+test = "tests/test_spec_note_contract.py::test_a_row_with_an_empty_quote_column_has_four_columns"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row outside the caller's requested set, which is left alone and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_row_outside_the_requested_set_is_left_alone"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row whose file changed and whose quote survived, which is rewritten rather than refused"
+test = "tests/test_spec_note_contract.py::test_a_row_whose_file_changed_and_whose_quote_survived_is_rewritten"
+kind = "pytest"
+
+[[rule]]
+id = "SIDECAR-UNREADABLE"
+code = "E-SIDECAR-UNREADABLE"
+layer = "note-contract"
+owner = "resolve_note.check_sidecar"
+trigger = "a note declares a video id and a sidecar file exists for it"
+refuses = "a sidecar whose bytes are not text, rather than treating an unopenable audit as no audit"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a sidecar holding a byte that is not valid UTF-8"
+test = "tests/test_spec_note_contract.py::test_an_audit_file_with_an_undecodable_byte_is_not_no_audit"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a sidecar the process may not open"
+test = "tests/test_spec_note_contract.py::test_an_audit_file_the_process_may_not_open_is_reported"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same unreadable sidecar reached through the refresh path, which returns quietly and refuses nothing"
+test = "tests/test_spec_note_contract.py::test_the_refresh_path_returns_quietly_on_an_unreadable_audit"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a sidecar that is empty, which reads fine and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_an_empty_audit_file_reads_fine"
+kind = "pytest"
+
+[[rule]]
+id = "SIDECAR-ORPHAN"
+code = "E-SIDECAR-ORPHAN"
+layer = "note-contract"
+owner = "resolve_note.orphan_sidecars"
+trigger = "a whole run has finished checking notes and the recorded audits are swept"
+refuses = "an audit file whose video id no note in the corpus declares, which is how renaming that field silently detaches the audit"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a sidecar left behind after its note's video id was edited"
+test = "tests/test_spec_note_contract.py::test_an_audit_left_behind_after_its_video_id_changed_is_orphaned"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run pointed at one note, where every other note's sidecar must NOT be called an orphan"
+test = "tests/test_review_gate.py::test_auditing_one_note_does_not_orphan_the_others"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same run read at the unit below the gate, where membership still comes from the corpus and not from the handed-in files"
+test = "tests/test_spec_note_contract.py::test_a_run_handed_one_note_still_reads_membership_from_the_corpus"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that cannot be decoded, which is skipped when the live set is built, so its sidecar reads as orphaned"
+test = "tests/test_spec_note_contract.py::test_a_note_that_cannot_be_decoded_leaves_its_audit_reading_as_orphaned"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a file in the audit directory that is not a tab-separated file, which the sweep never looks at"
+test = "tests/test_spec_note_contract.py::test_a_file_in_the_audit_directory_that_is_not_a_tsv_is_never_looked_at"
+kind = "pytest"
+
+# --- enumerations: the count is derived, never typed -------------------------
+
+[[rule]]
+id = "SET-UNCLOSED"
+code = "E-SET-UNCLOSED"
+layer = "note-contract"
+owner = "resolve_note.find_sets"
+trigger = "an enumeration block has opened and its close is looked for"
+refuses = "a block that never closes, so its members are never counted"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an opened block with members and no close"
+test = "tests/test_spec_note_contract.py::test_an_opened_block_with_members_and_no_close_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a close written in lower case, which the strict pattern does not accept"
+test = "tests/test_spec_note_contract.py::test_a_close_written_in_lower_case_is_not_the_close"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a second block after an unclosed one, which the strict scan stops before and which the loose sweep then names as malformed"
+test = "tests/test_spec_note_contract.py::test_the_scan_stops_at_an_unclosed_block_and_the_next_open_is_only_swept"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a block closed immediately with no members, which is a different defect and must not be reported as this one"
+test = "tests/test_spec_note_contract.py::test_a_block_closed_immediately_is_empty_rather_than_unclosed"
+kind = "pytest"
+
+[[rule]]
+id = "SET-NESTED"
+code = "E-SET-NESTED"
+layer = "note-contract"
+owner = "resolve_note.find_sets"
+trigger = "a block has opened and both its close and the next open have been located"
+refuses = "a second block opening before the first one closes, because the members would belong to two counts"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "one block opened inside another"
+test = "tests/test_spec_note_contract.py::test_one_block_opened_inside_another_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two blocks side by side, which do not nest and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_two_blocks_side_by_side_do_not_nest"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one close for two opens, where the scan restarts at the inner open and the close is handed to the inner block"
+test = "tests/test_spec_note_contract.py::test_a_single_close_for_two_opens_is_handed_to_the_inner_block"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the inner block itself, which is examined again on the next pass and can carry a second defect of its own"
+test = "tests/test_spec_note_contract.py::test_the_inner_block_is_examined_again_and_can_carry_its_own_defect"
+kind = "pytest"
+
+[[rule]]
+id = "SET-EMPTY"
+code = "E-SET-EMPTY"
+layer = "note-contract"
+owner = "resolve_note.find_sets"
+trigger = "a block opened and closed cleanly and its member lines have been gathered"
+refuses = "a block listing no members, so a partial enumeration degrades into a visibly short list rather than a false claim"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a block holding only a blank line"
+test = "tests/test_spec_note_contract.py::test_a_block_holding_only_a_blank_line_lists_no_members"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a block holding a paragraph and no list items"
+test = "tests/test_spec_note_contract.py::test_a_block_holding_a_paragraph_and_no_list_items_lists_no_members"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a block holding one indented list item, which counts as a member and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_block_holding_one_indented_list_item_has_a_member"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a block whose only item is a numbered one, which the item pattern also accepts"
+test = "tests/test_spec_note_contract.py::test_a_block_whose_only_item_is_numbered_has_a_member"
+kind = "pytest"
+
+[[rule]]
+id = "SET-MALFORMED"
+code = "E-SET-MALFORMED"
+layer = "note-contract"
+owner = "resolve_note.find_sets"
+trigger = "the body is swept a second time for text that opens an enumeration"
+refuses = "anything that starts an enumeration and does not open as the keyword, a colon and a label"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "the keyword followed by a space instead of a colon"
+test = "tests/test_spec_note_contract.py::test_the_set_keyword_followed_by_a_space_does_not_open_a_block"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the keyword in lower case, which the strict pattern will not read and the loose sweep will"
+test = "tests/test_spec_note_contract.py::test_a_lower_case_set_keyword_is_read_only_by_the_loose_sweep"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a space between the braces and the keyword"
+test = "tests/test_spec_note_contract.py::test_a_space_between_the_braces_and_the_set_keyword_is_malformed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a stray closing marker with no opening one, which neither sweep looks for and which passes"
+test = "tests/test_spec_note_contract.py::test_a_stray_set_close_is_swept_for_by_neither_pass"
+kind = "pytest"
+
+[[rule]]
+id = "SET-COUNT-LABEL"
+code = "E-SET-COUNT"
+layer = "note-contract"
+owner = "resolve_note.find_sets"
+trigger = "a well-formed enumeration block has members and its label is read"
+refuses = "a label carrying any digit outside backticks, or any of the words two to ten, both, all or every — which is wider than a count, because a number that enumerates nothing is refused too, and narrower than one, which is not in the vocabulary at all"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a label whose only number is a year, which counts nothing and is refused as a count anyway"
+test = "tests/test_spec_note_contract.py::test_a_label_whose_only_number_is_a_year_is_refused_as_a_count"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a label saying one, which states its own count and is outside the vocabulary, so it passes"
+test = "tests/test_spec_note_contract.py::test_a_label_saying_one_states_its_own_count_and_is_outside_the_vocabulary"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a label containing a number word"
+test = "tests/test_spec_note_contract.py::test_a_label_containing_a_number_word_states_its_own_count"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a label containing a digit"
+test = "tests/test_spec_note_contract.py::test_a_label_containing_a_digit_states_its_own_count"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a label saying every or all, which claims completeness without a number"
+test = "tests/test_spec_note_contract.py::test_a_label_saying_every_claims_completeness_without_a_number"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a label whose only digits sit inside a backticked timestamp, which is not a count and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_label_whose_only_digits_sit_in_a_backticked_timestamp_is_not_a_count"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a label saying several, which claims a size and is not refused"
+test = "tests/test_spec_note_contract.py::test_a_label_saying_several_claims_a_size_and_is_not_refused"
+kind = "pytest"
+
+[[rule]]
+id = "SET-COUNT-PROSE"
+code = "E-SET-COUNT"
+layer = "note-contract"
+owner = "resolve_note.check_enumerations"
+trigger = "a sentence states a number word, a plural noun and a colon, and a markdown list follows it"
+refuses = "a stated count that does not equal the number of list items it introduces"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a paragraph claiming four items above a list of three"
+test = "tests/test_spec_note_contract.py::test_a_paragraph_claiming_four_items_above_a_list_of_three"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a claim inside a list row, whose SIBLING rows are not its members and must NOT be counted"
+test = "tests/test_spec_note_contract.py::test_sibling_rows_are_not_the_members_of_a_claim_inside_a_list_row"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a claim inside a list row with a wrong-length list indented under it, which IS its enumeration"
+test = "tests/test_spec_note_contract.py::test_a_list_indented_under_a_claim_row_is_its_enumeration"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a count followed by a comma list in prose and no markdown list, which is not counted"
+test = "tests/test_spec_note_contract.py::test_a_comma_list_in_prose_with_no_markdown_list_is_not_counted"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a cardinality that enumerates nothing, such as a span of minutes or years, which is kept out only by the absent colon"
+test = "tests/test_spec_note_contract.py::test_a_cardinality_that_enumerates_nothing_is_not_counted"
+kind = "pytest"
+
+# --- the untokenised-path floor ----------------------------------------------
+
+[[rule]]
+id = "BARE-PATH"
+code = "E-BARE-PATH"
+layer = "note-contract"
+owner = "resolve_note.check_floor"
+trigger = "a note is checked with the floor on, which is the default, after citation tokens are removed from the body"
+refuses = "an intra-repo path asserted in prose instead of through a citation token, which is how a claim opts out of being checked at all"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a path written in prose under an ordinary heading"
+test = "tests/test_spec_note_contract.py::test_a_path_written_in_prose_under_an_ordinary_heading_is_untokenised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same path inside a citation token, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_the_same_path_inside_a_citation_token_is_not_untokenised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path already recorded in the audit sidecar, which rendering must not turn back into an unchecked one"
+test = "tests/test_spec_note_contract.py::test_a_path_already_recorded_in_the_audit_is_not_untokenised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path under the action heading, which names a file the note intends to change and is exempt"
+test = "tests/test_spec_note_contract.py::test_a_path_under_the_action_heading_names_a_file_to_change"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path under a heading one level deeper that reads Action, which the heading pattern does not match, so the exemption does not apply"
+test = "tests/test_spec_note_contract.py::test_a_three_hash_heading_named_action_does_not_set_the_section"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path under a DEEPER heading that follows the action heading, which stays exempt because the section is never cleared — it runs to the end of the body and only the next two-hash heading ends it"
+test = "tests/test_spec_note_contract.py::test_the_action_exemption_persists_until_the_next_two_hash_heading"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path in a directory or with a suffix the pattern does not list, which is asserted in prose and is not refused"
+test = "tests/test_spec_note_contract.py::test_a_path_in_an_unlisted_directory_is_not_matched_at_all"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a bare path below a citation token that wrapped across lines, which is still refused but at a line number shifted by the removed newlines"
+test = "tests/test_spec_note_contract.py::test_a_bare_path_below_a_wrapped_token_is_reported_at_a_shifted_line"
+kind = "pytest"
+
+# --- the outbound edge -------------------------------------------------------
+
+[[rule]]
+id = "STATUS-MISSING"
+code = "E-STATUS-MISSING"
+layer = "note-contract"
+owner = "resolve_note.check_status"
+trigger = "a note's frontmatter is read for the field that says how far the note got"
+refuses = "frontmatter with no readable status line at the left margin"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "frontmatter with no such field at all"
+test = "tests/test_spec_note_contract.py::test_frontmatter_with_no_status_field_at_all"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a two-word value, which the pattern cannot read and which therefore reports the field as ABSENT rather than as unknown"
+test = "tests/test_spec_note_contract.py::test_a_two_word_status_value_reports_the_field_as_absent"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an indented field, which the left-margin anchor does not see"
+test = "tests/test_spec_note_contract.py::test_an_indented_status_field_is_not_at_the_left_margin"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the field spelled with a capital letter"
+test = "tests/test_spec_note_contract.py::test_the_status_field_spelled_with_a_capital_letter"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a field with nothing after the colon, which the pattern DOES read, so the value is empty rather than the field absent — this is the boundary with the unknown-value rule and the direction this row otherwise never states"
+test = "tests/test_spec_note_contract.py::test_an_empty_status_value_is_not_reported_as_a_missing_field"
+kind = "pytest"
+
+[[rule]]
+id = "STATUS-UNKNOWN"
+code = "E-STATUS-UNKNOWN"
+layer = "note-contract"
+owner = "resolve_note.check_status"
+trigger = "a status line was read and normalised"
+refuses = "a value outside the four the corpus knows, which is neither a claim nor an admission"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a plausible word that is not in the vocabulary"
+test = "tests/test_spec_note_contract.py::test_a_plausible_word_outside_the_vocabulary"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an empty value, which reads as unknown rather than as missing"
+test = "tests/test_spec_note_contract.py::test_an_empty_status_value_reads_as_unknown_rather_than_missing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a value whose text sits on the NEXT line, which the anchored pattern reads as empty"
+test = "tests/test_spec_note_contract.py::test_a_status_value_on_the_next_line_reads_as_empty"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a correct value wrapped in quotation marks, which normalisation strips and must NOT refuse"
+test = "tests/test_spec_note_contract.py::test_a_correct_status_wrapped_in_quotation_marks_is_normalised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a correct value in capitals, which the vocabulary check is case-sensitive about"
+test = "tests/test_spec_note_contract.py::test_a_correct_status_in_capitals_is_outside_a_case_sensitive_vocabulary"
+kind = "pytest"
+
+[[rule]]
+id = "STATUS-APPLIED"
+code = "E-STATUS-APPLIED"
+layer = "note-contract"
+owner = "resolve_note.check_status"
+trigger = "the status is one of the four and the field naming the outbound edge has been read"
+refuses = "a note naming an edge while its status says the work was not applied, which under-reports work that was really done"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an edge named while the status says distilled"
+test = "tests/test_spec_note_contract.py::test_an_edge_named_while_the_status_says_distilled"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge named while the status says discarded"
+test = "tests/test_spec_note_contract.py::test_an_edge_named_while_the_status_says_discarded"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge named while the status says capture, which is the third of the three statuses that fire — the test is that the status is not applied, not that it is one of two"
+test = "tests/test_spec_note_contract.py::test_an_edge_named_while_the_status_says_capture"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge whose value is only invisible characters, which normalises to empty and must NOT be refused here"
+test = "tests/test_spec_note_contract.py::test_an_edge_of_only_invisible_characters_normalises_to_empty"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge field whose value sits on the next line, which used to be read as the next field's value"
+test = "tests/test_spec_note_contract.py::test_an_edge_value_on_the_next_line_is_not_the_next_fields_value"
+kind = "pytest"
+
+[[rule]]
+id = "STATUS-NOEDGE"
+code = "E-STATUS-NOEDGE"
+layer = "note-contract"
+owner = "resolve_note.check_status"
+trigger = "the status says the note was applied"
+refuses = "an empty outbound edge under that status, which claims an edge that does not exist"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an edge field left blank"
+test = "tests/test_spec_note_contract.py::test_an_applied_note_with_a_blank_edge_field_claims_an_edge_it_lacks"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge field holding only spaces, or a zero-width space, or a soft hyphen, or a pair of quotation marks"
+test = "tests/test_review_gate.py::test_an_applied_field_that_says_nothing_is_not_an_edge"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge field holding YAML's own word for nothing, which this reader treats as a value, so the EDGE rule refuses it and this one does not"
+test = "tests/test_spec_note_contract.py::test_yamls_own_word_for_nothing_is_a_value_here_not_an_empty_field"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an edge field holding TODO, which is not empty and is not refused by this rule"
+test = "tests/test_spec_note_contract.py::test_an_edge_field_holding_todo_is_not_empty"
+kind = "pytest"
+
+[[rule]]
+id = "STATUS-EDGE"
+code = "E-STATUS-EDGE"
+layer = "note-contract"
+owner = "resolve_note.applied_target"
+trigger = "the outbound edge names something and the caller supplied a corpus root to resolve it against"
+refuses = "a named edge that opens as no file from the WORKING DIRECTORY THE GATE WAS RUN IN, the repository, or the repository's parent, because a phantom path claims the same absent edge as a blank field. The note's own directory is not one of the three, though the defect message says it is; and the first of the three is ambient, so the same note can pass or fail on where the operator stood"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a path that opens only from the directory the command was run in, which resolves — the base the row used to call the note, and the one the message still does"
+test = "tests/test_spec_note_contract.py::test_an_edge_that_opens_only_from_the_directory_the_command_was_run_in_resolves"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path that opens only from the note's own directory, which is refused, because that base does not exist"
+test = "tests/test_spec_note_contract.py::test_an_edge_that_opens_only_beside_the_note_is_still_a_phantom"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path that names no file anywhere"
+test = "tests/test_spec_note_contract.py::test_an_edge_that_names_no_file_anywhere_is_a_phantom"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path written from the repository root, which resolves and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_an_edge_written_from_the_repository_root_resolves"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path resolved from the repository's PARENT, which is the corpus's second convention and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_an_edge_resolved_from_the_repositorys_parent_resolves"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path starting with a tilde, which is expanded before it is looked for"
+test = "tests/test_spec_note_contract.py::test_an_edge_starting_with_a_tilde_is_expanded_before_it_is_looked_for"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same phantom path checked with no corpus root supplied, where nothing resolves anything and the note passes"
+test = "tests/test_spec_note_contract.py::test_a_phantom_edge_checked_with_no_corpus_root_resolves_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a path naming a directory, which exists and is accepted as an edge"
+test = "tests/test_spec_note_contract.py::test_an_edge_naming_a_directory_exists_and_is_accepted"
+kind = "pytest"
+
+# --- the stamp, which is a claim about a MOMENT ------------------------------
+# `graded_with:` does not record a version. It records that a named build of
+# these checks found this note clean AT THE TIME the stamp was written, and it
+# can only be written by --stamp on a note that is clean then. That is why a
+# different installed version makes it stale rather than wrong: the claim is
+# still true about its moment and is no longer comparable with this one.
+
+[[rule]]
+id = "GRADE-UNSTAMPED"
+code = "E-GRADE-UNSTAMPED"
+layer = "note-contract"
+owner = "resolve_note.check_grade"
+trigger = "a note is checked on a machine where the distribution is installed"
+refuses = "a note carrying no record THE PATTERN CAN READ of which build found it clean, so its pass is attributed to no moment at all — a record whose value holds a space is unreadable to it and is reported as absent, in a message that denies a line the file contains"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a record present but written with a space in its value, which the pattern cannot span, so it is reported as no record at all"
+test = "tests/test_spec_note_contract.py::test_a_graded_with_record_written_with_a_space_is_reported_as_absent"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note with no such field"
+test = "tests/test_spec_note_contract.py::test_a_note_with_no_graded_with_field_attributes_its_pass_to_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the field present with nothing after the colon"
+test = "tests/test_spec_note_contract.py::test_a_graded_with_field_with_nothing_after_the_colon"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the field holding a pair of quotation marks, which this reader does NOT normalise, so it is treated as a value and reported as stale instead"
+test = "tests/test_spec_note_contract.py::test_a_graded_with_field_of_two_quotation_marks_is_treated_as_a_value"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run where the distribution is not installed, which is silent by design and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_run_where_the_distribution_is_not_installed_is_silent"
+kind = "pytest"
+
+[[rule]]
+id = "GRADE-STALE"
+code = "E-GRADE-STALE"
+layer = "note-contract"
+owner = "resolve_note.check_grade"
+trigger = "a note records which build found it clean and that build is compared with the installed one"
+refuses = "a record naming any build other than the one installed now, because the note's pass is no longer comparable with this run"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a record naming an older release"
+test = "tests/test_spec_note_contract.py::test_a_record_naming_an_older_release_is_no_longer_comparable"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a record naming the installed version with a trailing zero added, which packaging calls the same release and this string comparison calls different"
+test = "tests/test_spec_note_contract.py::test_a_record_with_a_trailing_zero_added_is_a_different_string"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a record naming a different distribution entirely at the right version"
+test = "tests/test_spec_note_contract.py::test_a_record_naming_a_different_distribution_at_the_right_version"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a record naming exactly the installed build, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_record_naming_exactly_the_installed_build"
+kind = "pytest"
+
+[[rule]]
+id = "GRADE-EXEMPT"
+code = "E-GRADE"
+layer = "note-contract"
+owner = "resolve_note.stamp_note"
+trigger = "a stamp is about to be written and the note's outstanding defects are counted"
+refuses = "letting the grade family count as a reason to withhold the stamp that would repair it, so a stale or absent record does not lock itself in"
+excused_by = []
+exit = 0
+
+[[rule.neighbour]]
+case = "a note whose only defect is that it records an older build, which must still be stamped"
+test = "tests/test_spec_note_contract.py::test_a_note_whose_only_defect_is_an_older_record_is_still_stamped"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note whose only defect is that it records no build at all, which must still be stamped"
+test = "tests/test_spec_note_contract.py::test_a_note_whose_only_defect_is_no_record_at_all_is_still_stamped"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note carrying a real defect as well as a stale record, which must NOT be stamped"
+test = "tests/test_spec_note_contract.py::test_a_note_with_a_real_defect_and_a_stale_record_is_not_stamped"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a defect line from another family that merely mentions the grade prefix in its text, which this prefix match drops — so a note with an outstanding defect is stamped clean"
+test = "tests/test_spec_note_contract.py::test_a_defect_line_that_merely_mentions_the_grade_prefix_is_dropped"
+kind = "pytest"
+
+[[rule]]
+id = "STAMP-REFUSED"
+code = "E-STAMP-REFUSED"
+layer = "note-contract"
+owner = "resolve_note.stamp_note"
+trigger = "a stamp is asked for on a named note"
+refuses = "recording a pass on a note that is defective at that moment, because such a record reads later as a build having passed it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note carrying an ordinary defect, which is refused and left byte-for-byte as it was"
+test = "tests/test_spec_note_contract.py::test_a_note_carrying_an_ordinary_defect_is_refused_and_left_untouched"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note whose only defect is that it declares no density, which the default stamp grades exactly as the default check does"
+test = "tests/test_spec_note_contract.py::test_a_note_declaring_no_density_is_graded_by_the_default_stamp"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same note stamped through the command line rather than the function, where the flags must be passed through"
+test = "tests/test_review_gate.py::test_the_stamp_entry_point_grades_as_hard_as_check_does"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note already carrying this exact record, which is left alone and is neither refused nor rewritten"
+test = "tests/test_spec_note_contract.py::test_a_note_already_carrying_this_exact_record_is_left_alone"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a clean note that a stamp of a NEIGHBOURING note has just made stale, which one pass cannot finish and which the second round must reach"
+test = "tests/test_spec_note_contract.py::test_stamping_one_note_makes_its_neighbour_stale_for_a_second_round"
+kind = "pytest"
+
+# --- anchors, the only cross-check the runtime has ---------------------------
+
+[[rule]]
+id = "ANCHOR-RANGE"
+code = "E-ANCHOR-RANGE"
+layer = "note-contract"
+owner = "resolve_note.check_anchors"
+trigger = "a note's runtime parsed and is not zero, so the timestamps in the body can be compared with it"
+refuses = "a backticked timestamp later than the declared runtime, which cites a moment the recording does not have"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a timestamp well past the end of the recording"
+test = "tests/test_spec_note_contract.py::test_a_timestamp_well_past_the_end_of_the_recording"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a timestamp beside a reference to another note, which legitimately belongs to a different recording and must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_timestamp_beside_a_reference_to_another_note_is_exempt"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a timestamp exactly equal to the runtime, which is the boundary and is not refused"
+test = "tests/test_spec_note_contract.py::test_a_timestamp_exactly_equal_to_the_runtime_is_the_boundary"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a timestamp on the line ABOVE a reference to another note, which the forward-only exemption window does not cover"
+test = "tests/test_spec_note_contract.py::test_a_timestamp_on_the_line_above_a_reference_is_not_exempt"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a timestamp past the runtime in a note whose runtime does not parse, where the runtime defect returns first and the timestamp is never looked at"
+test = "tests/test_spec_note_contract.py::test_an_unparseable_runtime_returns_before_any_timestamp_is_read"
+kind = "pytest"
+
+# --- the peer band -----------------------------------------------------------
+
+[[rule]]
+id = "BAND"
+code = "E-BAND"
+layer = "note-contract"
+owner = "resolve_note.check_band"
+trigger = "every note in the corpus has been counted, so the real spread of rates is known"
+refuses = "a declared peer band whose ends are more than half a word per minute from the ends the corpus actually spans"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a band declared far from the computed one"
+test = "tests/test_spec_note_contract.py::test_a_band_declared_far_from_the_computed_one"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a band whose ends are each within a rounding step, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_a_band_within_a_rounding_step_of_the_computed_one"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run over a corpus where no note has a countable rate, so there is no band and nothing is checked"
+test = "tests/test_spec_note_contract.py::test_a_corpus_with_no_countable_rate_has_no_band_to_check"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a band declared with its ends the wrong way round, which is compared end for end and refused for the wrong reason"
+test = "tests/test_spec_note_contract.py::test_a_band_declared_with_its_ends_the_wrong_way_round"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a band declared inside a quotation of another note's text, which is still read as this note's claim"
+test = "tests/test_spec_note_contract.py::test_a_band_inside_a_quotation_is_still_read_as_this_notes_claim"
+kind = "pytest"
+
+# =============================================================================
+# THE GAP LIST.
+# =============================================================================
+#
+# 1. RULES LEFT IN THE DRAFT — none. All 45 rows the draft carried are here,
+#    and all 206 neighbours they name have a case. 202 of those cases are in
+#    tests/test_spec_note_contract.py; the other four were already in the suite
+#    and are cited rather than copied:
+#
+#      tests/test_review_gate.py::test_a_report_is_not_a_note_even_when_the_gate_is_pointed_at_reviews
+#      tests/test_review_gate.py::test_auditing_one_note_does_not_orphan_the_others
+#      tests/test_review_gate.py::test_an_applied_field_that_says_nothing_is_not_an_edge
+#      tests/test_review_gate.py::test_the_stamp_entry_point_grades_as_hard_as_check_does
+#
+#    Those four are the one dependency this file has on a test it does not own:
+#    renaming any of them turns a row here red, which is the intended
+#    behaviour but is worth knowing before the rename.
+#
+#    A fifth was cited and has been dropped. READ's sibling-gate neighbour
+#    named tests/test_corpus_scan.py::test_a_run_that_walked_no_file_is_refused_too,
+#    which asserts three exit codes and a stderr string, never this code, and
+#    opens a path that does not exist rather than one that cannot be decoded.
+#    Renaming this code in all four sibling modules left it green. It is
+#    replaced by two cases here, one per direction, and by the correction in
+#    3h below.
+#
+# 2. NEIGHBOURS THAT COULD NOT BE WRITTEN WITHOUT CHANGING SOURCE — none. Two
+#    needed care rather than a source change and are recorded here so the next
+#    reader does not re-derive them:
+#
+#    a. The two permission cases — a cited file and a sidecar the process may
+#       not open — set mode 0o000 and are SKIPPED when the suite runs as root,
+#       because a permission bit does not stop root and the case could not
+#       fire. On an ordinary account they run.
+#       [tests/test_spec_note_contract.py, `not_as_root`]
+#
+#    b. `E-CITE-UNREADABLE` reached through the PACKAGE path needs an installed
+#       distribution shipping a file that is not text. Writing one into
+#       watchquality/ would be a source change, so the case builds a
+#       distribution in a temporary directory with its own `.dist-info` and
+#       puts it on sys.path — which is the same thing to
+#       `importlib.metadata`, and is what the resolver actually asks.
+#       [tests/test_spec_note_contract.py, `fake_dist`]
+#
+# 3. WHERE THE CODE AND ITS DOCSTRING DISAGREE.
+#
+#    a. `check_sidecar` refuses a row with fewer than THREE columns and its
+#       message reads "<n> of 4 columns". The reader is told the shape is four
+#       and the check enforces three, so a three-column row — a recorded
+#       citation with no quote — passes the ordinary check and is refused only
+#       by the refresh path, which demands four. One code, two thresholds.
+#       [watch-quality/src/watchquality/resolve_note.py:810-814 against :875-877]
+#
+#    b. `package_target`'s docstring presents E-CITE-PKGSPEC as one of the
+#       distinct failures a reader will meet. It is unreachable from any
+#       ordinary run: all three production callers apply the same
+#       name@version:path pattern before calling, so a value that would fail it
+#       is never sent down this path. Only a direct call raises it.
+#       [resolve_note.py:518-520, guarded at :592, :817, :888]
+#
+#    c. `check_grade`'s docstring names three states and calls the third
+#       "uninstallable ... Silent". Silent is correct, and it means the whole
+#       grade family is switched off wherever the distribution is not
+#       installed — including CI images that run the checks from a source tree.
+#       The docstring frames this as a courtesy; in effect it is a condition
+#       under which two rules never fire.
+#       [resolve_note.py:942-947]
+#
+#    d. The module docstring says E-BARE-PATH is "exempt under `## Action`".
+#       The exemption is keyed on an exact two-hash heading whose text is
+#       Action; a three-hash heading of the same name does not set the section
+#       and does not exempt, and once set the section persists until the next
+#       two-hash heading. Neither behaviour is written down.
+#       [resolve_note.py:49-52 against :1146-1152]
+#
+#    e. `E-GRADE` is listed as a code of this module and is not a defect
+#       string. The conformance scanner reads codes out of the source text, and
+#       the only occurrence is the prefix literal used to drop the grade family
+#       before a stamp decides. The GRADE-EXEMPT row above describes that
+#       filter as the rule, which is what the code does, but a reader looking
+#       for a printed `E-GRADE` line will never find one.
+#       [resolve_note.py:977]
+#
+#    f. `check_anchors`'s docstring says anchors "near a reference to another
+#       note are exempt". The window is forward-only — the reference's own line
+#       and the two below it — so an anchor on the line ABOVE a reference is
+#       not exempt. "Near" reads as symmetric and is not.
+#       [resolve_note.py:1096-1098 against :1102-1106]
+#
+#    g. `check_enumerations`'s docstring argues the check is narrow enough not
+#       to fire on prose, and measures that narrowness on the corpus: "widening
+#       this to every 'three minutes' would fire 111 times". A span of minutes
+#       IS counted today whenever it is written with a colon and a markdown
+#       list follows it — "It ran for three minutes:" above two bullets reports
+#       `declared three minutes but 2 listed`. What keeps the count down is the
+#       colon, not the noun, and the docstring does not say so.
+#       [resolve_note.py:724-761 against :133-134]
+#
+#    h. `E-READ` is not one guard printed by four modules. anchor_manifest,
+#       ocr_vote and spoken_vote each call `safe_read` and print the reason it
+#       returns, so an undecodable note is refused there in the same words.
+#       wq_corpus_scan does not call it: it catches UnicodeDecodeError and
+#       re-reads the file with replacement characters, deliberately, so one
+#       latin-1 subtitle cannot abort the walk — and it prints `E-READ` only
+#       for an OSError, with the exception's own text. An undecodable file is
+#       therefore refused by three of the four and by none of the walk.
+#       [wq_corpus_scan.py:260-279 against resolve_note.py:492-501]
+#
+#    i. `E-STATUS-EDGE`'s message names the note as its first base. The code's
+#       first base is `Path(value).expanduser()`, which for a relative value is
+#       the PROCESS's working directory; the note's own directory is never
+#       tried. So a note beside `sibling.md` is told the file resolves from
+#       nowhere, and a note next to no file at all passes whenever the operator
+#       happened to stand in a directory that holds the path. The row above
+#       states the real bases and both directions have a case; the MESSAGE
+#       still says "from the note", and correcting it is a source edit.
+#       [resolve_note.py:1174-1187 against :1217-1219]
+#
+# 4. NEIGHBOURS WHOSE `case` LINE WAS REWRITTEN BECAUSE THE DRAFT HAD IT WRONG.
+#    Each was re-derived by driving the owning function; the draft's wording is
+#    quoted first.
+#
+#    a. CITE-NOPKG, "a distribution name spelled with an underscore where the
+#       installed one uses a dash". The draft filed this under a rule that
+#       REFUSES. `importlib.metadata` normalises a distribution name, so
+#       `watch_quality@X:resolve_note.py` resolves exactly as the dashed
+#       spelling does. Rewritten as a must-NOT-fire.
+#       [resolve_note.py:522-525]
+#
+#    b. STATUS-NOEDGE, "an edge field holding YAML's own word for nothing".
+#       `header_value` normalises quoting and invisible characters and does not
+#       read YAML nulls, so `applied: null` is a value: STATUS-NOEDGE does not
+#       fire and STATUS-EDGE does, for naming a path that opens as nothing.
+#       Rewritten to say which rule catches it.
+#       [resolve_note.py:1312-1348 against :1211-1219]
+#
+#    c. SET-UNCLOSED, "a second block after an unclosed one, which the scan
+#       stops before and never examines". The strict scan does stop, and the
+#       LOOSE sweep then reports the second block — as E-SET-MALFORMED, which
+#       is not what it is. Rewritten to name both halves.
+#       [resolve_note.py:672-674 against :697-703]
+#
+#    d. SET-NESTED, "a block opened inside another and never closed, where the
+#       scan restarts at the inner open". With one close for two opens the
+#       outer block is reported nested and the close is handed to the INNER
+#       block, which then parses cleanly. Rewritten to describe that.
+#       [resolve_note.py:675-678]
+#
+#    e. CITE-NOFILE-REPO, "a path whose only fault is a wrapped line inside the
+#       token". A newline inside the PATH collapses to a space and the path
+#       stops existing — `docs/ x.md` — so that spelling is refused. The
+#       must-NOT-fire case is a token that wrapped between its path and its
+#       hash, which is where a hard wrap actually lands. Rewritten.
+#       [resolve_note.py:583]
+#
+#    f. SIDECAR-ROW-REFRESH, "a row with an empty fourth column, which has four
+#       columns and no quote to re-resolve". True as far as it goes, and the
+#       consequence is worth stating: the empty quote normalises to the empty
+#       string, `str.find("")` returns 0, and the row is REFRESHED to line 1
+#       with the current hash. An empty quote silently re-pins a citation.
+#       [resolve_note.py:908-917]
+#
+# 5. ONE RULE THAT IS WEAKER THAN ITS ROW READS, REPORTED AND NOT FIXED.
+#    GRADE-EXEMPT drops the grade family with `"E-GRADE-" not in d`, which
+#    matches the whole defect LINE rather than its code. A note whose only
+#    outstanding defect is `E-BARE-PATH untokenised docs/E-GRADE-note.md`
+#    therefore has that defect filtered away and is stamped clean. The case
+#    above pins the behaviour as it is; changing it is a source edit and
+#    belongs to whoever owns the module.
+#    [resolve_note.py:977]

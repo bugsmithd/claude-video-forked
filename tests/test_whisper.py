@@ -422,19 +422,56 @@ class TestOpenRouterSegments:
 
 
 class TestOpenRouterBackend:
-    def test_the_key_selects_the_backend(self, monkeypatch):
+    def test_asking_for_it_by_name_selects_it(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
-        assert whisper.load_api_key()[0] == "openrouter"
+        assert whisper.load_api_key("openrouter")[0] == "openrouter"
 
-    def test_it_is_preferred_over_groq(self, monkeypatch):
+    def test_the_key_alone_does_not_select_it(self, monkeypatch):
+        """It is a flag, not a default.
+
+        The endpoint ignores the provider pin and routes to whichever provider
+        is cheapest that minute, so which model actually decoded a run can
+        change between runs. A backend like that must be asked for, because the
+        transcript is the oracle every downstream check is measured against.
+        """
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        monkeypatch.setenv("WHISPER_CPP_BIN", "/usr/bin/whisper")
+        assert whisper.load_api_key()[0] == "local"
+
+    def test_a_key_that_only_openrouter_has_leaves_no_backend(
+            self, monkeypatch, tmp_path):
+        """HOME is redirected because `_read_config_value` falls through to the
+        dotenv, and this developer's real one has a whisper.cpp path in it —
+        the test would otherwise pass on the machine rather than on the code."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        for name in ("GROQ_API_KEY", "OPENAI_API_KEY", "WHISPER_CPP_BIN"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        assert whisper.load_api_key() == (None, None)
+        assert whisper.load_api_key("openrouter")[0] == "openrouter"
+
+    def test_groq_still_beats_it_without_a_flag(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
         monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
-        assert whisper.load_api_key()[0] == "openrouter"
+        assert whisper.load_api_key()[0] == "groq"
 
     def test_a_preference_still_wins(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
         monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
         assert whisper.load_api_key("groq")[0] == "groq"
+
+    def test_the_flag_offers_it(self):
+        """A backend `load_api_key` honours and the CLI cannot name is a
+        backend nobody can reach, and that was the state for months."""
+        import subprocess
+        import sys
+        watch_py = (Path(__file__).resolve().parent.parent / "skills" / "watch"
+                    / "scripts" / "watch.py")
+        out = subprocess.run([sys.executable, str(watch_py), "--help"],
+                             capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        assert "openrouter" in out.stdout
 
     def test_the_second_model_is_opt_in(self, monkeypatch):
         monkeypatch.delenv("WATCH_OPENROUTER_MODEL_2", raising=False)
@@ -542,14 +579,49 @@ class TestAlignRenderings:
         assert report is not None
         assert "E-TS-DIVERGENT" in report.read_text(encoding="utf-8")
 
-    def test_the_preferred_provider_is_one_of_the_documented_ones(self):
-        # OpenRouter documents verbose_json as available on these three only.
-        # Measured 2026-08-19: the pin has no effect on this endpoint and a
-        # provider outside the list returned timestamps anyway, so this asserts
-        # the preference is coherent, NOT that routing is guaranteed.
+    def test_the_pin_names_a_provider_only_the_router_can_reach(self):
+        """The router exists for providers a direct backend cannot reach.
+
+        The pin defaulted to `groq`, which is also a backend of its own
+        (`--whisper groq`, `GROQ_API_KEY`), so the default spent the router's
+        margin reaching a provider already reachable directly. The requirement
+        is deepinfra VIA openrouter; groq direct.
+
+        `deepinfra` is outside the three OpenRouter DOCUMENTS as returning
+        `verbose_json` and inside the three this repo MEASURED returning it
+        (2026-08-19, see the note above `OPENROUTER_ENDPOINT`) -- which is why
+        the documented list is kept as a doc fact and is not the test.
+        """
+        # The doc claim, unchanged and still only a doc claim.
         assert whisper.OPENROUTER_TIMESTAMPED_PROVIDERS == (
             "openai", "groq", "together")
-        assert whisper.OPENROUTER_PROVIDER in whisper.OPENROUTER_TIMESTAMPED_PROVIDERS
+        # The measurement, which is what the pin is chosen from.
+        assert whisper.OPENROUTER_MEASURED_TIMESTAMPED == (
+            "groq", "deepinfra", "together")
+        assert whisper.OPENROUTER_PROVIDER in whisper.OPENROUTER_MEASURED_TIMESTAMPED
+        # And not a provider that is its own backend.
+        assert whisper.OPENROUTER_PROVIDER == "deepinfra"
+        assert whisper.OPENROUTER_PROVIDER not in {"groq", "openai", "local"}
+
+    def test_the_default_pin_does_not_warn_about_itself(
+            self, monkeypatch, tmp_path, capsys):
+        """The warning is for a pin with no evidence, not for the default."""
+        audio = tmp_path / "a.mp3"
+        audio.write_bytes(b"\x00")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"segments": []}'
+
+        monkeypatch.setattr(whisper, "urlopen", lambda *a, **k: FakeResponse())
+        whisper._post_openrouter("sk", "m", audio)
+        assert "is outside" not in capsys.readouterr().err
 
     def test_the_request_asks_for_timestamps_and_pins_the_provider(
             self, monkeypatch, tmp_path):
@@ -581,12 +653,12 @@ class TestAlignRenderings:
         assert out["segments"][0]["text"] == "hi"
         assert sent["url"] == whisper.OPENROUTER_ENDPOINT
         assert sent["body"]["response_format"] == "verbose_json"
-        assert sent["body"]["provider"]["only"] == ["groq"]
+        assert sent["body"]["provider"]["only"] == ["deepinfra"]
         assert sent["body"]["provider"]["allow_fallbacks"] is False
         assert sent["body"]["input_audio"]["format"] == "mp3"
         assert base64.b64decode(sent["body"]["input_audio"]["data"]) == b"\x00\x01\x02"
 
-    def test_a_provider_outside_the_documented_list_is_warned_about(
+    def test_a_provider_with_neither_doc_nor_measurement_is_warned_about(
             self, monkeypatch, tmp_path, capsys):
         audio = tmp_path / "a.mp3"
         audio.write_bytes(b"\x00")
@@ -603,8 +675,12 @@ class TestAlignRenderings:
 
         monkeypatch.setattr(whisper, "urlopen",
                             lambda *a, **k: FakeResponse())
-        whisper._post_openrouter("sk", "m", audio, provider="deepinfra")
-        assert "deepinfra" in capsys.readouterr().err
+        # `deepinfra` used to be the example here. It is the default now, and
+        # the same file records it returning timestamps, so warning about it
+        # would be warning about the measurement. A provider with neither the
+        # doc nor the measurement behind it is what the line is for.
+        whisper._post_openrouter("sk", "m", audio, provider="fireworks")
+        assert "fireworks" in capsys.readouterr().err
 
 
 def _segments(spans):
@@ -682,3 +758,18 @@ class TestGranularity:
         assert "coarse" in capsys.readouterr().err
         with pytest.raises(SystemExit):
             whisper._transcribe_file("openrouter", "sk", audio)
+
+
+def test_an_unknown_backend_name_names_the_mistake(monkeypatch):
+    """properties I33: a typo was reported as a missing credential.
+
+    `--backend Local` on a fully configured machine answered "No Whisper
+    backend available. Set GROQ_API_KEY…", sending the user to fix credentials
+    they already have. `watch.py` constrains its own flag with argparse
+    choices; this module's own CLI does not, and this is the shared door.
+    """
+    monkeypatch.setattr(whisper, "_read_config_value", lambda name: "sk-x")
+    assert whisper.load_api_key("groq") == ("groq", "sk-x")
+    with pytest.raises(SystemExit) as caught:
+        whisper.load_api_key("Local")
+    assert "Local" in str(caught.value), caught.value

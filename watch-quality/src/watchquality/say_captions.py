@@ -128,6 +128,13 @@ def selftest() -> int:
             fails += 1
             print(f"FAIL {name}: got {got!r} want {want!r}")
 
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private. This
+    # checker records rather than raises, so the refusal `done()` provokes
+    # lands in `fails` and the return below is what carries it out.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
+
     check("MM:SS.mmm parses", clock(None, "01", "05", "500"), 65.5)
     check("HH:MM:SS.mmm parses", clock("1", "01", "05", "000"), 3665.0)
     check("anchor seconds past the hour", seconds_of("`[1:05:18]`"), 3918)
@@ -175,6 +182,7 @@ def selftest() -> int:
         check("absent phrase is empty", where(rows, "tldraw"), [])
         check("no track is not a crash", find_tracks("NOSUCH", roots=(root,)), [])
 
+    proof.done()
     if fails:
         print(f"selftest FAILED ({fails})")
         return 1

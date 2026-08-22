@@ -78,6 +78,7 @@ import re
 import sys
 import importlib
 import tempfile
+import unicodedata
 from importlib import metadata
 from pathlib import Path
 
@@ -149,6 +150,9 @@ RE_SENTENCE_END = re.compile(r"[.!?](?=\s)")
 # README filename rule: YYYY-MM-DD--<slug>--<video-id>.md. Used when walking a
 # directory so review reports filed under notes/ are not mistaken for notes.
 RE_NOTE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}--.*\.md$")
+# The same date, captured: a dated exemption may only excuse the notes that
+# already existed when it was written.
+RE_NOTE_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})--")
 RE_HEADING = re.compile(r"^##\s+(.*?)\s*$")
 ACTION_SECTION = "Action"
 RE_BAND = re.compile(r"([0-9]+)\s*-\s*([0-9]+)\s+(?:wpm\s+)?peer\s+band", re.IGNORECASE)
@@ -187,6 +191,9 @@ RE_APPLIED = re.compile(r"^applied:[ \t]*(.*)$", re.MULTILINE)
 STATUSES = ("capture", "distilled", "applied", "discarded")
 
 RE_REVIEWS = re.compile(r"^reviews:[ \t]*(.*)$", re.MULTILINE)
+# An indented `- item` under a key: block-style YAML, which this parser does
+# not read and therefore has to REFUSE rather than mistake for an empty value.
+RE_BLOCK_ITEM = re.compile(r"^[ \t]+-[ \t]+\S")
 # Which build of the checks last passed this note.
 #
 # "0 defects" is a claim about a moment, and without this it is a claim about an
@@ -196,6 +203,18 @@ RE_REVIEWS = re.compile(r"^reviews:[ \t]*(.*)$", re.MULTILINE)
 # a note that is clean at the time, so it means "these checks, at this version,
 # passed" and cannot be back-dated by editing prose.
 DIST_NAME = "watch-quality"
+# Named here rather than spelled out at each site. It was already referenced by
+# the `--stamp` branch and never defined, which nothing noticed because that
+# branch only runs on a machine where the package is NOT installed -- an error
+# path with no case, raising NameError instead of saying what was wrong.
+PROG = "resolve_note.py"
+# `watch-audit` runs this module as a gate, with these flags. It is declared
+# here, beside the flag's own handling, rather than only in `audit.GATES`: a
+# roster the suite reads off one list is a roster one edit can shorten, which
+# is how a whole gate was deleted with both suites green. The order the audit
+# runs them in is not declared anywhere -- it is derived from which gate reads
+# which, so a gate cannot be moved above the one it imports.
+GATE_FLAGS: tuple[str, ...] = ("--check",)
 RE_GRADED = re.compile(r"^graded_with:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 RE_LANE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REVIEW_DIR = POLICY.reviews_dir()
@@ -207,6 +226,132 @@ REVIEW_DIR = POLICY.reviews_dir()
 # policy file this is EMPTY, because a missing policy may not invent an
 # exemption.
 LOST_REVIEWS: dict[str, dict[str, str]] = POLICY.lost_reviews()
+# The lanes this corpus makes mandatory, and the notes excused from one. A list,
+# not a tuple, because the selftest has to be able to set it: a check whose only
+# configuration is a file nobody edits during a test run is a check with no
+# failing case, and this one exists precisely to have one.
+REQUIRED_LANES: list[str] = list(POLICY.required_lanes())
+UNREVIEWED_NOTES: dict[str, dict[str, str]] = POLICY.unreviewed_notes()
+# Runs this corpus has written off, keyed by video id. `anchor_manifest` already
+# owns this table and already ages it; the oracle check reads the SAME rows
+# rather than opening a fourth ledger, because "the run behind this video is
+# gone" is one fact and two tables recording it would drift apart and then cover
+# for each other.
+UNRESOLVABLE_RUNS: dict[str, str] = POLICY.unresolvable_runs()
+# Notes whose `oracle:` names no rendering a machine can open, keyed by note
+# filename and dated. This is the grandfather list for a field that was prose
+# until 2026-08-21; `excused()` will not let a row reach a note filed after the
+# row's own date, so the list can only shrink.
+UNFILLED_ORACLES: dict[str, str] = POLICY.unfilled_oracles()
+# Notes the per-note checks may not grade, keyed by corpus-relative path and
+# dated. `note_gates` owns the checking; the copy here exists so this module's
+# stale census can say which of these rows has stopped excusing anything.
+UNGRADED_NOTES: dict[str, str] = POLICY.ungraded_notes()
+# The note's own declaration of which rendering it was written against, as
+# opposed to `RE_ORACLE` above, which is the character class a LANE REPORT's
+# oracle field has to satisfy. Two different fields, two different owners.
+RE_NOTE_ORACLE = re.compile(r"^oracle:[ \t]*(.*)$", re.MULTILINE)
+
+# --- the header a lane report has to carry --------------------------------
+# A FILE NAMED FOR A LANE IS NOT A REVIEW. Two independent review lanes found
+# the same door on 2026-08-20: three zero-byte files bought a stamped note and
+# `# all 5 gate(s) passed`, and a directory called `quality.md`, a symlink to
+# /dev/null and a lane declared `facts-deferred` did the same. The roll-call
+# graded a filename because nothing in this package ever opened a report.
+#
+# The repair is the mechanism this repository already trusts. The `.resolved`
+# sidecar binds every citation to a path, a line and a sha256, and re-checks it
+# on every run; this points the same idea at reviews. A report opens with a
+# small block naming the note BODY it read, the rendering it re-derived
+# against, the lane it answers for, its verdict, and how many claims it
+# enumerated. `unstated` is legal for both of the last two, because a lane that
+# did not count, or that reported findings without ruling on the artifact, must
+# be able to SAY so -- being made to supply a number or a verdict it never
+# reached is the model-authored literal this whole package exists to kill. What
+# is not legal is a value outside the vocabulary, which is neither a claim nor
+# an admission, only an unreadable string in the field a reader acts on.
+LANE_HEADER_FIELDS = ("note_sha256", "oracle", "lane", "verdict",
+                      "claims_enumerated")
+UNSTATED = "unstated"
+# The one verdict that is a refusal. Named rather than spelled out at the two
+# places that read it, so the vocabulary and the consequence cannot drift.
+BLOCK = "BLOCK"
+LANE_VERDICTS = ("SHIP", "SHIP-WITH-FIXES", BLOCK, UNSTATED)
+RE_HEADER_ROW = re.compile(r"^([a-z0-9_]+):[ \t]*(.*)$")
+RE_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+# A path names a file. The class is POSITIVE -- these characters and no others
+# -- because the alternative is a list of the characters somebody thought to
+# refuse, and that list has no last entry: `""`, then `" "`, then U+200B, then
+# the next one. `.strip()` is a proxy for "has a visible glyph" and U+2800
+# (braille blank, category So) is exactly where the proxy and the property come
+# apart; a positive class does not care which invisible character was invented.
+RE_ORACLE = re.compile(r"^[A-Za-z0-9._~@:+/-]+$")
+# NOT `str.isdigit()`: that is true of `²` and of `١٢`, both of which `int()`
+# refuses. A claim count is a number a reader compares against a list.
+RE_COUNT = re.compile(r"^[0-9]+$")
+# Video ids whose reports were filed before the header existed. Same shape and
+# same promise as LOST_REVIEWS: dated, reasoned, printed, may only shrink. It
+# excuses the header and nothing else -- the report still has to exist, still
+# has to be a file, and still has to be the only one answering to its lane.
+UNHEADERED_REVIEWS: dict[str, str] = POLICY.unheadered_reviews()
+
+
+# How a value says "this field has no value". `null`, `~` and empty are YAML's
+# own, in both 1.1 and 1.2; `none` and `nil` are NOT in either spec and are here
+# because a human who writes one means the same thing and no reader would call
+# the field filled in.
+#
+# `~` was already refused for carrying no letter or digit, which read as a fix
+# for the class and was a fix for one spelling of it: the rest are WORDS, and a
+# word satisfies any character class (closeout). Matched whole and
+# case-insensitively, so `runs/nullify/run.json` is still a path.
+#
+# THIS IS A FLOOR, NOT THE FIX. `n/a`, `TODO`, `unknown`, `x` and `0` are all
+# still path-shaped and all still pass, because no string rule can make a value
+# MEAN something. The only thing that can is giving the field a consequence --
+# resolving the oracle, and letting a lane's verdict decide an exit code.
+YAML_NULLS = frozenset({"null", "none", "nil", "~", ""})
+
+
+def _path_shaped(value: str) -> bool:
+    """A path names a file, so it needs at least one letter or digit.
+
+    `-`, `|`, `>` and `/` are YAML punctuation rather than names, and a value
+    that is only YAML's word for nothing names nothing either. A field whose
+    value says the field has no value is a field that is not there, and it
+    reaches a reader as a report DECLARING an oracle it does not have.
+    """
+    if value.casefold() in YAML_NULLS:
+        return False
+    return bool(RE_ORACLE.match(value)) and any(
+        c.isascii() and c.isalnum() for c in value)
+
+
+# WHAT EACH FIELD MUST BE, one rule per field, and the rule is a TYPE.
+#
+# Four rounds of review each closed the bad values the previous reviewer had
+# named, and each produced four or more new survivors, because "reject the
+# values somebody thought of" is a blacklist and a blacklist has no fixed
+# point. Round 4's rule refused blank and whitespace; U+200B walked through it
+# and rendered on screen as `oracle: ""`. A type does have a fixed point: the
+# fourteenth spelling nobody has written down is refused unread, because it is
+# still not 64 hex characters, still not a path, still not a lane id, still not
+# a member of the vocabulary and still not a number.
+#
+# `unstated` is legal for the last two and is part of the type, not an escape
+# from it: a lane that did not count, or that reported findings without ruling
+# on the artifact, must be able to SAY so -- being made to supply a number it
+# never reached is the model-authored literal this package exists to kill.
+LANE_HEADER_TYPES: dict[str, tuple[object, str]] = {
+    "note_sha256": (RE_SHA256.match, "64 lowercase hex characters"),
+    "oracle": (_path_shaped, "a path"),
+    "lane": (RE_LANE_ID.match, "a lane id, the same [a-z0-9][a-z0-9-]* a note "
+                               "declares in reviews:"),
+    "verdict": (lambda v: v in LANE_VERDICTS,
+                "one of " + ", ".join(LANE_VERDICTS)),
+    "claims_enumerated": (lambda v: v == UNSTATED or RE_COUNT.match(v),
+                          f"a count of claims or {UNSTATED!r}"),
+}
 
 
 def split_frontmatter(text: str) -> tuple[str, str] | None:
@@ -814,15 +959,25 @@ def check_grade(frontmatter: str, rel) -> list[str]:
     return []
 
 
-def stamp_note(path: Path, root: Path, stamp: str) -> tuple[list[str], bool]:
+def stamp_note(path: Path, root: Path, stamp: str,
+               require_density: bool = True,
+               floor: bool = True) -> tuple[list[str], bool]:
     """Record `graded_with:` on a note that is CLEAN right now.
 
     Refusing to stamp a note with defects is the whole integrity of the field.
     A stamp on a red note would read, months later, as "this version passed it",
     which is the exact false light every gate here exists to remove.
+
+    THE STAMP HAS TO GRADE WITH THE CHECKER `--check` GRADES WITH. It called
+    `check_note(path, root, False)` -- density off, floor off -- so `--stamp`
+    wrote a clean bill onto a note that the same build called defective one
+    command later (mechanism F16). The two flags are parameters rather than
+    constants so `--stamp --no-require-density` still means what it says, and
+    so a weaker stamp has to be asked for by name instead of being what you
+    get by default.
     """
     rel = path.relative_to(root) if path.is_relative_to(root) else path
-    defects, _ = check_note(path, root, False)
+    defects, _ = check_note(path, root, require_density, floor=floor)
     defects = [d for d in defects if "E-GRADE-" not in d]
     if defects:
         return [f"{rel}:1 E-STAMP-REFUSED {len(defects)} defect(s) outstanding; "
@@ -863,8 +1018,10 @@ def check_note(path: Path, root: Path, require_density: bool,
     cites = resolve_citations(body, body_start_line, root, note=path)
     cite_defects = [f"{rel}:{c['line']} {c['error']}" for c in cites if "error" in c]
     cite_defects += check_sidecar(root, frontmatter, rel)
-    cite_defects += check_lanes(root, frontmatter, rel)
+    cite_defects += check_required_lanes(frontmatter, rel)
+    cite_defects += check_lanes(root, frontmatter, rel, body)
     cite_defects += check_status(frontmatter, rel, root)
+    cite_defects += check_oracle(frontmatter, rel, root)
     cite_defects += check_grade(frontmatter, rel)
     cite_defects += check_band(body, band, rel)
     sets = find_sets(body, body_start_line)
@@ -1046,12 +1203,12 @@ def check_status(frontmatter: str, rel, root: Path | None = None) -> list[str]:
     m = RE_STATUS.search(frontmatter)
     if not m:
         return [f"{rel}:1 E-STATUS-MISSING no status: field"]
-    status = m.group(1).strip().strip("'\"")
+    status = header_value(m.group(1))
     if status not in STATUSES:
         return [f"{rel}:1 E-STATUS-UNKNOWN status {status!r} is not one of "
                 f"{', '.join(STATUSES)}"]
     a = RE_APPLIED.search(frontmatter)
-    applied = (a.group(1).strip().strip("'\"") if a else "")
+    applied = (header_value(a.group(1)) if a else "")
     if applied and status != "applied":
         return [f"{rel}:1 E-STATUS-APPLIED applied: names {applied} but status "
                 f"is {status}"]
@@ -1078,14 +1235,36 @@ def lane_ids(frontmatter: str) -> tuple[list[str] | None, str | None]:
     if not m:
         return None, None
     raw = m.group(1).strip()
+    # A trailing YAML comment is legal on a flow sequence, and rejecting it
+    # called a correct declaration malformed (properties I2). Safe to cut
+    # before parsing because a quote inside the brackets is refused below, so
+    # no `#` can be inside a value.
+    if "#" in raw:
+        raw = raw.split("#", 1)[0].strip()
     if not raw:
-        return [], None  # the key with no value declares no lanes, like `[]`
+        # The key with no value declares no lanes, like `[]` -- UNLESS the
+        # value is on the following lines. Block style is legal YAML declaring
+        # real lanes, and it parsed as zero lanes under a comment saying the
+        # key with no value declares none: present, unread, and silent, which
+        # is the one thing the docstring above promises cannot happen
+        # (properties I1).
+        rest = frontmatter[m.end():].split("\n")
+        if len(rest) > 1 and RE_BLOCK_ITEM.match(rest[1]):
+            return None, ("reviews: block-style list is not read; write it as "
+                          "a flow sequence, reviews: [facts, quality]")
+        return [], None
     if not raw.startswith("[") or not raw.endswith("]"):
         return None, f"reviews: expected a bracketed list, got {raw!r}"
     inner = raw[1:-1].strip()
     if not inner:
         return [], None
-    ids = [p.strip().strip("'\"") for p in inner.split(",")]
+    # A quote inside the brackets let one quoted item split on its own comma
+    # and manufacture two lane ids from one (properties I1). A lane id is
+    # `[a-z0-9-]+` and never needs quoting, so a quote here is always either a
+    # mistake or a trap.
+    if '"' in inner or "'" in inner:
+        return None, f"reviews: a lane id is never quoted, got {inner!r}"
+    ids = [p.strip() for p in inner.split(",")]
     bad = [i for i in ids if not RE_LANE_ID.match(i)]
     if bad:
         return None, f"reviews: not a lane id: {', '.join(bad) or '(empty)'}"
@@ -1099,8 +1278,116 @@ def lane_reports(root: Path, video_id: str) -> list[Path]:
     # rglob, not glob: one `mkdir` made an undeclared report invisible to the
     # roll-call, and filing by date under the video id is the obvious thing a
     # future run does (slice-13 coverage lane).
+    #
+    # `is_file()`, not truth: rglob yields directories too, so `mkdir
+    # quality.md` satisfied a lane, and a symlink to /dev/null satisfied one
+    # because it is not a regular file either. Both are one `mkdir` and one
+    # `ln -s` from any tired agent (mechanism F2, F2b).
     d = root / REVIEW_DIR / video_id
-    return sorted(p for p in d.rglob("*.md")) if d.is_dir() else []
+    return sorted(p for p in d.rglob("*.md") if p.is_file()) if d.is_dir() else []
+
+
+def note_body_sha256(body: str) -> str:
+    """The hash a lane report pins itself to.
+
+    Machine marks come off first, for the reason the word count takes them off:
+    a demotion render is not new prose, and letting it move the hash would turn
+    every report on a note red for bytes no author wrote. What is left is what
+    a reader read.
+    """
+    return hashlib.sha256(
+        strip_machine_marks(body).strip().encode("utf-8")).hexdigest()
+
+
+def _invisible(ch: str) -> bool:
+    """Does this character leave no mark on the page?
+
+    `str.strip()` knows about whitespace and nothing else, so U+200B (zero
+    width space), U+FEFF (a BOM an editor left behind) and U+00AD (soft hyphen)
+    survived it and made `oracle: ""` into a field with a value. They are all
+    category Cf; the control and separator categories join them here so the
+    question asked is "is anything visible" rather than "is it one of the
+    characters somebody listed".
+    """
+    return ch.isspace() or unicodedata.category(ch) in (
+        "Cc", "Cf", "Zs", "Zl", "Zp")
+
+
+def header_value(raw: str) -> str:
+    """NORMALISE a header row's value. Once, in one place, before any type.
+
+    This does not decide validity -- `LANE_HEADER_TYPES` does. It removes the
+    three things that change how a value LOOKS without changing what it says,
+    so that the type rule sees the same string a reader sees:
+
+      1. compatibility forms, via NFKC, so a full-width digit is a digit;
+      2. invisible characters at either end, whitespace or not;
+      3. surrounding quotes, repeatedly, inside out.
+
+    The steps run to a fixed point because each can expose work for the others:
+    `"<U+200B>"` is quotes around an invisible, `"" ""` is quotes around
+    whitespace around quotes.
+
+    A value that is nothing but quote characters is nothing: an odd number of
+    them peels down to a lone `"`, which is a quotation mark a reader cannot
+    act on, not a value. That case is here rather than in five type rules
+    because it is a property of quoting, not of any field.
+
+    The other direction is load-bearing: a value that survives is returned
+    unquoted, so `verdict: "SHIP"` is still `SHIP` and a CRLF report still
+    parses. Refusing anything with a quote in it would close the class by
+    breaking every legally quoted report.
+    """
+    value = unicodedata.normalize("NFKC", raw)
+    while True:
+        before = value
+        while value and _invisible(value[0]):
+            value = value[1:]
+        while value and _invisible(value[-1]):
+            value = value[:-1]
+        if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if value == before:
+            break
+    return "" if all(c in "\"'" for c in value) else value
+
+
+def lane_header(path: Path) -> tuple[dict[str, str] | None, str | None]:
+    """Read a report's machine-checked header. Returns (fields, error).
+
+    Every rejection here is a report that would otherwise have been counted as
+    a review on the strength of its filename. The parse is deliberately strict
+    about the two fields a reader would act on -- the verdict and the claim
+    count -- because a value outside the vocabulary is not a smaller claim, it
+    is an unreadable one.
+    """
+    text, why = safe_read(path)
+    if text is None:
+        return None, why
+    split = split_frontmatter(text)
+    if split is None:
+        return None, ("no header block; a report opens with --- and the five "
+                      f"fields {', '.join(LANE_HEADER_FIELDS)}")
+    fields: dict[str, str] = {}
+    for line in split[0].split("\n"):
+        m = RE_HEADER_ROW.match(line)
+        if m:
+            # EVERY row is recorded, blank included, so that YAML's last-wins
+            # holds. Skipping blank rows let a duplicate `oracle:` whose second
+            # copy is empty keep the first copy's value: the effective value of
+            # that field is blank and the parser read the stale one.
+            fields[m.group(1)] = header_value(m.group(2))
+    for field in LANE_HEADER_FIELDS:
+        value = fields.get(field, "")
+        is_a, must_be = LANE_HEADER_TYPES[field]
+        if not is_a(value):
+            # A field that normalises to nothing fails here, with every other
+            # bad value, because it cannot BE its type -- not under a separate
+            # blank rule. The message just reads better when there is nothing
+            # to quote back.
+            return None, (f"header has no {field}" if not value else
+                          f"{field} is not {must_be}: {value!r}")
+    return fields, None
 
 
 def lane_matches(reports: list[Path], lane: str) -> list[Path]:
@@ -1108,48 +1395,609 @@ def lane_matches(reports: list[Path], lane: str) -> list[Path]:
             if p.name == f"{lane}.md" or p.name.endswith(f"-{lane}.md")]
 
 
-def check_lanes(root: Path, frontmatter: str, rel) -> list[str]:
-    """Roll-call: every declared lane emitted a report, every report was declared.
+def satisfies(declared: list[str], required: str) -> bool:
+    """Does any declared lane cover this required one, family included?
 
-    Four ways this goes wrong and all four are defects, because each one reads
-    as a clean review from the outside:
+    `coverage-spoken` and `coverage-frames` are how one note ran the coverage
+    lane after splitting it, and demanding the bare id would call that note
+    unreviewed. The dash is load-bearing exactly as it is in `lane_matches`:
+    `coverageless` is a different lane, not a longer spelling of this one.
+    """
+    return any(d == required or d.startswith(f"{required}-") for d in declared)
 
-      MISSING     the lane died, or was never dispatched after being declared.
-      UNDECLARED  a report exists that the note does not own up to running.
-      AMBIGUOUS   two files answer to one id, so which one is the verdict?
-      SHARED      one file answers to two ids, so one lane is silently absent.
+
+def covered_lanes(declared: list[str], required: list[str]) -> set[str]:
+    """Which required lanes these declarations actually cover.
+
+    ONE DECLARATION MAY NOT CLEAR TWO REQUIRED LANES. The family rule stays --
+    `coverage-spoken` is how one note ran the coverage lane after splitting it,
+    and demanding the bare id would call that note unreviewed. But when a corpus
+    requires both `quality` and `quality-deep`, `satisfies` said yes to both for
+    a single declared `quality-deep`, so one id cleared a two-lane floor and
+    nothing said the `quality` lane never ran (properties I6). Each declaration
+    is spent on the LONGEST required lane it covers, which is the one it names
+    most precisely; the shorter lane is then short a declaration, out loud.
+    """
+    out: set[str] = set()
+    for d in declared:
+        candidates = [r for r in required if satisfies([d], r)]
+        if candidates:
+            out.add(max(candidates, key=len))
+    return out
+
+
+def note_date(rel) -> str | None:
+    """The ISO date in a note's filename, or None when it has none."""
+    m = RE_NOTE_DATE.match(Path(rel).name)
+    return m.group(1) if m else None
+
+
+def excused(reason: str | None, rel) -> bool:
+    """Does this dated exemption row reach the note in front of it?
+
+    Every debt row is keyed by video id, and two notes about one video share
+    it, so a note written after the debt was recorded was BORN EXCUSED --
+    re-watching a video already on the ledger being the single most likely
+    reason a second note exists. `watch-quality.toml` says the opposite in as
+    many words: "A new note does not belong in this list -- the gate firing on
+    it is the gate working" (mechanism F8, premortem F8).
+
+    The row's own date is the boundary that makes that sentence true. It
+    excuses the notes that existed when it was written and nothing filed after.
+    A note whose filename carries no date cannot be placed either side of the
+    line, and is left excused rather than convicted on an absence.
+    """
+    if reason is None:
+        return False
+    when = note_date(rel)
+    return when is None or when <= reason[:10]
+
+
+def oracle_token(value: str) -> str:
+    """The path out of an `oracle:` value, dropping the prose beside it.
+
+    Every filled value in this corpus is written `<path> (what it is)`, and the
+    parenthetical is the useful half for a reader: which model, how many
+    segments. It is not a path and is not treated as one.
+    """
+    return value.strip().split()[0] if value.strip() else ""
+
+
+def _first_match(pattern: Path) -> Path | None:
+    """The file a candidate names, resolving a glob rather than refusing one.
+
+    `watch-whisper/chunks/*.whisper.json` is how a chunked run is written down,
+    and it names a real set of files. Treating the literal string as a filename
+    would report the only honest way to name that rendering as unresolvable.
+    """
+    parts = pattern.parts
+    globbed = next((i for i, part in enumerate(parts)
+                    if any(c in part for c in "*?[")), None)
+    if globbed is None:
+        return pattern if pattern.is_file() else None
+    anchor = Path(*parts[:globbed]) if globbed else Path(".")
+    matches = sorted(p for p in anchor.glob(str(Path(*parts[globbed:])))
+                     if p.is_file())
+    return matches[0] if matches else None
+
+
+def note_oracle_target(value: str, rel, root: Path, video_id: str) -> Path | None:
+    """The rendering a note's `oracle:` names, or None when nothing opens.
+
+    Three places are tried and no others: an absolute path, a path under this
+    VIDEO's run directory, and a path under the corpus. The run directory is
+    the one that matters -- every filled value in this corpus is relative to it
+    -- and it is also what makes the answer specific to this video rather than
+    to any file that happens to exist somewhere.
+    """
+    token = oracle_token(value)
+    if not token:
+        return None
+    p = Path(token).expanduser()
+    if p.is_absolute():
+        return _first_match(p)
+    bases = [POLICY.runs_root().expanduser() / video_id] if video_id else []
+    bases.append(root)
+    for base in bases:
+        hit = _first_match(base / p)
+        if hit is not None:
+            return hit
+    return None
+
+
+def check_oracle(frontmatter: str, rel, root: Path,
+                 honour_ledger: bool = True) -> list[str]:
+    """`oracle:` names a rendering that opens, for notes written from now on.
+
+    The field was prose. Eighteen of twenty-five notes left it empty and the
+    values in the rest resolved to no file, while every gate downstream --
+    coverage, alignment, windows -- is a check AGAINST the declared rendering.
+    A note that names no oracle cannot be checked by any of them, and nothing
+    said so.
+
+    Turning it on today would redden the frozen corpus, so it is turned on for
+    what comes next: `[unfilled_oracles]` carries a dated row per note that
+    existed when the rule landed, and `excused()` refuses to let a row reach a
+    note filed after its date. The ledger cannot grow -- a new note has no row,
+    and adding one dated in the past does not cover it either.
+
+    `honour_ledger=False` asks the other question: would this note be clean
+    WITHOUT its row? That is what `stale_exemptions` needs, and reading it
+    through the ordinary path would answer "yes" for every row on the table,
+    because the row is what makes the answer yes.
+    """
+    if honour_ledger:
+        excuse = (UNFILLED_ORACLES.get(str(rel))
+                  or UNFILLED_ORACLES.get(Path(rel).name))
+        if excused(excuse, rel):
+            return []
+    rows = RE_NOTE_ORACLE.findall(frontmatter)
+    if not rows:
+        return [f"{rel}:1 E-ORACLE-MISSING no oracle: field, so no gate can say "
+                f"which rendering this note was written against"]
+    # TWO ANSWERS IN ONE FIELD IS NOT A SMALLER CLAIM, IT IS AN UNREADABLE ONE.
+    # `search` takes the first row, so a second one is invisible here and picked
+    # up by whichever downstream reader searches differently -- the argument
+    # `check_lanes` already makes about duplicate `video_id:` rows, which was
+    # unguarded here until an independent pass asked for it by name.
+    if len({r.strip() for r in rows}) > 1:
+        return [f"{rel}:1 E-ORACLE-TWOROWS {len(rows)} oracle: rows naming "
+                f"different renderings; one note is written against one"]
+    value = rows[0].strip()
+    if not value:
+        return [f"{rel}:1 E-ORACLE-EMPTY oracle: is empty; name the rendering "
+                f"this note was written against"]
+    vid = RE_VIDEO_ID.search(frontmatter)
+    video_id = vid.group(1) if vid else ""
+    # NO VIDEO ID MEANS THE RELATEDNESS HALF CANNOT RUN AT ALL, and passing the
+    # note anyway is how `oracle: /etc/hosts` came out clean: with nothing to
+    # compare against, every file that opens is somebody's rendering. Deleting
+    # one line -- the video id -- must not turn a check off.
+    if not video_id:
+        return [f"{rel}:1 E-ORACLE-NOVIDEO oracle: names {oracle_token(value)} "
+                f"and the note declares no video_id:, so nothing can say the "
+                f"two belong to each other"]
+    hit = note_oracle_target(value, rel, root, video_id)
+    if hit is None:
+        return [f"{rel}:1 E-ORACLE-UNRESOLVED oracle: names {oracle_token(value)}, "
+                f"which opens as no file under this video's run directory or "
+                f"the corpus"]
+    # AND IT IS THIS VIDEO'S. A path that opens somewhere else is a rendering of
+    # something, and every gate downstream would grade this note against it.
+    if video_id not in hit.resolve().parts:
+        return [f"{rel}:1 E-ORACLE-UNRELATED oracle: opens as {hit}, which is "
+                f"not a rendering of {video_id}"]
+    # AND A GATE CAN READ IT. A run manifest sits in the same directory as the
+    # rendering, under the same video id, and opens -- so "the path exists" said
+    # yes to a file carrying no transcript at all. The failure then surfaced one
+    # layer down, as a note that could not be graded, and was written off in a
+    # ledger. The question this field asks is whether a gate can read what it
+    # names, so the answer comes from the reader every gate uses.
+    #
+    # Imported here rather than at module scope: `transcript_align` pulls in a
+    # caption parser that reads the policy file, and a malformed policy must not
+    # stop this module from loading.
+    from .transcript_align import load_segments
+    try:
+        segments = load_segments(hit)
+    except Exception as exc:  # noqa: BLE001 -- any reason it will not read
+        return [f"{rel}:1 E-ORACLE-UNRESOLVED oracle: opens as {hit}, which no "
+                f"gate can read as a transcript: {exc}"]
+    if not segments:
+        return [f"{rel}:1 E-ORACLE-UNRESOLVED oracle: opens as {hit}, which "
+                f"reads as a transcript carrying no segments, so no gate can "
+                f"say anything about a note graded against it"]
+    return []
+
+
+def check_required_lanes(frontmatter: str, rel) -> list[str]:
+    """Every lane this corpus requires was at least DECLARED by this note.
+
+    `check_lanes` below is a roll-call of what the note declared, so a note that
+    declared nothing passes it clean -- which is how a note reached the corpus
+    stamped and gated with the whole review layer skipped. A roll-call of
+    declarations is structurally unable to see a note that declared none, and
+    "we always run the lanes" was prose enforced by memory.
+
+    That reports the ABSENCE only. Whether each declared lane produced a report
+    stays `check_lanes`' job, so a note short of the floor and a note whose lane
+    died read as two different defects rather than one blurred one.
+    """
+    if not REQUIRED_LANES:
+        return []
+    ids, err = lane_ids(frontmatter)
+    if err:
+        return []  # check_lanes already reports this, and once is enough
+    declared = ids or []
+    m = RE_VIDEO_ID.search(frontmatter)
+    debt = UNREVIEWED_NOTES.get(m.group(1), {}) if m else {}
+    covered = covered_lanes(declared, list(REQUIRED_LANES))
+    return [f"{rel}:1 E-LANE-UNREVIEWED lane {lane} is required and not "
+            f"declared in reviews:"
+            for lane in REQUIRED_LANES
+            if lane not in covered and not excused(debt.get(lane), rel)]
+
+
+def report_name(path: Path, root: Path) -> str:
+    """How a report is named in a defect line: its path under the review dir.
+
+    The bare filename was ambiguous exactly where the message mattered most --
+    two files in two subdirectories printed as `facts.md, facts.md`, which
+    names neither (properties I17).
+    """
+    base = root / REVIEW_DIR
+    return str(path.relative_to(base) if path.is_relative_to(base) else path)
+
+
+def oracle_path(value: str, root: Path) -> Path:
+    """Where a header's `oracle:` actually points.
+
+    Relative values resolve against the CORPUS ROOT and never against
+    `Path.cwd()`: a gate whose answer changes with the directory it was run
+    from is not a gate, and the policy loader was hardened against exactly that
+    reading of "relative" already.
+
+    NORMALISED, once, here. The first version handed the raw string to one
+    check and the normalised path to the other, and `runs/<id>/../../README.md`
+    walked between them: the id was in the string, the file was outside the
+    notes directory, and an unrelated README was clean again one prefix away
+    from the spelling that had just been refused. A symlink laundered its
+    target the same way. One path, both questions.
+
+    A header field carries whatever somebody typed, so `~nosuchuser/x.json`
+    arrives here too, and `expanduser` RAISES `RuntimeError` on it. A gate may
+    red a note; it may not abort on one. A value Python cannot even turn into a
+    path becomes the corpus root, which is a directory and therefore not a
+    file, so it reds the note exactly as any other unopenable value does.
+    """
+    try:
+        p = Path(value).expanduser()
+        return (p if p.is_absolute() else root / p).resolve()
+    except (RuntimeError, ValueError):
+        # `.resolve()` is INSIDE the try. It was outside, so the clause named
+        # `ValueError` and could not catch the one value that raises it: a NUL
+        # byte, which `lstat` refuses. The header parser happens to reject that
+        # value first today, which made the gap unreachable rather than absent.
+        return root.resolve()
+
+
+def oracle_names_run(resolved: Path, video_id: str, root: Path) -> bool:
+    """Is this file plausibly a rendering of THIS video, or just a file?
+
+    Two questions, and both were needed.
+
+    One: the video id is a DIRECTORY OR FILE NAME on the path -- a whole
+    component, not a substring. That is how every real run in this corpus is
+    laid out, and it refuses `README.md` and `/etc/hosts`. A substring test
+    came first and was looser than this sentence: `docs/<id>.md` and
+    `<id>eoteca_archive/` both satisfied it while being nothing of the kind.
+
+    Two: the path may not sit inside the NOTES DIRECTORY -- notes, sidecars,
+    and the review reports themselves. That is what refuses a report naming
+    ITSELF: the id is in that path too, and a review is the artifact under
+    judgement rather than the source of truth it was measured against. It is
+    the notes directory and not the whole corpus, deliberately, because a
+    corpus may keep its runs beside its notes and this one does not.
+
+    Both asked of the NORMALISED path, which is what `oracle_path` returns and
+    what `..` and a symlink used to slip between.
+
+    Deliberately a shape and not a registry: a run that moved to another disk
+    is still that video's run, and the corpus already has one dated table for a
+    run it can no longer find at all.
+
+    WHAT THIS RULES OUT, decided rather than discovered. `<id>.vtt`, `<id>.srt`
+    and `<id>.whisper.json` are the default output names of the captions and
+    ASR tools this project uses, and a run directory that suffixes or dates the
+    id (`<id>-run-03`, `2026-08-20--<id>`) is an obvious future layout. All of
+    them are REFUSED here, because the id has to be a whole name on the path
+    and a filename stem is not one. That is a deliberate cost, not an
+    oversight: every run this corpus has ever written is addressed
+    `<id>/run-NN/...`, so 104 of 104 artifacts and 4 of 4 headered reports pass
+    unchanged. A lane that wants to cite a bare `<id>.vtt` should file it under
+    the run directory it came from, or this rule should be widened on purpose
+    and this paragraph rewritten with it.
+    """
+    if video_id not in resolved.parts:
+        return False
+    return not resolved.is_relative_to((root / POLICY.notes_dir()).resolve())
+
+
+def check_consequences(fields: dict[str, str], root: Path, video_id: str,
+                       name: str, rel) -> list[str]:
+    """The two header fields that now cause something, and what they cause.
+
+    Retyping the five fields killed 65 known-bad values and could not reach
+    these two, because the defect is not the spelling. `oracle: TODO` is a
+    path. So are `n/a`, `unknown`, `x` and `0`. Each satisfies the type, each
+    names nothing, and the next placeholder nobody has written down satisfies
+    it too. `verdict: BLOCK` was in the vocabulary and exited 0, because no
+    line downstream ever read the field: three lanes could refuse a note and
+    the audit still printed that every gate passed.
+
+    So the fields are given a consequence instead of a longer rule.
+
+      ORACLE-MISSING    the path is opened. A value that resolves to no file
+                        is not an oracle whatever it is spelled, and a
+                        placeholder is refused for naming nothing rather than
+                        for being on a list.
+      ORACLE-UNRELATED  ...and opening SOMETHING is not enough either. An
+                        independent review swept the values that resolve and
+                        found `oracle: README.md`, `/etc/hosts`, `~/.zshrc` and
+                        the report naming ITSELF all clean -- so the new
+                        placeholder was not `TODO`, it was any real file, one
+                        keystroke from the fixtures. The issue asked for the
+                        path to resolve AGAINST THE RUN IT NAMES, so the video
+                        id has to be a whole component of it and it may not
+                        point back inside the notes directory it grades.
+      BLOCKED           a lane that says BLOCK reds the note. None of the three
+                        debt ledgers reaches it: they record work lost or never
+                        dispatched, and a BLOCK is a live finding whose exits
+                        are to fix the note or to have the lane rule again.
+
+    `unheadered_reviews` DOES reach all three, and saying otherwise here was
+    the review's finding F3. A video id on that table has its whole header
+    skipped -- there is no header to read -- so an unheadered report cannot be
+    refused for its verdict or its oracle either. That is the cost of the row,
+    and it is why the row may only shrink.
+
+    The two dated exits, and nothing else: `unresolvable_runs` for a run that
+    has genuinely gone, and `unheadered_reviews` for a report filed before any
+    of this existed.
+
+    The cost is worth stating plainly: making BLOCK expensive gives a lane an
+    incentive to write SHIP-WITH-FIXES instead. That trade is accepted because
+    the alternative is the measured status quo, where the strongest thing a
+    reviewer can say costs nothing at all.
+    """
+    out: list[str] = []
+    resolved = oracle_path(fields["oracle"], root)
+    # The row excuses the file being GONE and nothing else. It let any value at
+    # all through while it also gated the relatedness branch -- a corpus with a
+    # dated row accepted `oracle: README.md`, `/etc/hosts` and the report citing
+    # itself -- and "the run behind this video is gone" cannot be the reason a
+    # resolving file is accepted.
+    forgiven = excused(UNRESOLVABLE_RUNS.get(video_id), rel)
+    if not resolved.is_file() and not forgiven:
+        out.append(f"{rel}:1 E-LANE-ORACLE-MISSING {name} names oracle "
+                   f"{fields['oracle']}, which is no file under {root}; a path "
+                   f"that opens nothing is not an oracle")
+    elif not oracle_names_run(resolved, video_id, root):
+        # "a real file" only when it IS one. Under a dated row the branch above
+        # is skipped, so this one is reached for values that open nothing, and
+        # it told the reader the opposite of what it had just measured.
+        what = "a real file" if resolved.is_file() else "a value"
+        out.append(f"{rel}:1 E-LANE-ORACLE-UNRELATED {name} names oracle "
+                   f"{fields['oracle']}, {what} that is not a rendering of "
+                   f"{video_id}; an oracle carries the video id as a whole "
+                   f"path name and sits outside {POLICY.notes_dir()}/")
+    if fields["verdict"] == BLOCK:
+        out.append(f"{rel}:1 E-LANE-BLOCKED {name} ruled {BLOCK} on lane "
+                   f"{fields['lane']}; a refused note may not sit under a "
+                   f"clean audit, and no debt ledger excuses this one")
+    return out
+
+
+def check_lanes(root: Path, frontmatter: str, rel, body: str) -> list[str]:
+    """Roll-call: every declared lane emitted a REVIEW, and every review was declared.
+
+    Nine ways this goes wrong and all nine are defects, because each one
+    reads as a clean review from the outside:
+
+      MALFORMED    the lane list itself cannot be read, so nothing below it can
+                   be trusted to be about the lanes the note declared.
+      MISSING      the lane died, or was never dispatched after being declared.
+      UNDECLARED   a report exists that the note does not own up to running.
+      AMBIGUOUS    two files answer to one id, so which one is the verdict?
+      TWOVIDEOS    the frontmatter names two videos, so the roll-call would be
+                   answered by another video's reviews.
+      NOVIDEO      lanes declared by a note with no video id. The roll-call is
+                   addressed by video id, so deleting one line used to disarm
+                   it entirely and the declaration was then believed on its own
+                   word (mechanism F12).
+      UNPARSED     the file exists and is not a review: no header, or a header
+                   whose verdict or claim count cannot be read.
+      MISLABELLED  the header answers for a different lane than the filename
+                   promised.
+      STALE        the header pins a different note body than the one on disk,
+                   so the note was repaired or extended after the lane read it.
+
+    The last three are the ones that make this a check on a review rather than
+    on a filename. `body` is the note body the header is measured against; it
+    is not optional, because a caller that could omit it could disarm STALE.
+
+    SHARED used to sit in this list and is gone. It only ever fired when one
+    report matched two declared ids, which was the loose suffix matcher failing
+    to tell `facts` from `review-facts` rather than a report doing double duty;
+    the lane left without one is still convicted, by MISSING, which was always
+    the finding meant. The argument is repeated twelve lines below, where the
+    matcher lives -- this half is here because a docstring that still lists a
+    removed rule is how the next reader learns a rule that does not exist.
     """
     ids, err = lane_ids(frontmatter)
+    found = RE_VIDEO_ID.findall(frontmatter)
     m = RE_VIDEO_ID.search(frontmatter)
     if err:
         return [f"{rel}:1 E-LANE-MALFORMED {err}"]
+    if len(found) > 1 and len(set(found)) > 1:
+        # `search` takes the FIRST row, so a second `video_id:` sent the whole
+        # roll-call to another video's reviews while the note read as if it
+        # named one. Two different answers in one field is not a smaller claim,
+        # it is an unreadable one -- the argument `lane_header` already makes
+        # about its own duplicate rows.
+        return [f"{rel}:1 E-LANE-TWOVIDEOS frontmatter carries "
+                f"{len(found)} video_id: rows naming {len(set(found))} "
+                f"different videos; which one the reviews belong to is unread"]
     if not m:
+        if ids:
+            return [f"{rel}:1 E-LANE-NOVIDEO reviews: declares "
+                    f"{', '.join(ids)} but there is no video_id:, so no report "
+                    f"can be looked for and the declaration is its own witness"]
         return []
     video_id = m.group(1)
     reports = lane_reports(root, video_id)
     if ids is None:
         ids = []
     lost = LOST_REVIEWS.get(video_id, {})
+    # AGED, like every other debt row. Membership alone made this the one table
+    # that covered work nobody had done yet: a report filed today, under a video
+    # id grandfathered in weeks ago, bought the whole header bypass -- oracle,
+    # verdict and all -- for a note written after the row.
+    unheadered = excused(UNHEADERED_REVIEWS.get(video_id), rel)
+    want = note_body_sha256(body)
     out: list[str] = []
-    claimed: dict[str, list[str]] = {}
+    # Keyed by PATH, not by name. `rglob` spans subdirectories, so name-keying
+    # turned two files in two directories into one file answering to a lane
+    # twice, and printed a fabricated E-LANE-SHARED naming one declared lane
+    # twice over (properties I17, I18).
+    #
+    # E-LANE-SHARED lived here and is gone with the same change. It fired only
+    # when one report answered two declared lanes, which the suffix matcher made
+    # possible for a lane id ending in another one -- and that was never a
+    # shared report, only a matcher too loose to tell `facts` from
+    # `review-facts`. The lane left without a report is still convicted, by
+    # E-LANE-MISSING, which is the finding that was always meant.
+    claimed: dict[Path, list[str]] = {}
     for lane in ids:
-        hits = lane_matches(reports, lane)
+        # Each report is spent on the LONGEST declared lane it matches, which is
+        # the one that named it. `x-facts.md` matches both `facts` and
+        # `x-facts`, so declaring the pair produced a fabricated E-LANE-SHARED
+        # and left the shorter lane looking answered by a file about the other.
+        hits = [h for h in lane_matches(reports, lane)
+                if max((d for d in ids if lane_matches([h], d)), key=len) == lane]
         for h in hits:
-            claimed.setdefault(h.name, []).append(lane)
+            claimed.setdefault(h, []).append(lane)
         if len(hits) > 1:
             out.append(f"{rel}:1 E-LANE-AMBIGUOUS lane {lane} matches "
-                       f"{len(hits)} reports: {', '.join(h.name for h in hits)}")
-        elif not hits and lane not in lost:
+                       f"{len(hits)} reports: "
+                       f"{', '.join(report_name(h, root) for h in hits)}")
+        elif not hits and not excused(lost.get(lane), rel):
             out.append(f"{rel}:1 E-LANE-MISSING lane {lane} declared, no report "
                        f"under {REVIEW_DIR}/{video_id}/")
-    for name, lanes in sorted(claimed.items()):
-        if len(lanes) > 1:
-            out.append(f"{rel}:1 E-LANE-SHARED {name} answers to "
-                       f"{len(lanes)} declared lanes: {', '.join(sorted(lanes))}")
+    for path, lanes in sorted(claimed.items()):
+        name = report_name(path, root)
+        if unheadered:
+            continue
+        fields, why = lane_header(path)
+        if fields is None:
+            out.append(f"{rel}:1 E-LANE-UNPARSED {name} is not a review: {why}")
+            continue
+        # Outside the chain below, deliberately. MISLABELLED and STALE are
+        # alternatives -- one report cannot be both -- but a report can be
+        # stale AND name a dead oracle, and folding these two into that chain
+        # would report one defect per round and send the repair back twice.
+        out.extend(check_consequences(fields, root, video_id, name, rel))
+        if fields["lane"] not in lanes:
+            out.append(f"{rel}:1 E-LANE-MISLABELLED {name} answers for lane "
+                       f"{fields['lane']}, but it was read as "
+                       f"{', '.join(sorted(lanes))}")
+        elif fields["note_sha256"] != want:
+            out.append(f"{rel}:1 E-LANE-STALE {name} read note body "
+                       f"{fields['note_sha256'][:12]}, the note on disk is "
+                       f"{want[:12]}; the note changed after the lane read it")
     for p in reports:
-        if p.name not in claimed:
-            out.append(f"{rel}:1 E-LANE-UNDECLARED {p.name} is on disk but no "
-                       f"reviews: id claims it")
+        if p not in claimed:
+            out.append(f"{rel}:1 E-LANE-UNDECLARED {report_name(p, root)} is on "
+                       f"disk but no reviews: id claims it")
+    return out
+
+
+def corpus_notes(root: Path) -> list[Path]:
+    """Every note in the corpus, whatever this run was pointed at."""
+    base = root / POLICY.notes_dir()
+    return sorted(f for f in base.rglob("*.md")
+                  if is_note(f, root)) if base.is_dir() else []
+
+
+def declared_by_corpus(root: Path) -> dict[str, list[str]]:
+    """{video_id: the lanes that note declares}, over the whole corpus."""
+    out: dict[str, list[str]] = {}
+    for f in corpus_notes(root):
+        text, _ = safe_read(f)
+        split = split_frontmatter(text) if text else None
+        if not split:
+            continue
+        m = RE_VIDEO_ID.search(split[0])
+        if m:
+            ids, err = lane_ids(split[0])
+            out[m.group(1)] = [] if err or ids is None else ids
+    return out
+
+
+def corpus_video_ids(root: Path) -> set[str]:
+    """Every video_id the corpus declares, whatever this run was pointed at."""
+    return set(declared_by_corpus(root))
+
+
+def stale_exemptions(root: Path) -> list[str]:
+    """Exemption rows that no longer excuse anything.
+
+    Every table in the policy promises to shrink, and nothing ever told anyone
+    WHICH row could go. `anchor_manifest` prints a stale census for
+    `unresolvable_runs`; the three review tables had none, so a lane renamed, a
+    video removed or a debt actually paid left a row excusing something that no
+    longer exists -- permanently, and invisibly (properties I12, I13, I16;
+    mechanism F10, which asked for exactly this to make "may only shrink"
+    measurable).
+
+    Reported, never a defect. A dead row is bookkeeping, and turning a corpus
+    red over one teaches a reader to reach for the exemption table rather than
+    for the review.
+    """
+    declared = declared_by_corpus(root)
+    out: list[str] = []
+
+    def say(table: str, vid: str, lane: str | None, why: str) -> None:
+        where = f"{vid}/{lane}" if lane else vid
+        out.append(f"# STALE EXEMPTION [{table}] {where}: {why}")
+
+    for vid, lanes in sorted(UNREVIEWED_NOTES.items()):
+        for lane in sorted(lanes):
+            if vid not in declared:
+                say("unreviewed_notes", vid, lane, "no note declares this video_id")
+            elif lane not in REQUIRED_LANES:
+                say("unreviewed_notes", vid, lane,
+                    "this corpus does not require that lane")
+            elif satisfies(declared[vid], lane):
+                say("unreviewed_notes", vid, lane,
+                    "the note now declares it, so the debt is paid")
+    for vid, lanes in sorted(LOST_REVIEWS.items()):
+        for lane in sorted(lanes):
+            if vid not in declared:
+                say("lost_reviews", vid, lane, "no note declares this video_id")
+            elif lane not in declared[vid]:
+                say("lost_reviews", vid, lane,
+                    "the note does not declare that lane, so nothing looks for it")
+            elif lane_matches(lane_reports(root, vid), lane):
+                say("lost_reviews", vid, lane, "a report for it is on disk")
+    for vid in sorted(UNHEADERED_REVIEWS):
+        if not lane_reports(root, vid):
+            say("unheadered_reviews", vid, None,
+                "no reports on disk, so no header is being excused")
+    # A row here dies in two ways: the note is gone, or somebody filled the
+    # field. The second is the whole reason this ledger is keyed by note --
+    # it is the only table in the policy that a note can pay off by itself,
+    # and until this loop existed nothing would ever have said so.
+    notes_dir = (root / POLICY.notes_dir())
+    for name in sorted(UNFILLED_ORACLES):
+        note = notes_dir / Path(name).name
+        if not note.is_file():
+            say("unfilled_oracles", name, None, "no note by that name")
+            continue
+        text, _ = safe_read(note)
+        split = split_frontmatter(text) if text else None
+        if split and not check_oracle(split[0], Path(name).name, root,
+                                      honour_ledger=False):
+            say("unfilled_oracles", name, None,
+                "the note names a rendering that opens, so the row is paid")
+    # A row here dies ONE way that can be checked from here: the note is gone.
+    # The other death -- the finding stopped happening -- would mean running
+    # both per-note checks against every excused rendering, which is the work
+    # the row exists to skip. Said out loud so nobody reads an empty census
+    # as proof that every remaining row is still earning its place.
+    for name in sorted(UNGRADED_NOTES):
+        if not (root / name).is_file():
+            say("ungraded_notes", name, None, "no note at that path")
     return out
 
 
@@ -1159,9 +2007,17 @@ def orphan_sidecars(root: Path, files: list[Path]) -> list[str]:
     The sidecar is addressed only by video_id, so renaming that field silently
     detaches the audit: the note stops being staleness-checked and nothing says
     so. This sweep is the only thing that notices.
+
+    MEMBERSHIP IS A FACT ABOUT THE CORPUS, so it is read from the corpus. The
+    live set used to be built from the files this run happened to be handed, so
+    `watch-audit <one-note.md>` -- the invocation both documents prescribe after
+    a repair pass -- declared every OTHER note's sidecar orphaned: 18 false
+    defects and exit 1 on a note that was clean (premortem F3). A check that
+    cries wolf on its own documented happy path is a check whose exit code
+    stops being read, and after that nothing else here means anything.
     """
     live = set()
-    for f in files:
+    for f in {*files, *corpus_notes(root)}:
         text, _ = safe_read(f)
         if text is None:
             continue
@@ -1178,21 +2034,93 @@ def orphan_sidecars(root: Path, files: list[Path]) -> list[str]:
     return out
 
 
-def collect(paths: list[Path]) -> list[Path]:
+def in_review_dir(path: Path, root: Path) -> bool:
+    """Is this file inside THE review directory of THIS corpus?
+
+    `notes/reviews`, the configured prefix, not the bare segment `reviews`
+    matched anywhere in the path. The bare segment made a correctly named note
+    under `drafts/reviews/` invisible to every gate, with no error and exit 0
+    (properties I23).
+    """
+    rel = path.relative_to(root) if path.is_relative_to(root) else path
+    return Path(REVIEW_DIR) in rel.parents
+
+
+def is_note(path: Path, root: Path) -> bool:
+    """A note, and not a document that merely lives under the notes directory.
+
+    The name rule alone is not enough. `rglob` descends into the review
+    directory, and a lane that filed its report under a dated name -- the same
+    convention the notes themselves use -- was collected as a note and failed
+    every gate with `E-FRONTMATTER`, on three gates at once. A review of a note
+    is not a note, and the directory it sits in is the fact that says so.
+
+    Which directory it sits in is measured from the CORPUS ROOT, and callers
+    used to pass the path the operator typed instead. `wq-resolve-note
+    notes/reviews/VID` therefore inverted the guard: relative to that argument
+    no report is under a review directory, so every report in it became a note
+    (properties I22).
+    """
+    if not RE_NOTE_NAME.match(path.name):
+        return False
+    return not in_review_dir(path, root)
+
+
+def refuses_empty(files: list[Path], paths: list[Path], prog: str) -> bool:
+    """True, and says so, when a corpus yielded no notes at all.
+
+    The refusal used to live inside `collect` and moved out so that pointing a
+    gate at a directory of REVIEWS could return nothing instead of raising.
+    That was right and it was applied one caller at a time, which gave the
+    guarantee back to two gates and silently dropped it for the third: on an
+    empty corpus `demote_note` printed `# 0 notes would change`, exited 0, and
+    `watch-audit` printed `demote_note: ok` over it (verification G1). A rule
+    every caller has to remember is a rule two callers out of three keep, so it
+    lives in one function that every entry point asks.
+    """
+    if files:
+        return False
+    named = ", ".join(str(p) for p in paths) or POLICY.notes_dir()
+    print(f"{prog}: no notes under {named}", file=sys.stderr)
+    return True
+
+
+def collect(paths: list[Path], root: Path, skipped: list[str]) -> list[Path]:
+    """The notes under `paths`, with every dropped `.md` file NAMED.
+
+    A file that looks like it belongs to the corpus and is not collected used
+    to vanish. An empty result was loud -- `SystemExit(2)`, so an empty corpus
+    never read as a clean pass -- and a PARTIAL result was silent, so a
+    hand-written note, a rename or a `-v2` copy left the audited set without a
+    word (mechanism F15). The rule is unchanged; what changes is that the
+    caller can now say how many files it turned away.
+
+    Reports under the review directory are not counted as skips. They are the
+    other clause of `is_note` and they are meant to be there; naming 59 of them
+    on every run is how a reader learns to stop reading the line.
+    """
     files: list[Path] = []
     for p in paths:
         if p.is_dir():
             # rglob, not glob: a note filed one directory down used to be
-            # invisible, and an empty result used to read as a clean pass.
-            found = sorted(f for f in p.rglob("*.md") if RE_NOTE_NAME.match(f.name))
-            if not found:
-                print(f"resolve_note.py: no notes under {p}", file=sys.stderr)
-                raise SystemExit(2)
-            files.extend(found)
+            # invisible.
+            for f in sorted(p.rglob("*.md")):
+                if is_note(f, root):
+                    files.append(f)
+                elif f.name == "_template.md":
+                    continue
+                # A note-named file inside the review tree is the one surprise
+                # worth printing: `is_note` excludes it correctly as a report
+                # and that exclusion is also a hiding place, so a whole note
+                # copied under another video's review directory passed every
+                # gate by never being read (mechanism F14).
+                elif not in_review_dir(f, root) or RE_NOTE_NAME.match(f.name):
+                    skipped.append(str(f.relative_to(root)
+                                       if f.is_relative_to(root) else f))
         elif p.is_file():
             files.append(p)
         else:
-            print(f"resolve_note.py: no such path: {p}", file=sys.stderr)
+            print(f"{PROG}: no such path: {p}", file=sys.stderr)
             raise SystemExit(2)
     return [f for f in files if f.name != "_template.md"]
 
@@ -1247,6 +2175,12 @@ def write_note(path: Path, root: Path) -> tuple[list[str], int]:
 
 def selftest() -> int:
     """Known-answer cases for the things that are easy to get wrong."""
+    # This selftest asserts inline, so there is no comparator to name: the
+    # harness reads its `assert` statements as the cases instead, and what
+    # `done()` can still prove is that `assert` bites in this interpreter.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin()
+
     cases = 0
     assert count_words("one two  three\nfour\n") == 4; cases += 1
     assert parse_duration('duration: "1:26:56"') == 5216; cases += 1
@@ -1611,6 +2545,143 @@ def selftest() -> int:
         assert check_status("status: applied\napplied: docs/ghost.md\n",
                             "n.md") == []; cases += 1
 
+    # --- what counts as a note ---------------------------------------------
+    # A lane report filed under a dated name is not a note, and collecting it as
+    # one failed three gates at once with E-FRONTMATTER on a report that has no
+    # frontmatter because reports do not have any.
+    with tempfile.TemporaryDirectory() as td:
+        r = Path(td).resolve()
+        reviews = r / POLICY.reviews_dir() / "VID"
+        reviews.mkdir(parents=True)
+        note = r / POLICY.notes_dir() / "2026-08-20--a-note--VID.md"
+        report = reviews / "2026-08-20--review-facts.md"
+        for f in (note, report):
+            f.write_text("x", encoding="utf-8")
+        assert is_note(note, r), "a note in the notes dir is a note"; cases += 1
+        assert not is_note(report, r), "a dated report was taken for a note"
+        cases += 1
+        # The undated names the corpus actually uses were already skipped by the
+        # name rule, and must stay skipped for the reason that now applies.
+        plain = reviews / "facts.md"
+        plain.write_text("x", encoding="utf-8")
+        assert not is_note(plain, r); cases += 1
+        # A directory merely CALLED reviews below the note is not the shield;
+        # the shield is the review directory itself, so a note deeper in the
+        # tree still counts.
+        deep = r / POLICY.notes_dir() / "2026" / "2026-08-20--b-note--VID.md"
+        deep.parent.mkdir()
+        deep.write_text("x", encoding="utf-8")
+        assert is_note(deep, r); cases += 1
+        # ...and so does a note under a directory that merely SHARES the name.
+        # The test used to be the bare segment `reviews` matched anywhere, so a
+        # note under `drafts/reviews/` left the corpus with no error and exit 0
+        # (properties I23).
+        elsewhere = r / "drafts" / "reviews" / "2026-08-20--c-note--VID.md"
+        elsewhere.parent.mkdir(parents=True)
+        elsewhere.write_text("x", encoding="utf-8")
+        assert is_note(elsewhere, r); cases += 1
+        # The shield is measured from the CORPUS ROOT, never from whatever the
+        # operator typed. Pointing the gate at the review tree used to invert
+        # it and grade every report in it as a note (properties I22).
+        assert not is_note(report, r); cases += 1
+        assert collect([reviews], r, []) == []; cases += 1
+        # A file the collector turns away is NAMED. An empty corpus was loud
+        # and a partial one was silent, so a renamed note left the audited set
+        # without a word (mechanism F15).
+        stray = r / POLICY.notes_dir() / "draft-second-note.md"
+        stray.write_text("x", encoding="utf-8")
+        dropped: list[str] = []
+        got_notes = collect([r / POLICY.notes_dir()], r, dropped)
+        assert len(got_notes) == 2, got_notes
+        assert "notes/draft-second-note.md" in dropped, dropped
+        cases += 1
+        # An ORDINARY report under the review directory is not a "skip". It is
+        # the other clause of the rule, and naming 55 of them every run is how
+        # a reader learns to stop reading the line.
+        assert f"{POLICY.reviews_dir()}/VID/facts.md" not in dropped, dropped
+        cases += 1
+        # A NOTE-NAMED file under it is, because that exclusion is also a
+        # hiding place: a whole note copied under another video's review
+        # directory passed every gate by never being read (mechanism F14).
+        assert any("2026-08-20--review-facts.md" in d for d in dropped), dropped
+        cases += 1
+        stray.unlink()
+        # A sidecar is an orphan against the CORPUS, not against the argument
+        # list, or auditing one note declares every other note's sidecar dead
+        # (premortem F3).
+        side = sidecar_path(r, "VID")
+        side.parent.mkdir(parents=True, exist_ok=True)
+        side.write_text("docs/x.md\t1\tdead\tq\n", encoding="utf-8")
+        note.write_text("---\nvideo_id: VID\n---\n\nbody\n", encoding="utf-8")
+        assert orphan_sidecars(r, [deep]) == [], orphan_sidecars(r, [deep])
+        cases += 1
+        side.unlink()
+
+    # --- the lanes a corpus makes mandatory --------------------------------
+    # The roll-call below checks that DECLARED lanes ran. It says nothing about
+    # a note that declared none, so `reviews: []` was a clean corpus with the
+    # review layer skipped entirely -- the one failure mode a roll-call of
+    # declarations structurally cannot see. This is the other half.
+    REQUIRED_LANES.clear()
+    REQUIRED_LANES.extend(["facts", "quality", "coverage"])
+    try:
+        # Nothing declared is the whole defect, once lanes are required.
+        got = check_required_lanes("video_id: VID\nreviews: []\n", "n.md")
+        assert len(got) == 3 and all("E-LANE-UNREVIEWED" in g for g in got), got
+        cases += 1
+        # An ABSENT key is the same absence as an empty one. Reading it as
+        # "opted out" would let deleting a line disarm the requirement.
+        got = check_required_lanes("video_id: VID\n", "n.md")
+        assert len(got) == 3, got; cases += 1
+        assert check_required_lanes(
+            "video_id: VID\nreviews: [facts, quality, coverage]\n", "n.md") == []
+        cases += 1
+        # A lane split in two still covers its family: `coverage-spoken` and
+        # `coverage-frames` are how one corpus note ran the coverage lane, and
+        # demanding the bare id would call that note unreviewed.
+        assert check_required_lanes(
+            "video_id: VID\nreviews: [facts, quality, coverage-spoken]\n",
+            "n.md") == []; cases += 1
+        # ...but the dash is load-bearing here too, exactly as it is in
+        # lane_matches: `coverageless` is not the coverage lane.
+        got = check_required_lanes(
+            "video_id: VID\nreviews: [facts, quality, coverageless]\n", "n.md")
+        assert len(got) == 1 and "coverage" in got[0], got; cases += 1
+        # Extra lanes are somebody doing more than the floor, not a defect.
+        assert check_required_lanes(
+            "video_id: VID\nreviews: [facts, quality, coverage, verify]\n",
+            "n.md") == []; cases += 1
+        # A dated exemption silences one lane of one note, and only that one.
+        UNREVIEWED_NOTES["VID"] = {"coverage": "2026-01-01 test"}
+        try:
+            got = check_required_lanes(
+                "video_id: VID\nreviews: [facts, quality]\n", "n.md")
+            assert got == [], got; cases += 1
+            got = check_required_lanes(
+                "video_id: OTHER\nreviews: [facts, quality]\n", "n.md")
+            assert len(got) == 1 and "coverage" in got[0], got; cases += 1
+            # ...one LANE, not the note: the exemption names coverage, so a
+            # note that also dropped quality is still short a lane.
+            got = check_required_lanes(
+                "video_id: VID\nreviews: [facts]\n", "n.md")
+            assert len(got) == 1 and "quality" in got[0], got; cases += 1
+        finally:
+            del UNREVIEWED_NOTES["VID"]
+        # A note with no video_id cannot be exempted by id, and its lanes are
+        # still required -- the missing id is its own defect elsewhere.
+        assert len(check_required_lanes("title: t\n", "n.md")) == 3; cases += 1
+        # A malformed key is check_lanes' defect to report, not this one's;
+        # reporting it twice teaches a reader the note has two problems.
+        assert check_required_lanes("video_id: VID\nreviews: facts\n",
+                                    "n.md") == []; cases += 1
+    finally:
+        REQUIRED_LANES.clear()
+        REQUIRED_LANES.extend(POLICY.required_lanes())
+    # With no corpus policy asking for lanes, this check is silent: the package
+    # cannot know what a corpus considers mandatory.
+    assert check_required_lanes("video_id: VID\nreviews: []\n", "n.md") == [] \
+        or POLICY.required_lanes(); cases += 1
+
     # --- lane roll-call (R10) ---------------------------------------------
     assert lane_ids("title: t\n") == (None, None); cases += 1
     assert lane_ids("reviews: []\n") == ([], None); cases += 1
@@ -1627,41 +2698,69 @@ def selftest() -> int:
         r = Path(td).resolve()
         d = r / "notes" / "reviews" / "VID"
         d.mkdir(parents=True)
-        (d / "n-note-review-facts.md").write_text("x", encoding="utf-8")
+        # The body every report below claims to have read, and a report that IS
+        # a review of it. Writing "x" was enough before the header existed,
+        # which is precisely the finding these cases now carry.
+        note_body = "\n# t\n\nA body the lanes read.\n"
+        sha = note_body_sha256(note_body)
+        # The oracle every report below names. It is a real file because the
+        # header check opens it: a fixture whose oracle resolves to nothing is
+        # a fixture with a defect in it, and every case here would then be
+        # measured against a corpus that is already red.
+        (r / "runs" / "VID").mkdir(parents=True)
+        (r / "runs" / "VID" / "run.json").write_text("{}\n", encoding="utf-8")
+
+        def report(lane: str, note_sha: str = sha, verdict: str = "SHIP",
+                   claims: str = UNSTATED,
+                   oracle: str = "runs/VID/run.json") -> str:
+            return (f"---\nnote_sha256: {note_sha}\noracle: {oracle}\n"
+                    f"lane: {lane}\nverdict: {verdict}\n"
+                    f"claims_enumerated: {claims}\n---\n\n# {lane}\n\nfound.\n")
+
+        (d / "n-note-review-facts.md").write_text(report("facts"),
+                                                  encoding="utf-8")
         fm = "video_id: VID\nreviews: [facts]\n"
-        assert check_lanes(r, fm, "n.md") == [], check_lanes(r, fm, "n.md")
+        assert check_lanes(r, fm, "n.md", note_body) == [], \
+            check_lanes(r, fm, "n.md", note_body)
         cases += 1
         # exact name, not just the -suffix form
         (d / "n-note-review-facts.md").rename(d / "facts.md")
-        assert check_lanes(r, fm, "n.md") == []; cases += 1
+        assert check_lanes(r, fm, "n.md", note_body) == []; cases += 1
         # ...and the dash is load-bearing: `nonfacts.md` is not lane `facts`.
         (d / "facts.md").rename(d / "nonfacts.md")
-        got = check_lanes(r, fm, "n.md")
+        got = check_lanes(r, fm, "n.md", note_body)
         assert any("E-LANE-MISSING" in g for g in got), got
         assert any("E-LANE-UNDECLARED" in g for g in got), got
         cases += 1
         (d / "nonfacts.md").rename(d / "facts.md")
         # a report nobody declared
-        (d / "n-review-quality.md").write_text("x", encoding="utf-8")
-        got = check_lanes(r, fm, "n.md")
+        (d / "n-review-quality.md").write_text(report("quality"),
+                                               encoding="utf-8")
+        got = check_lanes(r, fm, "n.md", note_body)
         assert len(got) == 1 and "E-LANE-UNDECLARED" in got[0], got
         cases += 1
         # two files for one id: which one is the verdict?
         fm2 = "video_id: VID\nreviews: [facts, quality]\n"
-        assert check_lanes(r, fm2, "n.md") == []; cases += 1
-        (d / "b-review-quality.md").write_text("x", encoding="utf-8")
-        got = check_lanes(r, fm2, "n.md")
+        assert check_lanes(r, fm2, "n.md", note_body) == []; cases += 1
+        (d / "b-review-quality.md").write_text(report("quality"),
+                                               encoding="utf-8")
+        got = check_lanes(r, fm2, "n.md", note_body)
         assert len(got) == 1 and "E-LANE-AMBIGUOUS" in got[0], got
         cases += 1
         (d / "b-review-quality.md").unlink()
-        # one file answering to two ids hides a lane that never emitted
+        # A lane id ending in another one. `n-review-quality.md` matches the
+        # suffix rule for `quality` AND names `review-quality` exactly, and the
+        # longer id is the one that named it -- so `quality` is left with no
+        # report and is convicted, rather than both lanes reading as answered.
         fm3 = "video_id: VID\nreviews: [facts, quality, review-quality]\n"
-        got = check_lanes(r, fm3, "n.md")
-        assert any("E-LANE-SHARED" in g for g in got), got
+        got = check_lanes(r, fm3, "n.md", note_body)
+        assert any("E-LANE-MISSING" in g and " quality " in g for g in got), got
+        cases += 1
+        assert not any("E-LANE-AMBIGUOUS" in g for g in got), got
         cases += 1
         # a declared lane with no report at all
         fm4 = "video_id: VID\nreviews: [facts, quality, coverage]\n"
-        got = check_lanes(r, fm4, "n.md")
+        got = check_lanes(r, fm4, "n.md", note_body)
         assert len(got) == 1 and "E-LANE-MISSING" in got[0] and "coverage" in got[0]
         cases += 1
         # ...unless it is dated in LOST_REVIEWS, and only for ITS video id.
@@ -1669,30 +2768,239 @@ def selftest() -> int:
         # separate the two verdicts is the video id the exemption is filed under.
         other = r / "notes" / "reviews" / "OTHER"
         other.mkdir(parents=True)
-        for name in ("facts.md", "n-review-quality.md"):
-            (other / name).write_text("x", encoding="utf-8")
+        (r / "runs" / "OTHER").mkdir(parents=True)
+        (r / "runs" / "OTHER" / "run.json").write_text("{}\n", encoding="utf-8")
+        for name, lane in (("facts.md", "facts"),
+                           ("n-review-quality.md", "quality")):
+            (other / name).write_text(report(lane, oracle="runs/OTHER/run.json"),
+                                      encoding="utf-8")
         LOST_REVIEWS["VID"] = {"coverage": "2026-01-01 test"}
         try:
-            assert check_lanes(r, fm4, "n.md") == []
+            assert check_lanes(r, fm4, "n.md", note_body) == []
             cases += 1
-            got = check_lanes(r, fm4.replace("VID", "OTHER"), "n.md")
+            got = check_lanes(r, fm4.replace("VID", "OTHER"), "n.md", note_body)
+            assert len(got) == 1 and "E-LANE-MISSING" in got[0], got
+            cases += 1
+            # ...and only for a note that already existed when the row was
+            # written. A newer note inherits the video id and must not inherit
+            # the excuse with it (mechanism F8).
+            got = check_lanes(r, fm4, "2026-06-01--later--VID.md", note_body)
             assert len(got) == 1 and "E-LANE-MISSING" in got[0], got
             cases += 1
         finally:
             del LOST_REVIEWS["VID"]
         # no declaration and no reports on disk is the ordinary case
-        assert check_lanes(r, "video_id: NONE\n", "n.md") == []; cases += 1
+        assert check_lanes(r, "video_id: NONE\n", "n.md", note_body) == []
+        cases += 1
+        # Two DIFFERENT video ids in one frontmatter. `search` took the first,
+        # so the whole roll-call went to another video's reviews while the note
+        # read as if it named one.
+        got = check_lanes(r, "video_id: VID\nvideo_id: OTHER\nreviews: [facts]\n",
+                          "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-TWOVIDEOS" in got[0], got
+        cases += 1
+        # ...and the same id written twice is a repetition, not a contradiction.
+        got = check_lanes(r, "video_id: VID\nvideo_id: VID\nreviews: [facts]\n",
+                          "n.md", note_body)
+        assert not any("E-LANE-TWOVIDEOS" in g for g in got), got
+        cases += 1
+        # ...but declaring lanes with no video id is not: the roll-call is
+        # addressed by video id, so deleting that one line used to leave the
+        # declaration believed on its own word (mechanism F12).
+        got = check_lanes(r, "reviews: [facts, quality]\n", "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-NOVIDEO" in got[0], got
+        cases += 1
         # A report one directory deeper was invisible to the roll-call, and
         # filing by date under the video id is the obvious thing a future run
         # does (slice-13 coverage lane): `mkdir` was the whole dodge.
         (d / "2026-08-06").mkdir()
-        (d / "2026-08-06" / "n-review-buried.md").write_text("x", encoding="utf-8")
-        got = check_lanes(r, fm, "n.md")
+        (d / "2026-08-06" / "n-review-buried.md").write_text(report("buried"),
+                                                             encoding="utf-8")
+        got = check_lanes(r, fm, "n.md", note_body)
         assert any("E-LANE-UNDECLARED" in g and "buried" in g for g in got), got
         cases += 1
         assert check_lanes(r, "video_id: VID\nreviews: [facts, quality, buried]\n",
-                           "n.md") == []
+                           "n.md", note_body) == []
         cases += 1
+
+        # --- a report has to BE a review --------------------------------
+        # Everything above is the roll-call over files that parse. These are
+        # the door two independent lanes walked through on 2026-08-20: three
+        # zero-byte files bought a stamped, gated, clean note.
+        blank = d / "2026-08-06" / "n-review-buried.md"
+        deep_fm = "video_id: VID\nreviews: [facts, quality, buried]\n"
+        blank.write_text("", encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
+        cases += 1
+        # A directory named like a report, and a symlink to /dev/null, are the
+        # same attack one layer down: `rglob` yields both and neither is a file.
+        blank.unlink()
+        blank.mkdir()
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-MISSING" in got[0], got
+        cases += 1
+        blank.rmdir()
+        blank.symlink_to("/dev/null")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-MISSING" in got[0], got
+        cases += 1
+        blank.unlink()
+        # A header that answers for another lane, and a verdict or a claim
+        # count outside the vocabulary.
+        blank.write_text(report("facts"), encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-MISLABELLED" in got[0], got
+        cases += 1
+        for bad in (report("buried", verdict="LGTM"),
+                    report("buried", claims="lots"),
+                    report("buried", note_sha="not-a-hash")):
+            blank.write_text(bad, encoding="utf-8")
+            got = check_lanes(r, deep_fm, "n.md", note_body)
+            assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
+            cases += 1
+        # A stated count IS allowed; `unstated` is the escape for a lane that
+        # did not count, not a way to avoid saying anything.
+        blank.write_text(report("buried", claims="12"), encoding="utf-8")
+        assert check_lanes(r, deep_fm, "n.md", note_body) == []; cases += 1
+        # ...and the same escape exists for a lane that reported findings and
+        # never ruled on the artifact. Inventing a verdict for it would be the
+        # model-authored literal, one field over.
+        blank.write_text(report("buried", verdict=UNSTATED), encoding="utf-8")
+        assert check_lanes(r, deep_fm, "n.md", note_body) == []; cases += 1
+        # A header pinned to a different note body: the note was repaired or
+        # extended after the lane read it, which is the authoring pass this
+        # gate had no state for (premortem F2, X3).
+        blank.write_text(report("buried", note_sha="0" * 64), encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-STALE" in got[0], got
+        cases += 1
+        # ...and editing the note after the lanes read it turns EVERY report on
+        # it red at once, which is the authoring pass finally having a state the
+        # gate can see rather than a sentence in a brief.
+        blank.write_text(report("buried"), encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body + "one more claim.\n")
+        assert len(got) == 3 and all("E-LANE-STALE" in g for g in got), got
+        cases += 1
+        # ...and a machine mark is not an edit: the demotion renderer's own
+        # bytes must not turn every report on the note red.
+        marked = f"{note_body}\n{INTEGRITY_PREFIX} 3 claims\n"
+        assert check_lanes(r, deep_fm, "n.md", marked) == []; cases += 1
+        # A dated row excuses the header for the reports filed before it, and
+        # nothing else about them.
+        blank.write_text("old report\n", encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
+        cases += 1
+        UNHEADERED_REVIEWS["VID"] = "2026-01-01 filed before the header existed"
+        try:
+            assert check_lanes(r, deep_fm, "n.md", note_body) == []; cases += 1
+            got = check_lanes(r, fm4, "n.md", note_body)
+            assert any("E-LANE-MISSING" in g for g in got), got
+            cases += 1
+            # ...and it AGES, like every other debt row. Membership alone made
+            # this the one table that covered work nobody had done yet: a note
+            # filed after the row bought the whole header bypass with it.
+            got = check_lanes(r, deep_fm, "2026-06-01--later--VID.md", note_body)
+            assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
+            cases += 1
+        finally:
+            del UNHEADERED_REVIEWS["VID"]
+        blank.write_text(report("buried"), encoding="utf-8")
+
+        # --- a header field with a consequence --------------------------
+        # Every value below is WELL TYPED and means nothing, which is why the
+        # type check that killed 65 bad values could not reach one of them.
+        for empty in ("TODO", "n/a", "unknown", "x", "0", "runs/VID/gone.json"):
+            blank.write_text(report("buried", oracle=empty), encoding="utf-8")
+            got = check_lanes(r, deep_fm, "n.md", note_body)
+            assert len(got) == 1 and "E-LANE-ORACLE-MISSING" in got[0], (empty, got)
+            cases += 1
+        # An absolute path is taken as written; a relative one is read against
+        # the corpus root, never against the directory the gate was run from.
+        blank.write_text(report("buried", oracle=str(r / "runs/VID/run.json")),
+                         encoding="utf-8")
+        assert check_lanes(r, deep_fm, "n.md", note_body) == []; cases += 1
+        # A file that EXISTS and is not this run. The first pass asked only
+        # whether the path opened, so any real file was a legal oracle.
+        (r / "README.md").write_text("not an oracle\n", encoding="utf-8")
+        for unrelated in ("README.md", "notes/reviews/VID/facts.md"):
+            blank.write_text(report("buried", oracle=unrelated),
+                             encoding="utf-8")
+            got = check_lanes(r, deep_fm, "n.md", note_body)
+            assert len(got) == 1 and "E-LANE-ORACLE-UNRELATED" in got[0], got
+            cases += 1
+        # Two defects at once, which is what the placement outside the
+        # mislabelled/stale chain buys and what nothing used to check.
+        blank.write_text(report("buried", note_sha="0" * 64,
+                                oracle="runs/VID/gone.json"), encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert any("E-LANE-STALE" in g for g in got), got; cases += 1
+        assert any("E-LANE-ORACLE-MISSING" in g for g in got), got; cases += 1
+        # A directory resolves and is not the artifact a lane read.
+        blank.write_text(report("buried", oracle="runs/VID"), encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-ORACLE-MISSING" in got[0], got
+        cases += 1
+        # The one exit: the corpus has written the run off, dated, in the table
+        # anchor_manifest already ages. And it excuses only what pre-dates it.
+        blank.write_text(report("buried", oracle="runs/VID/gone.json"),
+                         encoding="utf-8")
+        UNRESOLVABLE_RUNS["VID"] = "2026-01-01 the run behind this video is gone"
+        try:
+            assert check_lanes(r, deep_fm, "n.md", note_body) == []; cases += 1
+            got = check_lanes(r, deep_fm, "2026-06-01--later--VID.md", note_body)
+            assert len(got) == 1 and "E-LANE-ORACLE-MISSING" in got[0], got
+            cases += 1
+            # ...and it excuses the run being GONE, not any value at all. It
+            # gated both branches once, so a corpus with a dated row accepted
+            # an unrelated file that opens perfectly well.
+            blank.write_text(report("buried", oracle="README.md"),
+                             encoding="utf-8")
+            got = check_lanes(r, deep_fm, "n.md", note_body)
+            assert len(got) == 1 and "E-LANE-ORACLE-UNRELATED" in got[0], got
+            cases += 1
+        finally:
+            del UNRESOLVABLE_RUNS["VID"]
+        # Walking back out of the run directory used to launder any file: the
+        # id was read from the raw string and the location from the resolved
+        # path, and `..` sat between the two.
+        blank.write_text(report("buried", oracle="runs/VID/../../README.md"),
+                         encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-ORACLE-UNRELATED" in got[0], got
+        cases += 1
+        # The id is a whole NAME on the path. A substring test called
+        # `docs/VID.md` a rendering of VID, which it is not.
+        (r / "docs").mkdir()
+        (r / "docs" / "VID.md").write_text("x\n", encoding="utf-8")
+        blank.write_text(report("buried", oracle="docs/VID.md"),
+                         encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-ORACLE-UNRELATED" in got[0], got
+        cases += 1
+        # And a value Python cannot expand reds the note instead of raising
+        # out of the gate entirely.
+        blank.write_text(report("buried", oracle="~nosuchuser42/x.json"),
+                         encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-ORACLE" in got[0], got
+        cases += 1
+        # A lane that refuses the note reds it, and no table excuses that one.
+        blank.write_text(report("buried", verdict=BLOCK), encoding="utf-8")
+        got = check_lanes(r, deep_fm, "n.md", note_body)
+        assert len(got) == 1 and "E-LANE-BLOCKED" in got[0], got
+        cases += 1
+        UNRESOLVABLE_RUNS["VID"] = "2026-01-01 the run behind this video is gone"
+        LOST_REVIEWS["VID"] = {"buried": "2026-01-01 test"}
+        try:
+            got = check_lanes(r, deep_fm, "n.md", note_body)
+            assert any("E-LANE-BLOCKED" in g for g in got), got
+            cases += 1
+        finally:
+            del UNRESOLVABLE_RUNS["VID"]
+            del LOST_REVIEWS["VID"]
+        blank.write_text(report("buried"), encoding="utf-8")
 
     # --- the CLI actually reaches both new checks --------------------------
     # Every case above calls the predicate directly. Deleting the ONE line that
@@ -1702,6 +3010,14 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         r = Path(td).resolve()
         (r / "notes" / "reviews" / "WIRED").mkdir(parents=True)
+        # A rendering for the note to declare. `check_oracle` opens the value
+        # AND reads it, so a fixture without one is red for a reason no case
+        # here is about. It used to be `{}` -- a file that opens and carries no
+        # transcript, which is exactly what the oracle check now refuses.
+        (r / "runs" / "WIRED").mkdir(parents=True)
+        (r / "runs" / "WIRED" / "run.json").write_text(
+            '{"segments": [{"start": 0.0, "end": 2.0, "text": "hello there"}]}\n',
+            encoding="utf-8")
         note = r / "notes" / "2026-01-01--wired--WIRED.md"
         # The fixture is stamped, because these cases are about lanes and status
         # reaching the exit code. An unstamped note is its own defect, tested
@@ -1709,9 +3025,14 @@ def selftest() -> int:
         # wrong reason.
         graded = f"graded_with: {current_stamp()}\n" if current_stamp() else ""
         clean = ('---\nvideo_id: WIRED\nduration: "1:00"\nstatus: distilled\n'
+                 'oracle: runs/WIRED/run.json\n'
                  f'applied:\n{graded}---\n\n# t\n\n'
                  'A body with no declaration in it.\n')
         note.write_text(clean, encoding="utf-8")
+        # This fixture declares no lanes, so a corpus policy that requires some
+        # would make every case below fail for a reason none of them is about.
+        # The requirement gets its own case at the end of the block instead.
+        ambient, REQUIRED_LANES[:] = list(REQUIRED_LANES), []
         assert main(["--check", "--no-require-density", str(note)], root=r) == 0
         cases += 1
         # a declared lane with no report must reach the exit code through main()
@@ -1725,6 +3046,19 @@ def selftest() -> int:
                         encoding="utf-8")
         assert main(["--check", "--no-require-density", str(note)], root=r) == 1
         cases += 1
+        # ...and so must a note that skipped a lane the corpus requires. Wiring
+        # is the whole risk here: the predicate had cases before the one line
+        # that calls it existed.
+        note.write_text(clean, encoding="utf-8")
+        REQUIRED_LANES[:] = ["facts"]
+        try:
+            assert main(["--check", "--no-require-density", str(note)],
+                        root=r) == 1
+            cases += 1
+        finally:
+            # Back to none for the rest of this fixture, which is about the
+            # stamp; `ambient` is restored when the block ends.
+            REQUIRED_LANES[:] = []
 
         # --- the grade stamp ---
         now = current_stamp()
@@ -1738,15 +3072,23 @@ def selftest() -> int:
             assert not wrote and errs and "E-STAMP-REFUSED" in errs[0], errs
             assert note.read_text(encoding="utf-8") == red, "a refusal wrote"
             cases += 1
-            # Clean again -> stamped, and the stamp is the installed version.
+            # The stamp now grades with the checker `--check` grades with, so
+            # this density-free fixture is refused by DEFAULT -- which is the
+            # finding: `--stamp` used to write a clean bill onto a note the
+            # same build called defective one command later (mechanism F16).
             note.write_text(clean.replace(f"graded_with: {now}\n", ""),
                             encoding="utf-8")
             errs, wrote = stamp_note(note, r, now)
+            assert not wrote and errs and "E-STAMP-REFUSED" in errs[0], errs
+            cases += 1
+            # ...and the weaker stamp is still reachable, by name, exactly as
+            # `--check --no-require-density` is.
+            errs, wrote = stamp_note(note, r, now, require_density=False)
             assert wrote and not errs, errs
             assert f"graded_with: {now}" in note.read_text(encoding="utf-8")
             cases += 1
             # Stamping twice writes nothing the second time.
-            assert stamp_note(note, r, now) == ([], False)
+            assert stamp_note(note, r, now, require_density=False) == ([], False)
             cases += 1
             # A stamp from another version is stale, not wrong.
             stale = note.read_text(encoding="utf-8").replace(
@@ -1763,7 +3105,7 @@ def selftest() -> int:
             cases += 1
             # The frontmatter stays parseable after stamping, which a naive
             # append past the closing --- would break.
-            stamp_note(note, r, now)
+            stamp_note(note, r, now, require_density=False)
             fm, _body = split_frontmatter(note.read_text(encoding="utf-8"))
             assert RE_GRADED.search(fm), fm
             cases += 1
@@ -1784,6 +3126,8 @@ def selftest() -> int:
             assert n_refreshed == 1, n_refreshed
             assert "deadbeef" not in side.read_text(encoding="utf-8")
             cases += 1
+        REQUIRED_LANES[:] = ambient
+    proof.done()
     print(f"selftest OK ({cases} cases)")
     return 0
 
@@ -1818,8 +3162,14 @@ def main(argv: list[str], root: Path | None = None) -> int:
     if args.selftest:
         return selftest()
 
+    skipped: list[str] = []
     files = collect([p.resolve() for p in args.paths]
-                    or [root / POLICY.notes_dir()])
+                    or [root / POLICY.notes_dir()], root, skipped)
+    for s in skipped:
+        print(f"# not collected: {s} is under the corpus and is not named "
+              f"YYYY-MM-DD--slug--<video-id>.md", file=sys.stderr)
+    if refuses_empty(files, args.paths, PROG):
+        return 2
 
     if args.stamp:
         stamp = current_stamp()
@@ -1841,7 +3191,8 @@ def main(argv: list[str], root: Path | None = None) -> int:
         for rounds in range(1, 4):
             defects, wrote = [], set()
             for f in files:
-                d, did = stamp_note(f, root, stamp)
+                d, did = stamp_note(f, root, stamp, args.require_density,
+                                    args.floor)
                 defects.extend(d)
                 if did:
                     wrote.add(str(f.relative_to(root)
@@ -1925,10 +3276,30 @@ def main(argv: list[str], root: Path | None = None) -> int:
         print(line)
     # An exemption nobody sees is an exemption nobody removes. Same promise as
     # anchor_manifest's UNRESOLVABLE_RUNS: printed on every ordinary run.
+    #
+    # That doctrine was written for LOST_REVIEWS and stopped two lines short of
+    # the table beside it. UNREVIEWED_NOTES excuses the ENTIRE review layer for
+    # 19 lanes of this corpus and was the one exemption table no ordinary run
+    # ever mentioned (mechanism F9); UNHEADERED_REVIEWS is new and would have
+    # started life with the same silence. Both print here now.
     for vid, lanes in sorted(LOST_REVIEWS.items()):
         for lane, why in sorted(lanes.items()):
             print(f"# lane {vid}/{lane} exempt from the roll-call [{why}]",
                   file=sys.stderr)
+    for vid, lanes in sorted(UNREVIEWED_NOTES.items()):
+        for lane, why in sorted(lanes.items()):
+            print(f"# lane {vid}/{lane} never ran, debt recorded [{why}]",
+                  file=sys.stderr)
+    for vid, why in sorted(UNHEADERED_REVIEWS.items()):
+        print(f"# reviews for {vid} are read on their filenames alone [{why}]",
+              file=sys.stderr)
+    # The doctrine stopping one table short, a third time. This one is the
+    # largest ledger in the corpus and was born silent (round-5 refutation F5).
+    for name, why in sorted(UNFILLED_ORACLES.items()):
+        print(f"# {name} names no rendering a gate can open [{why}]",
+              file=sys.stderr)
+    for line in stale_exemptions(root):
+        print(line, file=sys.stderr)
     # "0 defects" over 8 notes used to read as "8 notes verified" when only the
     # 2 carrying a declaration were ever tested. Say how many were testable.
     print(f"# {len(files)} notes checked, {declared} with a declared density, "

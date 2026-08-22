@@ -465,6 +465,12 @@ def selftest() -> int:
         if got != want:
             raise AssertionError(f"{label}: got {got!r}, want {want!r}")
 
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private, and
+    # `done()` below is where the evidence goes and a wrong answer is refused.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
+
     def segs(*rows) -> list[dict]:
         return [{"start": float(s), "end": float(s) + 2.0, "text": t}
                 for s, t in rows]
@@ -659,6 +665,7 @@ def selftest() -> int:
                               f"one"])
     check("two renderings do not raise it", witness_defect(2), [])
 
+    proof.done()
     print(f"# selftest OK ({cases} cases)")
     return 0
 

@@ -65,13 +65,22 @@ OPENAI_MODEL = "whisper-1"
 #      check downstream of this file is about a second in a recording.
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/audio/transcriptions"
 OPENROUTER_MODEL = "openai/whisper-large-v3"
-OPENROUTER_PROVIDER = "groq"
+# THE ROUTER IS FOR PROVIDERS A DIRECT BACKEND CANNOT REACH. This defaulted to
+# `groq`, which is also a backend of its own here (`--whisper groq`,
+# `GROQ_API_KEY`), so the default asked OpenRouter -- and OpenRouter's margin --
+# to reach a provider already reachable directly. DeepInfra is not reachable
+# any other way from this pipeline, and it is the provider the measurement
+# above was actually billed at. Override with `WATCH_OPENROUTER_PROVIDER`.
+OPENROUTER_PROVIDER = "deepinfra"
 # The providers OpenRouter documents as returning `verbose_json`. Kept as the
-# preference and as the text of the error message, not as a belief: the
-# measurement above found a provider outside this list returning timestamps
-# anyway. Asking for one of these is the cheap precaution; the refusal in
-# `_segments_from_response` is the check.
+# text of the error message and as a doc fact, not as a belief: the measurement
+# above found a provider outside this list returning timestamps anyway.
 OPENROUTER_TIMESTAMPED_PROVIDERS = ("openai", "groq", "together")
+# The providers this repo has SEEN return them, 2026-08-19, on the clip above.
+# The pin is chosen from here rather than from the doc list, and a pin outside
+# BOTH is what the heads-up in `_post_openrouter` is for. Neither list is the
+# check; the refusal in `_segments_from_response` is.
+OPENROUTER_MEASURED_TIMESTAMPED = ("groq", "deepinfra", "together")
 # Seconds of audio per request. OpenRouter's guide: "Recordings longer than
 # about a minute of processing time should be split anyway, since upstream
 # providers time out after 60 seconds per request." Ten minutes of audio is
@@ -376,17 +385,31 @@ def _read_config_value(name: str) -> str | None:
     return None
 
 
+# Backends that are only used when SOMEBODY ASKS FOR THEM BY NAME.
+#
+# OpenRouter used to sit first in the automatic order, on the argument that
+# setting its key is already a decision to pay. That argument is wrong in one
+# direction that matters: this endpoint ignores the provider pin and routes to
+# whichever provider is cheapest that minute (measured 2026-08-19, see the note
+# above OPENROUTER_ENDPOINT). A backend whose actual provider changes between
+# runs must not be the one a run picks up on its own, because the transcript is
+# the oracle every downstream check is measured against.
+#
+# So it is a flag now, not a default. `--whisper openrouter` gets it; nothing
+# else does, however many keys are lying around in the config.
+BY_REQUEST_ONLY = ("openrouter",)
+
+
 def load_api_key(preferred: str | None = None) -> tuple[str, str] | tuple[None, None]:
-    """Return (backend, api_key). OpenRouter, then Groq, then OpenAI, then local.
+    """Return (backend, api_key). Groq, then OpenAI, then local whisper.cpp.
 
     If `preferred` is "openrouter", "groq", "openai", or "local", only that
     backend is considered. For the "local" backend the second tuple element is
     the path to the whisper.cpp binary (WHISPER_CPP_BIN) rather than an API key.
 
-    OpenRouter sits first because setting its key is already a decision to pay
-    for transcription, and because a hosted decode has not been measured
-    collapsing the way a long local one does. Having no key at all remains the
-    normal state, and the local backend remains the one that needs nothing.
+    OpenRouter is reachable ONLY by asking for it: see BY_REQUEST_ONLY. Having
+    no key at all remains the normal state, and the local backend remains the
+    one that needs nothing.
     """
     candidates = (
         ("OPENROUTER_API_KEY", "openrouter"),
@@ -394,7 +417,19 @@ def load_api_key(preferred: str | None = None) -> tuple[str, str] | tuple[None, 
         ("OPENAI_API_KEY", "openai"),
         ("WHISPER_CPP_BIN", "local"),
     )
-    if preferred is not None:
+    # A NAME OUTSIDE THE FOUR IS A TYPO, NOT AN ABSENT CREDENTIAL. Filtering an
+    # unknown name left an empty candidate list, so `--backend Local` on a fully
+    # configured machine reported "No Whisper backend available. Set
+    # GROQ_API_KEY…" and sent the user to fix credentials they already have
+    # (properties I33). `watch.py` constrains its own flag with argparse
+    # choices; this module's CLI does not, and this is the shared door.
+    if preferred is not None and preferred not in [c[1] for c in candidates]:
+        raise SystemExit(
+            f"Unknown whisper backend: {preferred!r}. Choose one of "
+            f"{', '.join(c[1] for c in candidates)}.")
+    if preferred is None:
+        candidates = tuple(c for c in candidates if c[1] not in BY_REQUEST_ONLY)
+    else:
         candidates = tuple(c for c in candidates if c[1] == preferred)
 
     for key_name, backend in candidates:
@@ -617,12 +652,14 @@ def _post_openrouter(api_key: str, model: str, audio_path: Path,
     import base64
 
     provider = provider or OPENROUTER_PROVIDER
-    if provider not in OPENROUTER_TIMESTAMPED_PROVIDERS:
+    if (provider not in OPENROUTER_TIMESTAMPED_PROVIDERS
+            and provider not in OPENROUTER_MEASURED_TIMESTAMPED):
         print(
-            f"[watch] WATCH_OPENROUTER_PROVIDER={provider!r} is outside the "
-            f"providers OpenRouter documents as returning segment timestamps "
-            f"({', '.join(OPENROUTER_TIMESTAMPED_PROVIDERS)}). One outside it "
-            f"returned them anyway when this was measured, so this is a "
+            f"[watch] WATCH_OPENROUTER_PROVIDER={provider!r} is outside both "
+            f"the providers OpenRouter documents as returning segment "
+            f"timestamps ({', '.join(OPENROUTER_TIMESTAMPED_PROVIDERS)}) and "
+            f"the ones measured returning them "
+            f"({', '.join(OPENROUTER_MEASURED_TIMESTAMPED)}). This is a "
             f"heads-up and not a refusal; a response without timestamps is "
             f"what gets refused.",
             file=sys.stderr,
@@ -1225,8 +1262,8 @@ def transcribe_video(
     if not backend or not api_key:
         setup_py = Path(__file__).resolve().parent / "setup.py"
         raise SystemExit(
-            "No Whisper backend available. Set OPENROUTER_API_KEY (preferred), "
-            "GROQ_API_KEY or OPENAI_API_KEY, "
+            "No Whisper backend available. Set GROQ_API_KEY or OPENAI_API_KEY, "
+            "or OPENROUTER_API_KEY with `--whisper openrouter`, "
             "or WHISPER_CPP_BIN + WHISPER_CPP_MODEL for offline whisper.cpp, "
             "in the environment or in ~/.config/watch/.env. "
             f"Run `python3 {setup_py}` to configure."

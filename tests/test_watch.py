@@ -83,3 +83,118 @@ def test_no_dedup_preserves_static_frames(static_clip: Path):
     out = _run(static_clip, "--no-dedup")
     assert "near-duplicate" not in out
     assert _frame_lines(out) > 1
+
+
+# --- choosing the decoder ----------------------------------------------------
+# Captions win by default and are free, and on YouTube they are very often
+# machine-generated. A note quotes its transcript, so which decoder produced it
+# is part of the method rather than an implementation detail.
+
+def _subtitled(clip: Path, tmp_path: Path) -> Path:
+    """The clip with a sidecar .vtt beside it, which download.py picks up."""
+    work = tmp_path / "download"
+    work.mkdir(parents=True, exist_ok=True)
+    target = work / "video.mp4"
+    target.write_bytes(clip.read_bytes())
+    (work / "video.en.vtt").write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nthe caption track\n",
+        encoding="utf-8")
+    return target
+
+
+def test_captions_are_used_by_default(cut_clip: Path, tmp_path: Path):
+    out = _run(_subtitled(cut_clip, tmp_path))
+    assert "via captions" in out
+    assert "the caption track" in out
+
+
+def test_no_captions_ignores_the_subtitle_track(cut_clip: Path, tmp_path: Path):
+    out = _run(_subtitled(cut_clip, tmp_path), "--no-captions")
+    assert "the caption track" not in out
+    assert "via captions" not in out
+
+
+# The URL path parses captions at a DIFFERENT site from the local path — early,
+# so the deictic-cue pass has something to scan before frames are chosen. The
+# flag was added against the late site only, and the first real run came back
+# captioned with no error anywhere. These stub yt-dlp and drive the early site.
+
+def _url_run(monkeypatch, tmp_path: Path, *args: str) -> str:
+    import sys as _sys
+    _sys.path.insert(0, str(WATCH.parent))
+    import watch
+
+    vtt = tmp_path / "video.en.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nthe caption track\n",
+                   encoding="utf-8")
+    fetched = {"subtitle_path": str(vtt), "video_path": None, "downloaded": True,
+               "info": {"title": "A Talk", "duration": 10, "id": "vid0000000"}}
+    monkeypatch.setattr(watch, "fetch_captions", lambda *a, **k: dict(fetched))
+    monkeypatch.setattr(watch, "download",
+                        lambda *a, **k: {**fetched, "subtitle_path": None})
+    monkeypatch.setattr(_sys, "argv",
+                        ["watch.py", "https://example.com/watch?v=vid0000000",
+                         "--detail", "transcript", "--no-whisper", *args])
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        assert watch.main() == 0
+    return buf.getvalue()
+
+
+def test_a_url_uses_its_captions_by_default(monkeypatch, tmp_path: Path):
+    out = _url_run(monkeypatch, tmp_path)
+    assert "via captions" in out
+    assert "the caption track" in out
+
+
+def test_no_captions_reaches_the_url_path_too(monkeypatch, tmp_path: Path):
+    out = _url_run(monkeypatch, tmp_path, "--no-captions")
+    assert "the caption track" not in out
+    assert "via captions" not in out
+
+
+def test_a_url_run_records_the_caption_file_its_segments_came_from(
+        monkeypatch, tmp_path: Path):
+    """properties I26(b) — `--make-note` and captions, end to end.
+
+    The stub is the shipped one: `fetch_captions` returns the track, `download`
+    returns the same dict with NO subtitle. `build_run` read the late `dl`, so
+    the run said `source: captions` and named no file at all -- neither the
+    oracle nor the witness -- and every gate downstream of it had nothing to
+    re-check a quote against. The predicate had cases; the wiring did not.
+    """
+    import io
+    import json
+    import sys as _sys
+    from contextlib import redirect_stdout
+
+    _sys.path.insert(0, str(WATCH.parent))
+    import watch
+
+    vtt = tmp_path / "video.en.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nthe caption track\n",
+                   encoding="utf-8")
+    fetched = {"subtitle_path": str(vtt), "video_path": None, "downloaded": True,
+               "info": {"title": "A Talk", "duration": 10, "id": "vid0000000"}}
+    monkeypatch.setattr(watch, "fetch_captions", lambda *a, **k: dict(fetched))
+    # The SECOND pass, which is where the bug lived: it rebinds `dl`, and the
+    # track it returns is not the one the segments were parsed from.
+    monkeypatch.setattr(watch, "download",
+                        lambda *a, **k: {**fetched, "subtitle_path": None})
+    monkeypatch.setenv("WATCH_NOTE_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(_sys, "argv",
+                        ["watch.py", "https://example.com/watch?v=vid0000000",
+                         "--detail", "efficient", "--no-whisper", "--make-note"])
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        assert watch.main() == 0
+    assert "via captions" in buf.getvalue()
+
+    runs = sorted((tmp_path / "runs").rglob("run.json"))
+    assert len(runs) == 1, runs
+    transcript = json.loads(runs[0].read_text(encoding="utf-8"))["transcript"]
+    assert transcript["source"] == "captions"
+    assert transcript["subtitle_path"], transcript
+    assert Path(transcript["subtitle_path"]).name == "video.en.vtt"

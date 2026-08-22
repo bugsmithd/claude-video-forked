@@ -1,0 +1,990 @@
+# Layer 2, part one — anchors and manifests.
+#
+# `anchor_manifest.py` is the only module that reconciles a second a note CITES
+# against an artifact the run actually PRODUCED. Twenty-six rules, and before
+# this file existed 55 of the wrong answers next door to them were pinned by
+# nothing: the fix for each one landed exactly where the finding pointed, and
+# the neighbour nobody typed stayed accepted.
+#
+# Every row here is promoted, which means every neighbour it names has a case
+# that exists. `kind = "selftest"` is the module's own labelled check, run
+# inside this pytest session by `tests/test_selftests.py`; `kind = "pytest"` is
+# a case in `tests/test_spec_evidence_anchors.py` unless the path says
+# otherwise. The gaps section at the end of this file says what had to be
+# rewritten to get here and what is still wrong in the source.
+
+# --- the anchor itself: is this second one the run produced? ------------------
+
+[[rule]]
+id = "ANCHOR-UNRESOLVED"
+code = "E-ANCHOR-UNRESOLVED"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "an anchor carries an evidence class and the manifest can actually decide that class"
+refuses = "a cited second the run never produced, decided one evidence class at a time and refused on a single half: an ON-SCREEN second with no extracted frame at it, or a SPOKEN or INFERRED second inside no caption span. The two halves are never required together, so a caption span covering an ON-SCREEN second is no defence and a frame under a SPOKEN one is none either"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an on-screen second seven seconds away from the nearest extracted frame"
+test = "anchor_manifest::off-by-seven code"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an on-screen second moved onto a DIFFERENT extracted frame, which must NOT be refused because a swap between two real frames is outside this rule and stays open"
+test = "anchor_manifest::a swap onto another extracted frame survives"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a spoken second when the caption spans cover almost the whole runtime, which must NOT be refused because a namespace that cannot fail is switched off instead"
+test = "anchor_manifest::spoken with no caption index is unchecked, not resolved"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a spoken second outside every caption span of a namespace that can still fail"
+test = "anchor_manifest::non-vacuous cues resolve SPOKEN"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an inferred second outside every caption span of a namespace that can still fail — the same branch as the spoken one and a separate line of code"
+test = "tests/test_spec_evidence_anchors.py::test_an_inferred_second_outside_every_caption_span_is_unresolved"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note whose run is named in the unresolvable_runs ledger, which does NOT excuse this rule: that ledger only downgrades the missing-manifest complaint"
+test = "tests/test_spec_evidence_anchors.py::test_the_unresolvable_runs_ledger_does_not_excuse_an_unresolved_anchor"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an on-screen second a caption span DOES hold, which is refused all the same because the frames half decides alone — the neighbour that stops the refusal being read as needing both halves"
+test = "tests/test_spec_evidence_anchors.py::test_a_caption_span_over_an_on_screen_second_does_not_resolve_it"
+kind = "pytest"
+
+[[rule]]
+id = "ANCHOR-UNQUOTED"
+code = "E-ANCHOR-UNQUOTED"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a note line outside a fenced block is scanned for timestamp-shaped text"
+refuses = "a timestamp with no backticks on BOTH sides — UNLESS it is written hard against the stamp before it. The scan reads one character past every match it makes, so in a run of stamps with nothing between them every second stamp is never offered to the scan, and the anchor pattern cannot see it either. A bare stamp with any separator in front of it is caught; a bare stamp with none is counted by nothing in the package"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a bare bracketed time in ordinary prose"
+test = "anchor_manifest::an unquoted timestamp is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same bare time inside a fenced block, which must NOT be refused because quoted text is not a claim"
+test = "anchor_manifest::a fenced unquoted timestamp is not"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a properly backticked anchor, which must NOT be refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a time with a backtick on one side only, which is half-quoted and still invisible to every check"
+test = "tests/test_spec_evidence_anchors.py::test_a_timestamp_backticked_on_one_side_only_is_still_invisible"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a BARE three-digit minute, which the anchor pattern caps out of sight and this wider scan exists to catch"
+test = "tests/test_spec_evidence_anchors.py::test_a_three_digit_minute_is_caught_by_the_wider_scan"
+kind = "pytest"
+[[rule.neighbour]]
+case = "three bare stamps written hard against each other, where the first and the third are refused and the middle one is offered to nothing — the boundary of this scan, stated so a reader does not write a range with no separator and read the silence as a pass"
+test = "tests/test_spec_evidence_anchors.py::test_the_second_of_two_adjacent_bare_stamps_is_offered_to_nothing"
+kind = "pytest"
+
+[[rule]]
+id = "ANCHOR-UNATTRIBUTED"
+code = "E-ANCHOR-UNATTRIBUTED"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a note finishes being sorted and at least one anchor landed in the unattributable pile"
+refuses = "a note that leaves an anchor with no evidence class at all, or with two the tool cannot choose between, AND no other line of the note labelling that same second exactly once. One such line elsewhere takes the anchor out of this pile and into the cross-reference rule, whichever of the two shapes it was in"
+excused_by = ["unattributed_notes"]
+exit = 1
+
+[[rule.neighbour]]
+case = "an anchor in an item that carries no evidence class anywhere"
+test = "anchor_manifest::an unattributed anchor fires by default"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a note named in the unattributed_notes ledger, which must NOT be refused but must still be printed"
+test = "anchor_manifest::a dated exemption downgrades to a printed note"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the escape hatch given, where nothing is refused"
+test = "anchor_manifest::--no-require-evidence-class silences it"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an unlabelled anchor repeating a second the note labels once elsewhere, which must NOT land in this pile"
+test = "anchor_manifest::a re-citation of a classed second is cross-referenced"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an item where two labels both touch one anchor, so the printed line must name the contested pile and not the unlabelled one"
+test = "tests/test_spec_evidence_anchors.py::test_two_labels_touching_one_anchor_are_counted_as_contested"
+kind = "pytest"
+[[rule.neighbour]]
+case = "that same contested item with an earlier line labelling the second once, which must NOT be refused by this rule and must leave the contested count at zero — the condition that decides which of the two codes a contested anchor gets"
+test = "tests/test_spec_evidence_anchors.py::test_a_contested_anchor_with_a_donor_elsewhere_is_cross_referenced"
+kind = "pytest"
+
+[[rule]]
+id = "ANCHOR-CROSSREF"
+code = "E-ANCHOR-CROSSREF"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "an anchor whose own item gave it no ONE class — none at all, two that both miss it, or two that both touch it — repeats a second the note labels exactly once elsewhere"
+refuses = "a note leaning on another line's label for this second instead of saying how it knows this moment, in any of those three shapes. The printed line calls every one of them unlabelled, which is the right repair for the first shape and the wrong one for the other two"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an unlabelled re-citation of a second labelled once earlier"
+test = "anchor_manifest::a leaned-on anchor is a defect by default"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same note through the command line, which is the default a person actually gets"
+test = "anchor_manifest::the CLI reaches the default"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the escape hatch given, where the same note must NOT be refused"
+test = "anchor_manifest::...and --no-require-touched-class turns it off"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a labelled second one away in either direction, which must NOT donate its class"
+test = "anchor_manifest::a donor one second LATER inherits nothing either"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a second the note labels two different ways, which stays unattributable rather than becoming this"
+test = "anchor_manifest::a second labelled both ways stays unattributable"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a donor inside a fenced block, which is quoted rather than claimed and donates nothing"
+test = "anchor_manifest::a fenced anchor donates no class"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same second written in another spelling, which must still donate"
+test = "anchor_manifest::the same second in another spelling still donates"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a note whose run is named in unresolvable_runs, which does NOT excuse this rule"
+test = "tests/test_spec_evidence_anchors.py::test_the_unresolvable_runs_ledger_does_not_excuse_a_leaned_on_anchor"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an item where two labels both TOUCH the anchor and an earlier line labels that second once, which lands here and not in the unattributable pile"
+test = "tests/test_spec_evidence_anchors.py::test_a_contested_anchor_with_a_donor_elsewhere_is_cross_referenced"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an item carrying two labels that both MISS the anchor, with the same donor elsewhere, which is the third shape and a separate word in the same branch"
+test = "tests/test_spec_evidence_anchors.py::test_an_item_labelled_twice_and_touching_neither_label_is_cross_referenced"
+kind = "pytest"
+
+[[rule]]
+id = "COVERAGE-GAP"
+code = "E-COVERAGE-GAP"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a ceiling is asked for and the manifest carries both frames and a runtime"
+refuses = "a span longer than the ceiling that holds an extracted frame the note never cites"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an uncited extracted frame sitting inside a span longer than the ceiling"
+test = "anchor_manifest::--max-gap fires on a real uncited frame"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a note citing every frame the run extracted, which must NOT be refused however long the video runs"
+test = "anchor_manifest::citing every frame is never a coverage defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "no ceiling asked for, where an uncited frame is counted in the printed ledger and never refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a span exactly as long as the ceiling, which must NOT be refused because the comparison is strict"
+test = "tests/test_spec_evidence_anchors.py::test_a_span_exactly_as_long_as_the_ceiling_is_not_a_coverage_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a spoken anchor landing on the uncited frame's second, which does not count as looking at the screen and so must NOT clear the gap"
+test = "tests/test_spec_evidence_anchors.py::test_a_spoken_anchor_on_an_uncited_frames_second_does_not_clear_the_gap"
+kind = "pytest"
+[[rule.neighbour]]
+case = "six anchors on one frame second, which must NOT read as more coverage than one"
+test = "tests/test_spec_evidence_anchors.py::test_six_anchors_on_one_second_count_as_one_cited_frame"
+kind = "pytest"
+
+[[rule]]
+id = "PARTITION"
+code = "E-PARTITION"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "every anchor of a note has been given a disposition"
+refuses = "an anchor count that does not equal the sum of the piles the anchors were sorted into"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note carrying every pile at once, which must sum"
+test = "anchor_manifest::the partition holds"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same with the appended pile present, which is the member that shifted seven report columns when it was spliced in instead"
+test = "anchor_manifest::the partition holds with cross-referenced present"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a note with no anchors at all, where zero must equal zero and nothing may be refused"
+test = "tests/test_spec_evidence_anchors.py::test_a_note_with_no_anchors_still_partitions"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an eleventh pile added to the list and never assigned to anything, which must NOT be refused because an unassigned member adds zero — the draft expected this to fire and it does not"
+test = "tests/test_spec_evidence_anchors.py::test_a_pile_added_and_never_assigned_is_not_a_partition_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a pile spliced into the list that names a report column already counting anchors, which double-counts them — the edit this rule does catch"
+test = "tests/test_spec_evidence_anchors.py::test_a_pile_spliced_in_over_a_report_column_breaks_the_partition"
+kind = "pytest"
+
+# --- the manifest: is there one, is it this video's, is it readable? ---------
+
+[[rule]]
+id = "MANIFEST-MISSING"
+code = "E-MANIFEST-MISSING"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a note carries on-screen anchors that nothing was able to check"
+refuses = "a note whose manifest is absent, unreadable, or present with no frames worth resolving against"
+excused_by = ["unresolvable_runs"]
+exit = 1
+
+[[rule.neighbour]]
+case = "no manifest file for this video at all"
+test = "anchor_manifest::missing manifest fires by default"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the escape hatch given, where nothing is refused"
+test = "anchor_manifest::--no-require-manifest silences it"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a manifest that exists and carries caption spans but no frames, which is present and not present enough"
+test = "anchor_manifest::a frameless manifest does not satisfy the gate"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a run named in the unresolvable_runs ledger, which must NOT be refused but must be printed with its dated reason — the one rule that ledger actually excuses"
+test = "tests/test_spec_evidence_anchors.py::test_a_run_in_the_unresolvable_runs_ledger_is_printed_rather_than_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note with no on-screen anchors and no manifest, which must NOT be refused because nothing went unchecked"
+test = "tests/test_spec_evidence_anchors.py::test_a_note_with_no_on_screen_anchors_needs_no_manifest"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-UNREADABLE"
+code = "E-MANIFEST-UNREADABLE"
+layer = "evidence"
+owner = "anchor_manifest.read_manifest"
+trigger = "a manifest file exists and is opened"
+refuses = "a manifest that cannot be read back as text"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a manifest the process is not allowed to read"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_the_process_cannot_open_is_reported_not_raised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest holding bytes that are not text in the expected encoding"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_holding_bytes_that_are_not_utf8_names_the_byte"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest path that is a directory rather than a file"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_path_that_is_a_directory_is_unreadable"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unreadable manifest that must NOT also produce the video-id and runtime complaints, because reading it fatally is meant to stop those from running"
+test = "tests/test_spec_evidence_anchors.py::test_an_unreadable_manifest_stops_the_video_and_duration_checks"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-ROW"
+code = "E-MANIFEST-ROW"
+layer = "evidence"
+owner = "anchor_manifest.read_manifest"
+trigger = "a line of a manifest that is neither a comment nor the header is read"
+refuses = "a row that is not five columns of a known kind, a row whose span is not numbers, and a second frame row claiming a second already taken"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a row with two columns instead of five"
+test = "anchor_manifest::malformed row reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "two frame rows naming one second, where a second must name one artifact"
+test = "anchor_manifest::duplicate second reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the header line and the comment lines, which must NOT be refused — pinned only by the count in the malformed-row case being one rather than four"
+test = "anchor_manifest::malformed row reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "five columns whose kind is neither of the two known ones"
+test = "tests/test_spec_evidence_anchors.py::test_a_row_of_an_unknown_kind_is_malformed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "five columns whose start is a word rather than a number, which is the second of the three refusals under this code and is reached by a different branch"
+test = "tests/test_spec_evidence_anchors.py::test_a_row_whose_start_is_a_word_is_a_non_numeric_span"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two caption spans sharing a start, which must NOT be refused because only frames are one-per-second"
+test = "tests/test_spec_evidence_anchors.py::test_two_caption_spans_may_share_a_start"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-RANGE"
+code = "E-MANIFEST-RANGE"
+layer = "evidence"
+owner = "anchor_manifest.read_manifest"
+trigger = "a manifest states a runtime and holds frame rows"
+refuses = "a frame stamped at a second past the end of the video"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a frame stamped well past the stated runtime"
+test = "anchor_manifest::frame past runtime reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a frame stamped exactly at the runtime, which must NOT be refused because the comparison is strict"
+test = "tests/test_spec_evidence_anchors.py::test_a_frame_stamped_exactly_at_the_runtime_is_in_range"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest with no runtime, where this check cannot run at all and must NOT be refused"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_with_no_runtime_cannot_run_the_range_check"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a caption span running past the runtime, which this rule deliberately does not look at"
+test = "tests/test_spec_evidence_anchors.py::test_a_caption_span_past_the_runtime_is_not_a_range_defect"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-NAMESPACE"
+code = "E-MANIFEST-NAMESPACE"
+layer = "evidence"
+owner = "anchor_manifest.read_manifest"
+trigger = "a manifest is read back and its declared namespaces are compared with its rows"
+refuses = "a namespace declared with no rows behind it, and rows with no namespace declared for them"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "frames declared and no frame rows, which would silently pass every anchor bound to them"
+test = "anchor_manifest::empty namespace reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "declared and populated, which must NOT be refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "caption rows present with no caption namespace declared, which is the other half of this rule and would silently check nothing"
+test = "tests/test_spec_evidence_anchors.py::test_caption_rows_with_no_cues_namespace_declared_are_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a namespace name the reader knows nothing about, which is neither declared-empty nor undeclared-full and is passed over in silence"
+test = "tests/test_spec_evidence_anchors.py::test_a_namespace_the_reader_knows_nothing_about_is_passed_over"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-NO-DURATION"
+code = "E-MANIFEST-NO-DURATION"
+layer = "evidence"
+owner = "anchor_manifest.read_manifest"
+trigger = "a manifest is read back"
+refuses = "a manifest with no runtime, because nothing then dates it and three checks go quiet"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a manifest with no runtime line at all"
+test = "anchor_manifest::undated manifest reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a manifest with a runtime, which must NOT be refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a runtime written with a decimal point or a minus sign, which is not plain digits and is silently read as no runtime"
+test = "tests/test_spec_evidence_anchors.py::test_a_runtime_that_is_not_plain_digits_reads_as_no_runtime"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a runtime of zero, which the reader cannot tell from unknown and which is the ambiguity this rule was written to name"
+test = "tests/test_spec_evidence_anchors.py::test_a_runtime_of_zero_cannot_be_told_from_unknown"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-VIDEO"
+code = "E-MANIFEST-VIDEO"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a note's manifest was read back without a fatal error"
+refuses = "a manifest that declares a different video from the note reading it, or declares none at all"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a manifest declaring the same video, which must NOT be refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a manifest declaring another video entirely, which would resolve this note's anchors against another video's frames"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_declaring_another_video_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest declaring no video at all, where the recorded value is nothing and the note's id is something"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_declaring_no_video_is_refused_against_a_note_that_does"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest that could not be read, where this check must NOT run because there is nothing trustworthy to compare"
+test = "tests/test_spec_evidence_anchors.py::test_an_unreadable_manifest_stops_the_video_and_duration_checks"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-DURATION"
+code = "E-MANIFEST-DURATION"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "the note and its manifest both state a runtime"
+refuses = "two runtimes more than two seconds apart, which are not the same video"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note claiming a runtime a full minute short of the manifest's"
+test = "anchor_manifest::duration drift fires"
+kind = "selftest"
+[[rule.neighbour]]
+case = "runtimes that agree, which must NOT be refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a difference of exactly the two-second tolerance, which must NOT be refused because the comparison is strict"
+test = "tests/test_spec_evidence_anchors.py::test_a_difference_of_exactly_the_tolerance_is_not_drift"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note stating no runtime, where the check cannot run and must NOT be refused"
+test = "tests/test_spec_evidence_anchors.py::test_a_note_that_states_no_runtime_cannot_drift"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-ARTIFACT"
+code = "E-MANIFEST-ARTIFACT"
+layer = "evidence"
+owner = "anchor_manifest.verify_artifacts"
+trigger = "the caller asks for the frames a manifest names to be found again and re-hashed"
+refuses = "a named frame that is gone from every source directory, and a named frame whose bytes no longer match what was recorded"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a frame the manifest names that is gone from every source directory"
+test = "anchor_manifest::--verify-artifacts catches it"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same manifest without the flag, which must NOT be refused because the check is opt-in"
+test = "anchor_manifest::a deleted frame passes without --verify-artifacts"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a frame still on disk whose bytes changed — the second of the two refusals under this code, and the one that separates re-hashing from merely re-finding"
+test = "tests/test_spec_evidence_anchors.py::test_a_frame_still_on_disk_with_changed_bytes_is_caught_by_rehashing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest naming no source directories at all, where the search set is nothing and every frame reads as gone even with the frame sitting on disk under the root the caller passed"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_naming_no_source_directories_finds_its_frames_nowhere"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest naming two source directories that do not hold the frame, where the line names both of them rather than the word nowhere — the wording is read off the manifest and is not a constant"
+test = "tests/test_spec_evidence_anchors.py::test_the_gone_from_line_names_the_source_directories_the_manifest_declared"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run named in unresolvable_runs, which does NOT excuse this rule"
+test = "tests/test_spec_evidence_anchors.py::test_the_unresolvable_runs_ledger_does_not_excuse_a_missing_artifact"
+kind = "pytest"
+
+# --- the sweep: one manifest per video, and every manifest claimed -----------
+
+[[rule]]
+id = "MANIFEST-DUPLICATE"
+code = "E-MANIFEST-DUPLICATE"
+layer = "evidence"
+owner = "anchor_manifest.sweep_manifests"
+trigger = "the anchors directory is swept at the end of a check run"
+refuses = "two manifest files declaring the same video"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "two files declaring one video"
+test = "anchor_manifest::duplicate manifest reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "one manifest per video across a corpus of several, which must NOT be refused"
+test = "tests/test_review_gate.py::test_auditing_one_note_does_not_orphan_the_other_manifests"
+kind = "pytest"
+[[rule.neighbour]]
+case = "three files declaring one video, where only one line is printed and it names the second file"
+test = "tests/test_spec_evidence_anchors.py::test_three_manifests_for_one_video_print_one_line_naming_the_second_file"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two files that declare no video at all, so both fall back to their filenames and can only collide if the filenames do"
+test = "tests/test_spec_evidence_anchors.py::test_two_manifests_declaring_no_video_fall_back_to_their_filenames"
+kind = "pytest"
+
+[[rule]]
+id = "MANIFEST-ORPHAN"
+code = "E-MANIFEST-ORPHAN"
+layer = "evidence"
+owner = "anchor_manifest.sweep_manifests"
+trigger = "the anchors directory is swept at the end of a check run"
+refuses = "a manifest that no note in the corpus declares"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a manifest for a video no note names"
+test = "anchor_manifest::orphan manifest reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a run over ONE note, where the corpus's other manifests must NOT be orphaned — membership is a fact about the corpus, not about the arguments"
+test = "tests/test_review_gate.py::test_auditing_one_note_does_not_orphan_the_other_manifests"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest declaring no video, addressed by its filename instead"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_declaring_no_video_is_addressed_by_its_filename"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a manifest whose declared video was renamed away from its filename, which detaches it silently and is the shape this rule mirrors from the sidecar sweep"
+test = "tests/test_spec_evidence_anchors.py::test_a_manifest_renamed_away_from_its_filename_is_detached"
+kind = "pytest"
+
+# --- adoption: copying a run somewhere the OS does not own ------------------
+
+[[rule]]
+id = "ADOPT-MISSING"
+code = "E-ADOPT-MISSING"
+layer = "evidence"
+owner = "anchor_manifest.verify_copy"
+trigger = "a file has just been copied into the durable destination and is checked back"
+refuses = "a destination file that is not there"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a destination file removed after the copy landed"
+test = "anchor_manifest::a copy that never landed is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a faithful copy, which must NOT be refused"
+test = "anchor_manifest::an honest copy is silent"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a destination that landed with the wrong bytes, which belongs to the corrupt rule and must NOT be reported as absent"
+test = "anchor_manifest::a drifted copy is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a destination path that exists as a directory rather than a file, which is not a file and is reported as not written"
+test = "tests/test_spec_evidence_anchors.py::test_a_destination_that_is_a_directory_was_not_written"
+kind = "pytest"
+
+[[rule]]
+id = "ADOPT-CORRUPT"
+code = "E-ADOPT-CORRUPT"
+layer = "evidence"
+owner = "anchor_manifest.verify_copy"
+trigger = "a file has just been copied into the durable destination and both sides are hashed"
+refuses = "a destination file whose bytes are not the source's"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a destination edited after the copy"
+test = "anchor_manifest::a drifted copy is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a copy of the RIGHT LENGTH and the wrong bytes, which is what separates hashing from checking a file size"
+test = "anchor_manifest::a copier that writes the wrong bytes is caught"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a faithful copy, which must NOT be refused"
+test = "anchor_manifest::an honest copy is silent"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a destination that never landed, which belongs to the missing rule and must NOT be reported as corrupt"
+test = "anchor_manifest::a copy that never landed is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a zero-length source and a zero-length destination, where two empty files hash alike and must NOT be refused"
+test = "tests/test_spec_evidence_anchors.py::test_two_empty_files_hash_alike_and_are_not_corrupt"
+kind = "pytest"
+
+[[rule]]
+id = "ADOPT-EXTRA"
+code = "E-ADOPT-EXTRA"
+layer = "evidence"
+owner = "anchor_manifest.adopt_run"
+trigger = "the destination directory is walked after every source file has been copied"
+refuses = "a file in the destination that no source has, because the build must not record another run's frames"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a frame left behind by an earlier adoption under the same name"
+test = "anchor_manifest::a leftover from an earlier run is named"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a video file the source has and this call deliberately skipped, which must NOT be reported as a stranger"
+test = "anchor_manifest::a video kept by an earlier --with-video run is not a stranger"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an empty destination, where nothing is extra and nothing may be refused"
+test = "anchor_manifest::adoption reports no corruption"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a stray empty DIRECTORY in the destination, which is not a file and is passed over"
+test = "tests/test_spec_evidence_anchors.py::test_a_stray_empty_directory_in_the_destination_is_not_a_stranger"
+kind = "pytest"
+[[rule.neighbour]]
+case = "adopting a source onto itself, where the copy is skipped entirely and the reconcile must NOT call the source's own files strangers"
+test = "tests/test_spec_evidence_anchors.py::test_adopting_a_source_onto_itself_calls_nothing_a_stranger"
+kind = "pytest"
+
+[[rule]]
+id = "ADOPT-ID"
+code = "E-ADOPT-ID"
+layer = "evidence"
+owner = "anchor_manifest.adopt_run"
+trigger = "an adoption is asked for and the video id is about to become a directory name"
+refuses = "an id that is not usable as a single directory name, because it would write outside the declared root"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an id that walks up out of the root"
+test = "anchor_manifest::a traversing id is refused"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an ordinary id, which must NOT be refused"
+test = "anchor_manifest::adoption reports no corruption"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an id that STARTS with a hyphen, which the package states elsewhere is legal and must NOT be refused — the reason the build flag is spelled with an equals sign"
+test = "tests/test_spec_evidence_anchors.py::test_an_id_that_starts_with_a_hyphen_is_a_legal_directory_name"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an empty id, which names the root itself"
+test = "tests/test_spec_evidence_anchors.py::test_an_empty_id_names_the_root_itself_and_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an id carrying a backslash, which is a separator on another platform"
+test = "tests/test_spec_evidence_anchors.py::test_an_id_carrying_a_backslash_is_refused"
+kind = "pytest"
+
+[[rule]]
+id = "ADOPT-TEMP-ROOT"
+code = ""
+layer = "evidence"
+owner = "anchor_manifest.adopt_run"
+trigger = "an adoption has cleared the id check and the destination under the declared root has been named"
+refuses = "a destination the OS owns rather than the user, because a manifest built from a run under such a path certifies frames that expire at the next reboot. Nothing is copied and no manifest is written; the line names the path and carries no E- code, so the debt list keyed by codes cannot hold it either"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a destination under the area the OS clears, where the refusal names that path and no file is copied"
+test = "tests/test_spec_evidence_anchors.py::test_an_adoption_into_a_path_the_os_owns_copies_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same destination with the selftest's escape given, which must NOT be refused: the copy lands and the complaint list is empty"
+test = "tests/test_spec_evidence_anchors.py::test_the_same_destination_with_the_escape_given_is_adopted"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the run's EXIT CODE through the command line, which must be a refusal before any manifest is written rather than a traceback"
+test = "tests/test_spec_evidence_anchors.py::test_an_adoption_into_a_path_the_os_owns_exits_one_and_writes_no_manifest"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unusable id under a destination the OS also owns, where the id refusal comes first and this one must NOT be the line reported"
+test = "tests/test_spec_evidence_anchors.py::test_an_unusable_id_is_refused_before_the_owned_path_is_looked_at"
+kind = "pytest"
+
+[[rule]]
+id = "ADOPT-IO"
+code = "E-ADOPT-IO"
+layer = "evidence"
+owner = "anchor_manifest.adopt_run"
+trigger = "one file is being written into the durable destination"
+refuses = "a write that failed, so that a half-written destination cannot read as an honest failure"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a copy that raises instead of landing"
+test = "anchor_manifest::an unreadable source is reported, not raised"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a copy that succeeds, which must NOT be refused"
+test = "anchor_manifest::adoption reports no corruption"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a failure creating the destination's parent folder rather than writing the file, which is the same guarded step and a different call"
+test = "tests/test_spec_evidence_anchors.py::test_a_failure_creating_the_destinations_parent_is_reported_not_raised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the run's EXIT CODE after such a failure, which must be a refusal and not a traceback — the existing case reads the complaint line and never the exit"
+test = "tests/test_spec_evidence_anchors.py::test_an_adoption_that_could_not_write_exits_one_rather_than_raising"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one file failing among many, where the rest are still copied and still checked"
+test = "tests/test_spec_evidence_anchors.py::test_one_file_failing_does_not_stop_the_others_being_copied_and_checked"
+kind = "pytest"
+
+# --- the caption index, and the note's own fences ---------------------------
+
+[[rule]]
+id = "CAPTION-EMPTY"
+code = "E-CAPTION-EMPTY"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a caption index file exists for this video and is read"
+refuses = "an index holding no usable rows, because that reads exactly like an honest miss"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an index file holding a line that is not a row"
+test = "anchor_manifest::an unusable caption index is a defect, not silence"
+kind = "selftest"
+[[rule.neighbour]]
+case = "no index file at all, which must NOT be refused because nothing claimed there was one"
+test = "anchor_manifest::spoken with no caption index is unchecked, not resolved"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an index holding rows, which must NOT be refused"
+test = "anchor_manifest::a witnessed SPOKEN anchor is witnessed, not resolved"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an index holding nothing but its header line, which is a file that exists and says nothing"
+test = "tests/test_spec_evidence_anchors.py::test_an_index_holding_only_its_header_is_a_file_that_says_nothing"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an index whose rows have the right shape and whose times are words, which is a different branch of the same reader"
+test = "tests/test_spec_evidence_anchors.py::test_an_index_whose_times_are_words_holds_no_usable_rows"
+kind = "pytest"
+
+[[rule]]
+id = "CAPTION-VIDEO"
+code = "E-CAPTION-VIDEO"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "a caption index file exists and declares which video it belongs to"
+refuses = "an index declaring a different video, because a witness from another talk is not a witness"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an index rotated onto another video"
+test = "anchor_manifest::an index rotated onto another video is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an index declaring nothing, which must NOT be refused because the header is optional"
+test = "anchor_manifest::a witnessed SPOKEN anchor is witnessed, not resolved"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the right index put back, which must NOT be refused"
+test = "anchor_manifest::and the restored index is clean again"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the right video declared with trailing spaces around it, which must NOT be refused because the value is trimmed"
+test = "tests/test_spec_evidence_anchors.py::test_the_right_video_declared_with_trailing_spaces_is_trimmed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an index declaring the wrong video AND holding no rows, where both complaints are due and neither may swallow the other"
+test = "tests/test_spec_evidence_anchors.py::test_a_wrong_index_that_is_also_empty_earns_both_complaints"
+kind = "pytest"
+
+[[rule]]
+id = "FENCE-UNBALANCED"
+code = "E-FENCE-UNBALANCED"
+layer = "evidence"
+owner = "anchor_manifest.check_note"
+trigger = "the fence lines of a note's body are counted"
+refuses = "an odd number of fences, because everything after the last one reads as quoted and is exempt from every check"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "one fence opened and never closed"
+test = "anchor_manifest::an unbalanced fence is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a fence opened and closed, which must NOT be refused"
+test = "anchor_manifest::a fenced unquoted timestamp is not"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a note with no fences at all, which must NOT be refused"
+test = "anchor_manifest::exact anchor clean"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the OTHER fence spelling the reader accepts, opened and never closed"
+test = "tests/test_spec_evidence_anchors.py::test_a_tilde_fence_left_open_is_unbalanced"
+kind = "pytest"
+[[rule.neighbour]]
+case = "three fences, which is odd without being one, and leaves a note that looks deliberately fenced"
+test = "tests/test_spec_evidence_anchors.py::test_three_fences_are_odd_without_being_one"
+kind = "pytest"
+
+# =============================================================================
+# GAPS
+# =============================================================================
+#
+# RULES LEFT IN THE DRAFT
+#
+#   None. All 25 rules drafted in `spec/proposed-l2.toml` are promoted here,
+#   and all 55 neighbours that carried `kind = "none"` now have a case in
+#   `tests/test_spec_evidence_anchors.py`. `ADOPT-TEMP-ROOT` is a
+#   twenty-sixth, drafted nowhere: a refute pass found the refusal in the
+#   source with no row anywhere and no code to be owed by (finding 4 below).
+#
+# NEIGHBOURS I COULD NOT WRITE WITHOUT CHANGING SOURCE
+#
+#   None. One case is conditional rather than absent:
+#   `test_a_manifest_the_process_cannot_open_is_reported_not_raised` skips when
+#   the suite runs as uid 0, because root reads a mode-000 file and the
+#   fixture cannot be built. On any ordinary run it executes.
+#
+# WHERE THE CODE AND ITS DOCSTRING DISAGREE
+#
+#   1. A BACKTICKED three-digit minute is counted by nothing, and the module
+#      docstring says the opposite.
+#      Docstring: `watch-quality/src/watchquality/anchor_manifest.py:173-177`
+#      -- "`[105:18]` and a bare [46:30] are both invisible to it ...
+#      Deliberately wider than RE_ANCHOR on both counts."
+#      Code: `watch-quality/src/watchquality/anchor_manifest.py:1410` skips any
+#      stamp with a backtick on BOTH sides, before the minute width is looked
+#      at. `RE_ANCHOR` at `watch-quality/src/watchquality/resolve_note.py:159`
+#      caps minutes at two digits, so `` `[105:18]` `` is not an anchor either.
+#      The wider scan is therefore wider on ONE count, not both: bare stamps of
+#      any width are caught, and a backticked three-digit minute is invisible
+#      to the anchor pattern and exempt from the unquoted scan at the same
+#      time. Reported, not fixed -- a lane that edits the thing it specifies
+#      has destroyed its own evidence. The promoted neighbour says BARE so the
+#      row does not claim coverage the code does not have.
+#
+#   2. `E-MANIFEST-MISSING` says "its manifest carries no usable frames
+#      namespace" for a manifest that is present and UNREADABLE.
+#      Code: `watch-quality/src/watchquality/anchor_manifest.py:1313` routes a
+#      fatal manifest to the `unchecked` pile, and the reason string at
+#      `watch-quality/src/watchquality/anchor_manifest.py:1372-1373` chooses
+#      between "no notes/anchors/<id>.tsv" and the frames-namespace wording on
+#      `man is None` alone. So an undecodable manifest produces
+#      `E-MANIFEST-UNREADABLE` and a second line blaming the namespace.
+#      Pinned as current behaviour by
+#      `test_an_unreadable_manifest_stops_the_video_and_duration_checks`.
+#
+#   3. The `E-ANCHOR-CROSSREF` line says every anchor it counts "carries no
+#      class of their own". Two of the three shapes that reach it carry two.
+#      Code: `watch-quality/src/watchquality/anchor_manifest.py:1308-1311` sends
+#      an anchor here when its item gave it no ONE class -- NONE, MULTI or
+#      CONTESTED -- and the second is labelled once elsewhere; the line at
+#      `watch-quality/src/watchquality/anchor_manifest.py:1397-1400` describes
+#      only the NONE shape. A reader of a CONTESTED note is told to add a class
+#      to an anchor that has two, and the contested counter the unattributed
+#      line prints separately reads zero for that note. The note is still
+#      refused, so this is a repair-instruction defect, not a hole in the gate.
+#      Reported, not fixed: the fix is a message change in the source, and a
+#      lane that edits the thing it specifies has destroyed its own evidence.
+#      Both trigger and refusal now state all three shapes, and
+#      `test_a_contested_anchor_with_a_donor_elsewhere_is_cross_referenced`
+#      pins the wording as it stands so a repair has to come past a red case.
+#
+#   4. The adoption refusal for a path the OS owns carries no `E-` code.
+#      Code: `watch-quality/src/watchquality/anchor_manifest.py:479-480`. It is
+#      a complaint like any other and `main` exits 1 on it
+#      (`watch-quality/src/watchquality/anchor_manifest.py:2487-2492`), but
+#      `spec/unspecified.toml` is keyed by codes, so a refusal without one
+#      could be neither specified nor owed and
+#      `test_every_code_in_the_package_is_either_specified_or_owed` could never
+#      see it. `ADOPT-TEMP-ROOT` above gives it a row with `code = ""`, the
+#      shape already used elsewhere in this spec directory. The message is left
+#      exactly as the source prints it.
+#
+#   5. `E-MANIFEST-ROW` prints the same text, "malformed row", for a wrong
+#      column COUNT and for an unknown KIND.
+#      Code: `watch-quality/src/watchquality/anchor_manifest.py:586-587`. The
+#      two are different repairs and the line does not say which one is due.
+#      Both cases are pinned; neither message is changed here.
+#
+# REFUSES AND NEIGHBOUR LINES REWRITTEN FROM THE DRAFT
+#
+#   ANCHOR-UNQUOTED  refuses: "with no backticks around it" -> "with no
+#     backticks on BOTH sides". The code skips only the both-sides pair
+#     (`anchor_manifest.py:1410`), so a half-quoted stamp fires; the draft's
+#     wording reads as if one backtick were enough to exempt it.
+#   ANCHOR-UNQUOTED  neighbour: "a three-digit minute" -> "a BARE three-digit
+#     minute", for finding 1 above.
+#   MANIFEST-MISSING refuses: added "unreadable", for finding 2 above.
+#   MANIFEST-VIDEO   refuses: added "or declares none at all". A manifest with
+#     no `# video_id` leaves the recorded value as None, which is not the
+#     note's id, so the rule fires (`anchor_manifest.py:1265-1267`). The draft
+#     named that case as a neighbour but not in the refusal.
+#   PARTITION        neighbour: the draft called "an eleventh pile added to the
+#     list and never assigned to anything" the edit this rule exists for. It is
+#     not caught: `blank_row` seeds every member at zero
+#     (`anchor_manifest.py:1159-1165`) and the comparison sums the members
+#     (`anchor_manifest.py:1365`), so an unassigned member adds nothing. The
+#     row now states that as a must-NOT-fire neighbour, and a third neighbour
+#     carries the edit that IS caught -- a member spliced in over a report
+#     column that already counts anchors.
+#   ALL SELFTEST NEIGHBOURS: the draft spelled them
+#     `watch-quality/src/watchquality/anchor_manifest.py::selftest::<label>`.
+#     `tests/test_spec_conformance.py:94-123` derives `<module stem>::<label>`,
+#     so all 64 were respelled `anchor_manifest::<label>`. Every one resolves.
+#
+# REWRITTEN AGAIN AFTER AN INDEPENDENT REFUTE PASS
+#
+#   A later pass read every row against the source and mutated the module 62
+#   times to see which rows a case would actually defend. Five rows moved.
+#
+#   ANCHOR-UNRESOLVED refuses: read as a conjunction -- "no frame was extracted
+#     at it, AND no caption span holds it" -- and the code applies the two
+#     halves separately, one per evidence class
+#     (`anchor_manifest.py:1312-1361`). A reader took a caption span as a
+#     defence for an ON-SCREEN anchor; it is not one. The refusal now says so
+#     and a neighbour puts the span there and watches the anchor be refused
+#     anyway.
+#   ANCHOR-UNQUOTED  refuses: claimed EVERY un-backticked stamp.
+#     `RE_LOOSE_STAMP` ends in `(.?)` (`anchor_manifest.py:177`), so a match
+#     eats one character past its `]` and `finditer` resumes after it: in
+#     `[a][b][c]` the middle stamp is never offered to the scan, and it is not
+#     an anchor either. That is the exact state the rule exists to prevent, and
+#     the overstatement pointed the wrong way -- a reader trusting the row
+#     writes a range with no separator. The refusal now names the boundary and
+#     a neighbour pins it.
+#   ANCHOR-CROSSREF  trigger and refuses: "carries no class of its own" is one
+#     of three shapes that reach the branch; see finding 3 above.
+#   ANCHOR-UNATTRIBUTED refuses: promised to refuse an anchor with two labels
+#     the tool cannot choose between, and the code only does so when no other
+#     line labels that second exactly once. With a donor, the same anchor
+#     becomes `E-ANCHOR-CROSSREF` and the contested count goes to zero. The
+#     `classed` condition is now in the refusal and in a neighbour.
+#   MANIFEST-ARTIFACT: the row held; its empty-search-set neighbour was
+#     defended by nothing. Two mutations survived the whole suite -- falling
+#     back to the caller's root when the manifest names no sources, and
+#     replacing the derived directory list with the constant "nowhere". The
+#     case now writes the frame to disk under that root, so the fallback finds
+#     it and the case goes red, and a second neighbour names two real source
+#     directories so the wording cannot be a constant.
+#
+# OTHER FILES TOUCHED, AND WHY
+#
+#   `spec/unspecified.toml`: the 25 codes promoted here were struck off the
+#   debt list. `tests/test_spec_conformance.py:232-236` fails a code that is
+#   both specified and owed, so promotion and striking are one edit.
+#   `E-CAPTION-EMPTY` was owed by `anchor_manifest, spoken_vote`; striking it
+#   clears the whole row, so the `spoken_vote` half of that code is now
+#   specified by this file's `CAPTION-EMPTY` rule and by nothing else. The
+#   layer-2 witness lane should give it a row of its own rather than re-owe it.

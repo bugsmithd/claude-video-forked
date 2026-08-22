@@ -126,6 +126,8 @@ from .wq_policy import load as load_policy  # noqa: E402
 POLICY = load_policy()
 
 PROG = "spoken_vote.py"
+# Read as a gate by `watch-audit`, with these flags (see `resolve_note`).
+GATE_FLAGS: tuple[str, ...] = ("--check",)
 
 # The control's shifts, and the separation it must show for the check to mean
 # anything. Below this the namespace is as vacuous as containment was.
@@ -346,6 +348,13 @@ def selftest() -> int:
             fails += 1
             print(f"FAIL {name}: got {got!r} want {want!r}")
 
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private. This
+    # checker records rather than raises, so the refusal `done()` provokes
+    # lands in `fails` and the return below is what carries it out.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
+
     check("machine marks are not evidence",
           content_words("`[01:00]` `SPOKEN` `ORPHAN` retention curve"),
           {"retention", "curve"})
@@ -478,6 +487,7 @@ def selftest() -> int:
         check("no caption index is reported, not failed", (d, row["index"]),
               ([], "missing"))
 
+    proof.done()
     if fails:
         print(f"selftest FAILED ({fails})")
         return 1
@@ -536,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     files = collect_notes([p.resolve() for p in args.paths]
-                          or [root / POLICY.notes_dir()])
+                          or [root / POLICY.notes_dir()], root)
     if not files:
         print(f"{PROG}: no notes found", file=sys.stderr)
         return 2

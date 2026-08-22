@@ -1,7 +1,8 @@
 # REVIEW.md — three readers who did not write the note
 
-Optional. Read this only when the user asks for a review, or when the note is
-going somewhere it will be trusted without being re-derived.
+The dispatch template for the review `NOTE.md` and `SKILL.md` require. Read it
+when you are building a note; the review is part of building one, not a favour
+asked afterwards.
 
 `watch-audit` proves a note is well-formed. It cannot prove the note is right: a
 wrong attribution, a dropped hedge and a confidently stated inference pass every
@@ -9,9 +10,14 @@ gate there is. The only thing that catches those is a reader who did not write
 the note — and more than one, because a single reader agrees with whatever they
 read first.
 
-**This is a dispatch template, not an automatic step.** Nothing here runs
-without the user asking. Three fresh agents is a real cost and it is theirs to
-approve.
+Until 2026-08-20 this file opened with "Optional. Read this only when the user
+asks" and "**This is a dispatch template, not an automatic step.** Nothing here
+runs without the user asking", while `NOTE.md:99` said "**Run it. It is not
+optional and it is not something to ask about.**" and `SKILL.md:176` agreed with
+`NOTE.md` — and both of those send the reader here as *the* template. Two
+documents in one directory gave opposite instructions and the next session was a
+coin flip, with the cheap side of the flip winning ties (premortem F4). The rule
+is the one in `NOTE.md`.
 
 ## Build the briefs
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 RUN_JSON = "run.json"
@@ -74,9 +75,14 @@ def rehome(work: Path, target: Path, dl: dict) -> Path:
         work.rename(target)
     except OSError:
         return work
+    # INSIDE the directory, not merely spelled like it. A bare string prefix
+    # with no separator boundary rewrote a SIBLING run's recorded paths --
+    # `run-old` begins with `run` -- to a location that does not exist, and
+    # only for the sibling, so nothing this run touched looked wrong
+    # (properties I27).
     for key in ("subtitle_path", "video_path", "audio_path"):
         value = dl.get(key)
-        if isinstance(value, str) and value.startswith(str(work)):
+        if isinstance(value, str) and value.startswith(f"{work}{os.sep}"):
             dl[key] = str(target) + value[len(str(work)):]
     # The staging parent has served its purpose. rmdir and not rmtree, because
     # it must refuse when another run is staging under it right now; a run in
@@ -93,8 +99,18 @@ def build_run(*, source: str, video_id: str, work: Path, info: dict,
               video_path: str | None, frames: list[dict],
               dropped_seconds: list[float], transcript_source: str | None,
               transcript_segments: list[dict],
-              subtitle_path: str | None) -> dict:
-    """The record a note is checked against, as plain data."""
+              subtitle_path: str | None,
+              parsed_from: str | None = None) -> dict:
+    """The record a note is checked against, as plain data.
+
+    `subtitle_path` is the caption track that is ON DISK, whatever became of
+    it. `parsed_from` is the file the segments in `transcript_segments` were
+    actually read out of, captured at the parse site. They are two facts and
+    they were one argument, decided by a string test on the source label -- so
+    a run could say `source: captions` and name no file at all, and a second
+    yt-dlp pass that re-picked the track could make it name a DIFFERENT
+    transcript than the one it parsed (properties I26, I28).
+    """
     return {
         "schema": 1,
         "source": source,
@@ -109,7 +125,28 @@ def build_run(*, source: str, video_id: str, work: Path, info: dict,
         "transcript": {
             "source": transcript_source,
             "segments": len(transcript_segments),
-            "subtitle_path": subtitle_path,
+            # THE FILE THE SEGMENTS ABOVE CAME FROM, and nothing else. A
+            # `--no-captions` run downloads a caption track and then decodes the
+            # audio instead, and recording that unused track here handed a later
+            # reader the wrong artifact to re-check a quote against: 2,501
+            # caption cues sitting under a `source` that said whisper, with 302
+            # segments. Searching the wrong text can red-light a correct quote
+            # as easily as it can pass a wrong one.
+            #
+            # It is now the path the PARSE SITE handed over, rather than a
+            # guess made here from the source label. The label was a prefix
+            # test where its producer is a single literal, so `captionsless`
+            # counted as captions and `Captions` did not; and the path was
+            # re-read off a `dl` the caller had already replaced, so the file
+            # named and the file parsed were two different dictionaries.
+            "subtitle_path": parsed_from,
+            # Kept separately, because it was fetched and it is on disk: a
+            # second decode of the same audio is a witness, not the oracle.
+            # The two yt-dlp passes both re-pick from whatever is on disk at
+            # the time, so this is also where a track that arrived AFTER the
+            # segments were parsed is recorded -- as the witness it is.
+            "unused_subtitle_path": (subtitle_path
+                                     if subtitle_path != parsed_from else None),
             # The seconds a claim may be anchored to. A stamp that is not one
             # of these resolves to nothing, which is the single most common
             # defect a note gate catches.

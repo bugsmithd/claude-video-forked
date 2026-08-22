@@ -1,0 +1,15 @@
+# Codes with no rule row yet. A DEBT LIST: it may only shrink, and the
+# conformance test refuses a code that is in neither list, so a new code has to
+# be specified or owed in the same commit.
+#
+# A row leaves this list only when a rule row names its code AND every
+# neighbour that row names has a case, which is what the conformance run
+# checks; striking one off any earlier moves the debt rather than paying it.
+#
+# EMPTY since 2026-08-21. Every code the package can print now has a rule. The
+# last three rows here were never codes at all -- a removal argument written in
+# a comment, a prefix inside an assertion that matches two real codes and names
+# neither, and a selftest proving a code does NOT appear. A debt list carrying
+# rows nobody can pay teaches its reader to ignore the list, so the enumerator
+# was narrowed to what the package emits rather than to what its text mentions.
+[codes]

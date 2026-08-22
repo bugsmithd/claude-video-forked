@@ -1,0 +1,192 @@
+# Rules the table claims but does not enforce.
+#
+# A rule is PINNED when breaking its `owner` makes at least one of the cases
+# that rule itself cites go red. A rule is UNPINNED when every mutation the
+# mutator knows how to make leaves every cited case green -- which means the
+# row is decoration, and no reviewer had to say so for that to be true.
+#
+# `tests/test_rule_mutation.py` measures this. Each row below is one rule that
+# failed the measurement on the date in `found`.
+#
+# THIS TABLE MAY ONLY SHRINK.
+#   - A row may be deleted, once the rule is pinned and the mutation run proves
+#     it. Deleting a row is the only edit that needs no argument.
+#   - A row may NOT be added for a rule written from 2026-08-21 on. A new rule
+#     arrives pinned or it does not arrive.
+#   - A rule with a row here is a rule this table does not actually enforce.
+#     Read the count, not the row count of `spec/*.toml`, when asking how much
+#     of the surface is held.
+#
+# Three limits bound what a row can mean, and none of them are hidden:
+#   1. The mutator rewrites the owner FUNCTION only. A module-level constant
+#      the rule also leans on -- a regex beside the function rather than inside
+#      it -- is out of reach, so a pinned rule is pinned against its owner's
+#      body and no further.
+#   2. A selftest is all-or-nothing. A rule whose only cases are selftests is
+#      pinned at MODULE granularity: something in that module noticed, not
+#      necessarily the case the row names.
+#   3. Some mutations change nothing observable. An equivalent mutant surviving
+#      looks exactly like an unpinned rule and is not one. That is why a row
+#      here is a dated finding rather than a hard failure on the day it is made.
+
+# Rows are written from a measured run, never from memory. An empty table means
+# the run has not been read yet, not that every rule is pinned.
+#
+# FIRST MEASURED RUN, 2026-08-21: 129 of 134 rules pinned, 5 unpinned, six
+# minutes wall clock, no timeouts. An earlier run of the same harness reported
+# 134 of 134 and was WRONG: it counted a mutation that stopped the module
+# importing as a rule doing its job, and flipping the first `is None` in a long
+# function does exactly that. A kill only counts now if the module still
+# imports AND a case pinning a different function in the same module stays
+# green.
+#
+# SECOND RUN, same day: 132 of 134 rules measured and 132 pinned, leaving the
+# two rows below, in five minutes. Three rows left this table, and only one of
+# them left because somebody wrote a case. (An earlier draft of this paragraph
+# said "130 of 134 pinned, 4 unpinned" and then, one sentence later, that three
+# rows had left a table of five -- wrong against the run report, against the row
+# count two screens down, and against its own arithmetic. Nothing enforces the
+# prose in this file; the conformance suite reads the rows and never the
+# comments.)
+#
+# The other two left because the FIRST run's aim test was too blunt. A control
+# was "a case pinning a different function in the same module", and in a module
+# whose functions all run through one scanner, an aimed mutation reddens those
+# too -- so a kill in the rule's own branch looked like a wrecking ball. The
+# sharper test came first: a mutation that lands in the statement printing THIS
+# rule's code is aimed at this rule by construction, and no control can say it
+# better.
+#
+# The leak gate is the one that left because of a case. Both cases it cited fed
+# the scanner a line that DID carry the refused word, so a scanner refusing
+# every line it read would have passed both. The two directions it was missing
+# are now written down: a clean line, and an empty string in the refused list.
+#
+# THIRD RUN, 2026-08-22, after independent verification broke the aim test
+# itself: 133 of 135 rules measured and 133 pinned, five minutes, no timeouts.
+# The table grew by one row that day and the run measured it.
+#
+# What was broken: the region a mutation "landed in" is the innermost enclosing
+# STATEMENT, and nothing bounds what a statement encloses. A verifier wrapped a
+# nine-rule roll-call function in one guard and flipped the guard -- the
+# function answered nothing for every note in the corpus, the module still
+# imported, and that single `if` printed all nine codes. Under a substring test
+# each of the nine read its own code there, and ONE mutation was recorded as an
+# aimed pin for all nine, with the control short-circuited and never run. Four
+# pins in the second run were already won that way, two of them awarding one
+# mutant to two different rules.
+#
+# The test now asks WHICH codes a region prints, whole rather than as
+# substrings, and refuses a region that prints any rule's code but this one's.
+# The whole-code half matters on its own: `E-GRADE` is one rule's entire code
+# and five others begin with it.
+#
+# What it cost: nothing. 43 rules are pinned by their own branch where 45 were,
+# and the two that lost that route were re-earned through the control on the
+# same run. 8 rules have no sibling case at all and rest on the import check
+# alone, which the run report names, and which is a weaker witness than the
+# count suggests.
+#
+# FOURTH RUN, 2026-08-22, after that weaker witness was replaced: 133 of 135
+# measured, 133 pinned, five minutes, no timeouts, and the table did not move.
+# What moved is what a kill has to survive.
+#
+# A control was "a case pinning a DIFFERENT function in the same module". Where
+# every rule in a module names one function, that search returns nothing, and
+# the import check is then the entire aim test -- which is to say any mutant
+# that killed anything was called aimed. 13 rules sat in that position and 8 of
+# them were pinned through it. Four window rules were all pinned by one flip
+# inside the argument parser.
+#
+# A sibling RULE sharing the owner is now the fallback control, and a case this
+# rule itself cites is never a control, by either route -- a control drawn from
+# the rule's own citations is green exactly when the mutant failed to kill,
+# which makes the aim test a second copy of the kill test before it.
+#
+# Rules with no control at all: 13 -> 2. The two are CAPTION-UNINDEXED and
+# LANE-MISSING-COUNTED, the only rules their modules carry. 43 rules are pinned
+# by their own branch, unchanged. Four window rules are pinned by a different
+# mutant than last run, because the parser flip now reddens the sibling rule
+# too and is recorded as indiscriminate.
+#
+# (That paragraph said both counts were read from the run's own report. The 2
+# is: `control = "import only"` appears for exactly two rules there. The 13 is
+# not and cannot be -- it is the count of rules for which the control search
+# comes back empty, a static property of the tables, and a rule only reaches the
+# aim test if some mutant killed it. The parent run's report records 8. Both
+# numbers are right; the sentence about where they came from was not.)
+#
+# FIFTH RUN, 2026-08-22: 134 of 136 measured, 134 pinned, five minutes. The
+# table did not move and no verdict changed. CORPUS-ANCHOR-SET is the new row
+# and it arrived pinned, in its own branch, which is what this file requires of
+# a rule written after 2026-08-21 -- a new rule arrives pinned or it does not
+# arrive. The two rows below are the same two.
+#
+# SIXTH RUN, 2026-08-22, twice, after a second round of independent
+# verification took the aim test apart again: 134 of 136 measured, 134 pinned,
+# ten minutes each, identical both times. The table did not move. What moved is
+# the EVIDENCE: 99 rules are pinned by a mutation in their own branch where 44
+# were.
+#
+# Four things were wrong and all four were executed rather than argued.
+#
+#   1. A kill can be scored by a module selftest, and the control was pytest
+#      node ids only -- so a mutation that reddened a selftest and touched no
+#      sibling case was called aimed by a control incapable of noticing. Three
+#      window rules were pinned by a mutant that broke JSON rendering. The
+#      control now carries sibling selftests, and is asked of a selftest-scored
+#      kill only: a selftest is all-or-nothing over its module, so requiring it
+#      green for every kill is a control the aimed mutation itself fails, and
+#      that cost four rules their pin on a measured run.
+#   2. The sibling RULE control was reached only when the sibling FUNCTION
+#      search came back empty -- 11 rules got the sharp one, 123 kept the blunt
+#      one. A mutation confined to one function cannot redden a case about
+#      another unless the module stops importing, which is checked one line
+#      earlier, so the blunt control was close to a constant: flipping the first
+#      guard of one note reader made it answer a read error for every note,
+#      killed twelve rules' cited cases, and was recorded as the pin for all
+#      twelve. Both sources are used now, a few from each rather than the first
+#      few of the union.
+#   3. The run returned at the FIRST aimed kill, and mutants are tried in syntax
+#      order, so the report carried the earliest evidence rather than the best.
+#      Two window rules had a later mutant landing in the statement that prints
+#      their own code, and neither was recorded. An own-branch kill is preferred
+#      now, and that is most of the 44 -> 99.
+#   4. The statement a mutation lands in often prints nothing: a guard whose
+#      body is `continue` decides whether a code is emitted and holds none of
+#      it. The walk goes outward to the first enclosing statement that prints
+#      any code and asks that one. The wrecking ball is refused by the same
+#      sentence as before -- a block printing two rules' codes is one rule's
+#      branch for neither.
+#
+# AND ONE FINDING ABOUT THIS TABLE, recorded because it has no fix that belongs
+# in the harness. LEDGER-MAY-ONLY-SHRINK and UNGRADED-LEDGER-AGES both own
+# `resolve_note.excused`, both carry no code, and both refuse "a row reaching a
+# note filed after the row's own date". One guard, written down twice: no
+# mutation of it can tell them apart, so as each other's control both are
+# unpinnable by construction. A code-less row therefore keeps the sibling-
+# function control and does not take a sibling rule as one. Deciding which of
+# the two rows goes is a decision about the published surface, not a harness
+# change, and it is open.
+
+[[rule]]
+id = "LANE-UNPARSED"
+found = "2026-08-21"
+why = """
+Seven mutations of `check_lanes` survived six cited cases, three by dropping a
+return value. This row cites more cases than any other unpinned rule here,
+which is the point worth reading twice: case COUNT is not coverage. Re-measured
+after the aim test was sharpened, on a run where two other rows were retired,
+and it survived the same seven.
+"""
+
+[[rule]]
+id = "SET-MALFORMED"
+found = "2026-08-21"
+why = """
+The worst of the five: ten of twelve mutations of `find_sets` survived, and
+only two of the twelve were indiscriminate. Four cited cases, all about which
+spellings open a block, none about the scan that finds them. Re-measured after
+the aim test was sharpened, and it survived the same ten -- these are real
+holes in the cases, not an artifact of how a kill was judged.
+"""

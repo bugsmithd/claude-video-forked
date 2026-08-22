@@ -58,12 +58,12 @@ line, one heading, one paragraph -- with wrapped continuation lines folded in
 because notes wrap near 80 columns. A sub-bullet does NOT inherit its parent's
 class, and one tagged row in a table does NOT tag the rest of the table. The
 first version bled a single `ON-SCREEN` tag across a whole table and mis-bound
-three correct anchors in the marketing-agents note; under-checking is counted
+three correct anchors in one corpus note; under-checking is counted
 loudly, over-checking is the false red light the plan says kills a checker.
 Anchors inside a fenced block are VERBATIM: quoted text is not a claim.
 
 AN ITEM WITH TWO CLASSES IS SPLIT, NOT DISCARDED. Notes label per anchor --
-``[07:04]` `SPOKEN` `ON-SCREEN` `[08:04]`` is one bullet saying two things --
+``[00:04]` `SPOKEN` `ON-SCREEN` `[01:04]`` is one bullet saying two things --
 and calling the whole item unattributable threw away 97 corpus anchors the
 note had already labelled. `bind_classes` gives each label the anchor it
 TOUCHES: anchors joined to each other by glue alone are one group and take one
@@ -152,13 +152,16 @@ from pathlib import Path
 
 
 from .resolve_note import (DEMOTED_MARK, ORPHAN_MARK, RE_ANCHOR,  # noqa: E402
-                          RE_NOTE_NAME, RE_VIDEO_ID, anchor_seconds,
-                          parse_duration, safe_read, sha256, split_frontmatter)
+                          RE_NOTE_NAME, RE_VIDEO_ID, anchor_seconds, collect,
+                          corpus_video_ids, is_note, parse_duration,
+                          refuses_empty, safe_read, sha256, split_frontmatter)
 from .wq_policy import load as load_policy  # noqa: E402
 
 POLICY = load_policy()
 
 PROG = "anchor_manifest.py"
+# Read as a gate by `watch-audit`, with these flags (see `resolve_note`).
+GATE_FLAGS: tuple[str, ...] = ("--check",)
 
 EVIDENCE_CLASSES = ("ON-SCREEN", "SPOKEN", "INFERRED")
 PIXEL_CLASS = "ON-SCREEN"
@@ -230,7 +233,7 @@ DISPOSITIONS = ("resolved", "unresolved", "unchecked", "witnessed-spoken",
 # that moment, once, where it made the claim, and later prose points back at
 # it. 129 of the 186 corpus anchors with no class are this shape. All 129 were
 # read by hand against the line that labels them, and 127 cite the same
-# channel -- but TWO do not (the satori note quotes spoken words at `[04:06]`
+# channel -- but TWO do not (the sample note quotes spoken words at `[04:06]`
 # and `[05:42]`, both of which it labels ON-SCREEN elsewhere), so this
 # disposition deliberately does NOT assign the class. It says only that the
 # note classes this second somewhere else. Both mismatches were repaired from
@@ -657,7 +660,13 @@ def sweep_manifests(root: Path, live: set[str]) -> list[str]:
 
     Mirrors resolve_note.orphan_sidecars: the manifest is addressed only by
     video_id, so renaming that field detaches it silently.
+
+    It mirrored its bug too. MEMBERSHIP IS A FACT ABOUT THE CORPUS, and `live`
+    used to be only the ids of the notes this run was handed, so auditing one
+    note declared all 17 other manifests orphaned -- on the invocation both
+    documents prescribe after a repair pass (premortem F3).
     """
+    live = set(live) | corpus_video_ids(root)
     out = []
     by_id: dict[str, list[str]] = {}
     for man in sorted((root / POLICY.anchors_dir()).glob("*.tsv")):
@@ -858,16 +867,16 @@ def bind_classes(spans: list[tuple[int, str, int]]) -> dict[int, str]:
     touches, and to nothing further away.
 
     ONE class in the item still labels every anchor in it, wherever it sits --
-    the satori note writes "Continuity, all `ON-SCREEN`:" and then names three
+    the sample note writes "Continuity, all `ON-SCREEN`:" and then names three
     frames a sentence apart, and means all three. Only a TWO-class item is
     split, because only then is there a question. The first
     version called every two-class item unattributable, which buried corpus
-    anchors the note had already labelled one by one: the langfuse note writes
-    ``[07:04]` `SPOKEN` `ON-SCREEN` `[08:04]`` on a single bullet.
+    anchors the note had already labelled one by one: a note writes
+    ``[00:04]` `SPOKEN` `ON-SCREEN` `[01:04]`` on a single bullet.
 
     Splitting is by touch, not by distance. Anchors joined to each other by
     glue alone -- whitespace, `/`, a range dash, `+`, a table pipe, an `ORPHAN`
-    mark -- are ONE group and take one class, because ``[03:43]` / `[04:59]`
+    mark -- are ONE group and take one class, because ``[00:43]` / `[01:59]`
     `ON-SCREEN`` labels both cards, not the second one. Each label then reaches
     for the nearest group on either side, again through glue only, and one word
     of prose in the gap ends the reach. A nearest-token rule was tried first
@@ -910,12 +919,12 @@ def blanket_reach(spans: list[tuple[int, str, int]]) -> set[int]:
     touching them. Report-only, and it will stay that way.
 
     The obvious fix -- run the touch rule on the one-class branch too -- was
-    measured against the corpus and is refuted by it. The satori note writes
-    "all `SPOKEN`: `[00:00]` … `[01:12]` …" and "Continuity, all `ON-SCREEN`:",
-    the langfuse note writes ``[20:27]` `ON-SCREEN` `[20:34]``, and the vc-pmf
-    note writes "Two portfolio references are `INFERRED` … at `[51:30]`, and
-    Even at `[1:01:49]`." Touch strips a class those notes state in words, which
-    is the false red light the plan says kills a checker.
+    measured against the corpus and is refuted by it. The sample note writes
+    "all `SPOKEN`: `[00:02]` … `[01:19]` …" and "Continuity, all `ON-SCREEN`:",
+    a second note writes ``[02:27]` `ON-SCREEN` `[02:34]``, and a third
+    writes "Two portfolio references are `INFERRED` … at `[03:30]`, and
+    Trellick at `[1:04:49]`." Touch strips a class those notes state in words,
+    which is the false red light the plan says kills a checker.
 
     The whole population was read anchor by anchor on 2026-08-05 and three were
     repaired in the notes; touch would have fixed none of the three. The counts
@@ -939,7 +948,7 @@ def note_anchors(body: str, start_line: int, video_id: str = "") -> list[dict]:
 
     Attribution never crosses an item boundary. The first version folded a
     whole table into one block, so a single `ON-SCREEN` cell bound every anchor
-    in the table -- three of them in the marketing-agents note -- which is the
+    in the table -- three of them in one corpus note -- which is the
     fabricated red light the plan says kills a checker.
     """
     out: list[dict] = []
@@ -957,7 +966,7 @@ def note_anchors(body: str, start_line: int, video_id: str = "") -> list[dict]:
         # A reference reaches its own line and the next TWO, which is
         # `resolve_note.check_anchors`' rule and therefore the repo's oracle
         # for "foreign". Per-line alone was narrower than the oracle and the
-        # satori note broke it: the reference is long enough to fill its line,
+        # sample note broke it: the reference is long enough to fill its line,
         # so the anchor it introduces wraps onto the next one and was read as
         # this video's second. Reaching the whole item would be the one-word
         # bypass the per-line rule exists to stop; two lines is the wrap.
@@ -1523,21 +1532,26 @@ def report(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def collect_notes(paths: list[Path]) -> list[Path]:
-    files: list[Path] = []
-    for p in paths:
-        if p.is_dir():
-            found = sorted(f for f in p.rglob("*.md") if RE_NOTE_NAME.match(f.name))
-            if not found:
-                print(f"{PROG}: no notes under {p}", file=sys.stderr)
-                raise SystemExit(2)
-            files.extend(found)
-        elif p.is_file():
-            files.append(p)
-        else:
-            print(f"{PROG}: no such path: {p}", file=sys.stderr)
-            raise SystemExit(2)
-    return [f for f in files if f.name != "_template.md"]
+def collect_notes(paths: list[Path], root: Path,
+                  skipped: list[str] | None = None) -> list[Path]:
+    """`resolve_note.collect`, and the same answer BY CONSTRUCTION.
+
+    This collector feeds three gates, so a review report taken for a note fails
+    all three. It used to hold the membership rule a second time, which meant
+    the two collectors could not diverge and could only be wrong together --
+    and they were: `is_note` was measured against the caller's own argument, so
+    pointing any of these three gates at the review tree inverted the guard and
+    graded every report in it as a note (properties I22, I24). One rule, one
+    place; what stays here is this collector's own contract, that an empty
+    result is an error rather than a clean pass.
+    """
+    dropped = skipped if skipped is not None else []
+    found = collect(paths, root, dropped)
+    for s in dropped:
+        print(f"# not collected: {s}", file=sys.stderr)
+    if refuses_empty(found, paths, PROG):
+        raise SystemExit(2)
+    return found
 
 
 # --------------------------------------------------------------------------
@@ -1588,6 +1602,12 @@ def selftest() -> int:
         if got != want:
             print(f"FAIL {label}: got {got!r} want {want!r}", file=sys.stderr)
             raise SystemExit(1)
+
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private, and
+    # `done()` below is where the evidence goes and a wrong answer is refused.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
 
     def classes(body: str) -> list[tuple[str, str]]:
         return [(a["anchor"], a["class"]) for a in note_anchors(body, 1, "TESTID")]
@@ -1756,23 +1776,23 @@ def selftest() -> int:
               [("00:37", "NONE")])
 
         # ---- a two-class item is split by touch, and only by touch
-        # The langfuse note's real shape: one bullet, one class per anchor.
+        # A shape the corpus really writes: one bullet, one class per anchor.
         check("two classes split one per anchor",
-              classes("- `[07:04]` `SPOKEN` `ON-SCREEN` `[08:04]` — both"),
-              [("07:04", "SPOKEN"), ("08:04", "ON-SCREEN")])
+              classes("- `[00:04]` `SPOKEN` `ON-SCREEN` `[01:04]` — both"),
+              [("00:04", "SPOKEN"), ("01:04", "ON-SCREEN")])
         # The shape a nearest-token rule got wrong: the third anchor is
         # unlabelled and two sentences downstream, and inventing a class for it
         # printed E-ANCHOR-UNRESOLVED for a frame the note never claimed.
         check("an untouched anchor in a two-class item is MULTI",
-              classes("- `[16:01]` `SPOKEN` + `[16:07]` `ON-SCREEN` — the one\n"
-                      "  citation. `[16:12]` adds the mechanism."),
-              [("16:01", "SPOKEN"), ("16:07", "ON-SCREEN"),
-               ("16:12", "MULTI")])
+              classes("- `[08:01]` `SPOKEN` + `[08:07]` `ON-SCREEN` — the one\n"
+                      "  citation. `[08:12]` adds the mechanism."),
+              [("08:01", "SPOKEN"), ("08:07", "ON-SCREEN"),
+               ("08:12", "MULTI")])
         check("prose in the gap ends the reach",
-              classes("- `[27:56]` `ON-SCREEN` — the seed. Spoken `[25:41]` it\n"
-                      "  becomes 700,000. `[25:48]` `SPOKEN` — voiced together."),
-              [("27:56", "ON-SCREEN"), ("25:41", "MULTI"),
-               ("25:48", "SPOKEN")])
+              classes("- `[13:56]` `ON-SCREEN` — the seed. Spoken `[11:41]` it\n"
+                      "  becomes a round number. `[11:48]` `SPOKEN` — together."),
+              [("13:56", "ON-SCREEN"), ("11:41", "MULTI"),
+               ("11:48", "SPOKEN")])
         check("an ORPHAN mark is glue, not prose",
               classes("`[02:15]` `ORPHAN` `ON-SCREEN` + `SPOKEN` — three tests"),
               [("02:15", "ON-SCREEN")])
@@ -1787,22 +1807,22 @@ def selftest() -> int:
         # Anchors joined only by glue are one group and take one class: the
         # densest note labels a PAIR of cards, not the second card.
         check("a slash-joined pair takes one class",
-              classes("- `[03:43]` / `[04:59]` `ON-SCREEN` — two cards, and\n"
-                      "  `[05:01]` `SPOKEN` says the same"),
-              [("03:43", "ON-SCREEN"), ("04:59", "ON-SCREEN"),
-               ("05:01", "SPOKEN")])
+              classes("- `[00:43]` / `[01:59]` `ON-SCREEN` — two cards, and\n"
+                      "  `[02:01]` `SPOKEN` says the same"),
+              [("00:43", "ON-SCREEN"), ("01:59", "ON-SCREEN"),
+               ("02:01", "SPOKEN")])
         # The range form, machine marks and all.
         check("a marked range takes one class",
-              classes("`[02:08]` `ORPHAN`-`[02:34]` `ORPHAN` `ON-SCREEN` — the\n"
-                      "poster, and `[02:36]` `SPOKEN` says so too"),
-              [("02:08", "ON-SCREEN"), ("02:34", "ON-SCREEN"),
-               ("02:36", "SPOKEN")])
+              classes("`[04:08]` `ORPHAN`-`[04:34]` `ORPHAN` `ON-SCREEN` — the\n"
+                      "poster, and `[04:36]` `SPOKEN` says so too"),
+              [("04:08", "ON-SCREEN"), ("04:34", "ON-SCREEN"),
+               ("04:36", "SPOKEN")])
         check("a group with no label of its own is MULTI",
-              classes("`[01:12]` `SPOKEN` + `[01:16]`-`[01:24]` `ON-SCREEN`, and\n"
-                      "then `[01:28]`-`[01:31]` an orange card"),
-              [("01:12", "SPOKEN"), ("01:16", "ON-SCREEN"),
-               ("01:24", "ON-SCREEN"), ("01:28", "MULTI"),
-               ("01:31", "MULTI")])
+              classes("`[06:12]` `SPOKEN` + `[06:16]`-`[06:24]` `ON-SCREEN`, and\n"
+                      "then `[06:28]`-`[06:31]` a coloured card"),
+              [("06:12", "SPOKEN"), ("06:16", "ON-SCREEN"),
+               ("06:24", "ON-SCREEN"), ("06:28", "MULTI"),
+               ("06:31", "MULTI")])
         # A line break is not glue. Found by the slice-8 correctness lane: the
         # `ON-SCREEN` anchor was absorbed into the next line's `SPOKEN` group
         # and stopped being checked against frames at all -- a loud MULTI
@@ -1837,31 +1857,32 @@ def selftest() -> int:
             return [a["anchor"] for a in note_anchors(body, 1, "TESTID")
                     if a["blanket"]]
 
-        # satori:324 -- the note says "all", then lists three frames.
-        satori = ("Continuity, all `ON-SCREEN`: the wordmark at `[09:05]`\n"
-                  "reads VECTRYL, the tweet at `[09:21]` is @veritas, and at\n"
-                  "`[09:28]` two arrows point at Spotify.")
+        # The shape a note writes when it says "all", then lists three frames.
+        sample = ("Continuity, all `ON-SCREEN`: the wordmark at `[10:05]`\n"
+                  "reads OKAPILANE, the post at `[10:21]` is @nobody, and at\n"
+                  "`[10:28]` two arrows point at a logo.")
         check("an item that says all keeps its class",
-              classes(satori),
-              [("09:05", "ON-SCREEN"), ("09:21", "ON-SCREEN"),
-               ("09:28", "ON-SCREEN")])
+              classes(sample),
+              [("10:05", "ON-SCREEN"), ("10:21", "ON-SCREEN"),
+               ("10:28", "ON-SCREEN")])
         check("and every one of them is counted as blanket reach",
-              blanket(satori), ["09:05", "09:21", "09:28"])
-        # langfuse:58 -- one label sandwiched between two frames labels both.
-        # Touch hands it to the left only, on the (dist, side) tie-break.
+              blanket(sample), ["10:05", "10:21", "10:28"])
+        # A shape the corpus writes: one label sandwiched between two frames
+        # labels both. Touch hands it to the left only, on the (dist, side)
+        # tie-break.
         check("a sandwiched label in a one-class item labels both",
-              classes("- `[20:27]` `ON-SCREEN` `[20:34]` — a score is a number"),
-              [("20:27", "ON-SCREEN"), ("20:34", "ON-SCREEN")])
-        # vc-pmf:225 -- the class is declared in the prose of the sentence.
+              classes("- `[02:27]` `ON-SCREEN` `[02:34]` — a score is a number"),
+              [("02:27", "ON-SCREEN"), ("02:34", "ON-SCREEN")])
+        # And another: the class is declared in the prose of the sentence.
         check("a class declared in prose still binds",
               classes("Two references are `INFERRED` and unverified:\n"
-                      "Akshayakalpa at `[51:30]`, and Even at `[1:01:49]`."),
-              [("51:30", "INFERRED"), ("1:01:49", "INFERRED")])
+                      "Okapilane at `[03:30]`, and Trellick at `[1:04:49]`."),
+              [("03:30", "INFERRED"), ("1:04:49", "INFERRED")])
         # The counter measures the ONE-class branch only: a two-class item's
         # untouched anchors are already MULTI and already reported.
         check("a two-class item contributes no blanket reach",
-              blanket("- `[16:01]` `SPOKEN` + `[16:07]` `ON-SCREEN` — one\n"
-                      "  citation. `[16:12]` adds the mechanism."), [])
+              blanket("- `[08:01]` `SPOKEN` + `[08:07]` `ON-SCREEN` — one\n"
+                      "  citation. `[08:12]` adds the mechanism."), [])
         check("an anchor that touches its label is not blanket reach",
               blanket("- `ON-SCREEN` `[00:30]` a card, and later `[00:37]`"),
               ["00:37"])
@@ -1998,7 +2019,7 @@ def selftest() -> int:
               check_note(witnessed, root)[0], [])
 
         # ---- a reference reaches two lines, matching resolve_note's oracle.
-        # The satori note wraps its cross-video anchor onto the next line.
+        # The sample note wraps its cross-video anchor onto the next line.
         wrapped = notes / "2026-01-01--wrapped--TESTID.md"
         wrapped.write_text(_note(
             "4. **No iteration.** Compare\n"
@@ -2313,12 +2334,12 @@ def selftest() -> int:
         d, row = check_note(xref, root)
         check("a MULTI anchor on a classed second is cross-referenced too",
               (row["cross-referenced"], row["unattributable"]), (1, 0))
-        # SECONDS, NOT SPELLING: `[1:05:18]` and `[65:18]` are the same second,
-        # and the vc-pmf note writes both. A mutant keying the donor on the
-        # anchor TEXT passed every earlier case.
+        # SECONDS, NOT SPELLING: `[1:12:07]` and `[72:07]` are the same second,
+        # and a note in this corpus writes both spellings. A mutant keying the
+        # donor on the anchor TEXT passed every earlier case.
         xref.write_text(_note(
-            "- `SPOKEN` he says it at `[1:05:18]`\n"
-            "- the transcript prints that as `[65:18]`", duration="1:30:00"),
+            "- `SPOKEN` he says it at `[1:12:07]`\n"
+            "- the transcript prints that as `[72:07]`", duration="1:30:00"),
             encoding="utf-8")
         check("the same second in another spelling still donates",
               check_note(xref, root)[1]["cross-referenced"], 1)
@@ -2383,6 +2404,7 @@ def selftest() -> int:
               "E-COVERAGE-GAP" in " ".join(d), True)
         check("the gap is bounded by the runtime", row["longest_gap"], 600 - 30)
 
+    proof.done()
     print(f"selftest OK ({cases} cases)")
     return 0
 
@@ -2494,7 +2516,7 @@ def main(argv: list[str] | None = None, root: Path | None = None) -> int:
         return 0
 
     files = collect_notes([p.resolve() for p in args.paths]
-                          or [root / POLICY.notes_dir()])
+                          or [root / POLICY.notes_dir()], root)
 
     if args.control:
         lines, ok = binding_control(files)

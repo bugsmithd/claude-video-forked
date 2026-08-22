@@ -70,9 +70,21 @@ def main() -> int:
     )
     ap.add_argument(
         "--whisper",
-        choices=["groq", "openai", "local"],
+        choices=["openrouter", "groq", "openai", "local"],
         default=None,
-        help="Force a specific Whisper backend. Default: prefer Groq, then OpenAI, then local whisper.cpp.",
+        help="Force a specific Whisper backend. Default: prefer Groq, then "
+             "OpenAI, then local whisper.cpp. `openrouter` is never chosen "
+             "automatically — ask for it by name — because that endpoint routes "
+             "to whichever provider is cheapest and the provider pin is ignored.",
+    )
+    ap.add_argument(
+        "--no-captions",
+        action="store_true",
+        help="Ignore the video's own subtitles and transcribe the audio "
+             "instead. Captions win by default because they are free and "
+             "exact when a human wrote them; a machine-generated caption "
+             "track is neither, and for a note whose claims are quoted from "
+             "the transcript, choosing the decoder is part of the method.",
     )
     ap.add_argument(
         "--no-dedup",
@@ -136,6 +148,13 @@ def main() -> int:
     transcript_segments: list[dict] = []
     transcript_text: str | None = None
     transcript_source: str | None = None
+    # THE FILE THE SEGMENTS WERE READ OUT OF, captured where they are read.
+    # `dl` is rebound by the second yt-dlp pass, and `build_run` was handed the
+    # late one, so the segments and the recorded path came from two different
+    # dictionaries: a run could say `source: captions` and name nothing at all,
+    # or name a track the second pass re-picked instead of the one it parsed
+    # (properties I26, I28).
+    parsed_subtitle_path: str | None = None
     video_path: str | None = None
 
     if url_source:
@@ -145,11 +164,18 @@ def main() -> int:
             work = rehome(work, note_run_dir(
                 note_root, video_id_of(args.source, dl.get("info") or {})), dl)
             print(f"[watch] durable run: {work}", file=sys.stderr)
-        if dl.get("subtitle_path"):
+        # BOTH PARSE SITES HAVE TO HONOUR THE FLAG. This is the early one, which
+        # exists so the deictic-cue pass below has something to scan before the
+        # frames are chosen; the late one at the transcript step is the fallback
+        # for a local file. Guarding only the late one left `--no-captions`
+        # silently ineffective on exactly the path it was added for -- a URL --
+        # and the run came back captioned with no error anywhere.
+        if dl.get("subtitle_path") and not args.no_captions:
             try:
                 transcript_segments = parse_vtt(dl["subtitle_path"])
                 transcript_text = format_transcript(transcript_segments)
                 transcript_source = "captions"
+                parsed_subtitle_path = dl["subtitle_path"]
             except Exception as exc:
                 print(f"[watch] subtitle parse failed: {exc}", file=sys.stderr)
                 transcript_segments = []
@@ -294,12 +320,13 @@ def main() -> int:
     # arrive as a separate list from the images and position does the pairing.
     frames = burn_stamps(stamp_paths(frames))
 
-    if not transcript_segments and dl.get("subtitle_path"):
+    if not transcript_segments and dl.get("subtitle_path") and not args.no_captions:
         try:
             all_segments = parse_vtt(dl["subtitle_path"])
             transcript_segments = filter_range(all_segments, start_sec, end_sec) if focused else all_segments
             transcript_text = format_transcript(transcript_segments)
             transcript_source = "captions"
+            parsed_subtitle_path = dl["subtitle_path"]
         except Exception as exc:
             print(f"[watch] subtitle parse failed: {exc}", file=sys.stderr)
 
@@ -503,6 +530,7 @@ def main() -> int:
         transcript_source=transcript_source,
         transcript_segments=transcript_segments,
         subtitle_path=dl.get("subtitle_path"),
+        parsed_from=parsed_subtitle_path,
     )
     run_path = write_run(work, run)
     dropped = run["deduped_seconds"]

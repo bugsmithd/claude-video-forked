@@ -154,9 +154,9 @@ def _read_env_key(name: str) -> str | None:
 def _have_api_key() -> tuple[bool, str | None]:
     # Same order as whisper.load_api_key, and it has to stay that way: a
     # preflight that names a different backend than the run will use is a
-    # preflight nobody can act on.
-    if _read_env_key("OPENROUTER_API_KEY"):
-        return True, "openrouter"
+    # preflight nobody can act on. OpenRouter is deliberately absent — it is
+    # never chosen automatically, so naming it here would promise a backend no
+    # unflagged run would take.
     if _read_env_key("GROQ_API_KEY"):
         return True, "groq"
     if _read_env_key("OPENAI_API_KEY"):

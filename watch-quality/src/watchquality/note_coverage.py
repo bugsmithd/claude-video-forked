@@ -120,8 +120,24 @@ RE_RAW = re.compile(r"[A-Za-z0-9'’]+")
 # note: both shapes were invisible to an earlier version of this pattern, which
 # meant the padding check silently had nothing to look at.
 _STAMP = r"\d{1,3}(?::\d{2}){1,2}"
+# A claim that took two minutes to make is written across two anchors:
+# `- [01:57] SPOKEN to [04:23] SPOKEN — …`. The row is anchored where it
+# STARTS, which is what every other row's stamp means. Three notes in this
+# corpus use the form and nothing ever wrote it down, so a note was convicted
+# of a misshapen row for recording where a claim ended. The tail is spelled out
+# -- the word, then a second anchor, then a second class -- rather than
+# permitted as "anything before the dash", because the loose version would stop
+# this check reporting the shape it exists to report.
+# THE SECOND ANCHOR IS CAPTURED, because for one day it was not. The widening
+# validated only what it captured, which was the start, so `[00:99]` was named
+# in a row that ended there and silent in a row that ran to there, and a claim
+# that finished fifty seconds before it began read as a row. Both shapes were
+# reported before this form was understood; capturing the end is what keeps
+# understanding the form from costing the check that read it.
+_RANGE_TAIL = rf"(?:\s*to\s+`\[({_STAMP})\]`\s+`[A-Z-]+`)?"
 RE_ROW = re.compile(
-    rf"^\s*[-*]\s+`\[({_STAMP})\]`\s+`([A-Z-]+)`\s*(?:\([^)]*\)\s*)?[—–-]+\s*(.*)$")
+    rf"^\s*[-*]\s+`\[({_STAMP})\]`\s+`([A-Z-]+)`{_RANGE_TAIL}"
+    rf"\s*(?:\([^)]*\)\s*)?[—–-]+\s*(.*)$")
 # A line that was trying to be a row. Reported rather than dropped, so the next
 # unforeseen shape is loud instead of silent.
 RE_ROWISH = re.compile(rf"^\s*[-*]\s+`?\[{_STAMP}\]`?\s+`?[A-Z-]{{4,}}`?")
@@ -165,8 +181,9 @@ def stem(word: str) -> str:
     return word
 
 
-def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]], list[str]]:
-    """The note's carried text, its claim rows, and any stamp that is not a time.
+def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
+                                   list[str], list[str]]:
+    """The note's carried text, its claim rows, unsayable stamps, and misshapen lines.
 
     Frontmatter is dropped because it is metadata, and `## Run notes` because it
     is the note talking about itself. An impossible stamp is collected rather
@@ -201,7 +218,22 @@ def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]], list[str]]
         except ValueError:
             impossible.append(match.group(1))
             continue
-        rows.append((at, match.group(2), match.group(3).strip()))
+        # Where a row names where it ENDED, that stamp answers to the same
+        # clock. An unsayable end is the same finding as an unsayable start, so
+        # it goes to the same list; an end BEFORE the start is neither stamp's
+        # fault and is reported as the shape it is, which is what this line was
+        # reported as before the range form was read at all.
+        end = match.group(3)
+        if end is not None:
+            try:
+                until = seconds_of(end)
+            except ValueError:
+                impossible.append(end)
+                continue
+            if until < at:
+                misshapen.append(line.strip()[:60])
+                continue
+        rows.append((at, match.group(2), match.group(4).strip()))
     return text, rows, impossible, misshapen
 
 
@@ -534,6 +566,12 @@ def selftest() -> int:
         if got != want:
             raise AssertionError(f"{label}: got {got!r}, want {want!r}")
 
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private, and
+    # `done()` below is where the evidence goes and a wrong answer is refused.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
+
     import contextlib
     import io
     import tempfile
@@ -545,9 +583,9 @@ def selftest() -> int:
     check("...and a short one", seconds_of("59:25"), 3565.0)
 
     check("a name mid-sentence is a name",
-          "goldman" in name_candidates("He said Goldman Sachs pays more."), True)
+          "trellick" in name_candidates("He said Trellick Partners pays more."), True)
     check("...and the first word of a sentence is not",
-          "he" in name_candidates("He said Goldman Sachs pays more."), False)
+          "he" in name_candidates("He said Trellick Partners pays more."), False)
     check("...nor is a lone I", name_candidates("Well I went."), set())
 
     segments = [
@@ -674,6 +712,7 @@ def selftest() -> int:
     check("an impossible stamp is named", "E-COV-STAMP" in out, True)
     check("...and does not stop the run", code, 1)
 
+    proof.done()
     print(f"# selftest OK ({cases} cases)")
     return 0
 

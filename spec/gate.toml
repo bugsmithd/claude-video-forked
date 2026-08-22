@@ -1,0 +1,551 @@
+# Layer 3 — the aggregator, the leak scan, and the policy that arms them.
+#
+# Started with the rules that regressed twice, because those are the ones whose
+# neighbours are already known: six review rounds wrote them down.
+
+# --- the note's own declaration of what it was written against ---------------
+#
+# A WORD THAT MEANS TWO THINGS ACROSS THIS LAYER, written down rather than
+# left to be discovered. Here MISSING means the note carries no `oracle:` field
+# at all, and a value that opens as no file is UNRESOLVED. In `spec/review.toml`
+# the report-header rule LANE-ORACLE-MISSING means the second of those: a value
+# that opens as no file. A report header with no `oracle:` row is never
+# E-LANE-ORACLE-MISSING -- it cannot be read as a header at all, and comes out
+# as E-LANE-UNPARSED. The codes are what the package prints and are not this
+# file's to rename, so a reader who learns one vocabulary is told here that the
+# other exists.
+
+[[rule]]
+id = "ORACLE-MISSING"
+code = "E-ORACLE-MISSING"
+layer = "gate"
+owner = "resolve_note.check_oracle"
+trigger = "a note is checked"
+refuses = "a note carrying no oracle: field at all, where the field is the key spelled in lower case at the start of its own line; anything else is not this field"
+excused_by = ["unfilled_oracles"]
+exit = 1
+
+[[rule.neighbour]]
+case = "the field spelled Oracle:, which is not the field"
+test = "tests/test_spec_review.py::test_a_capitalised_oracle_key_is_not_the_field"
+[[rule.neighbour]]
+case = "an indented row, which YAML would read and this parser does not"
+test = "tests/test_spec_review.py::test_an_indented_oracle_row_is_not_the_field"
+[[rule.neighbour]]
+case = "a value that names no rendering, which is a different defect and must NOT be reported as this one"
+test = "tests/test_note_oracle.py::test_a_field_that_names_no_rendering_is_a_defect"
+
+[[rule]]
+id = "ORACLE-EMPTY"
+code = "E-ORACLE-EMPTY"
+layer = "gate"
+owner = "resolve_note.check_oracle"
+trigger = "the oracle: field is present"
+refuses = "an empty or whitespace-only value"
+excused_by = ["unfilled_oracles"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a value that is only spaces"
+test = "tests/test_note_oracle.py::test_a_field_that_names_no_rendering_is_a_defect"
+[[rule.neighbour]]
+case = "a YAML block list under the key, which reads as empty here"
+test = "tests/test_spec_review.py::test_a_block_list_under_the_oracle_key_reads_as_an_empty_value"
+
+[[rule]]
+id = "ORACLE-UNRESOLVED"
+code = "E-ORACLE-UNRESOLVED"
+layer = "gate"
+# `check_oracle`, not `note_oracle_target`: the resolver returns a path or None
+# and prints nothing at all, so a row naming it pointed at a function that
+# cannot emit its own code. The conformance run only checks that the symbol
+# imports, which is why that stayed green.
+owner = "resolve_note.check_oracle"
+trigger = "the oracle: value is non-empty and names a path under this video"
+# WIDENED 2026-08-21, and the widening is the finding: "a path that exists" said
+# yes to a run manifest sitting beside the rendering, under the same video id.
+# This gate passed it and the per-note gates then could not read what it had
+# approved, so the failure surfaced one layer down as a note that could not be
+# graded, and was written off in a ledger row. What the field claims is that a
+# gate can read this, so the answer now comes from the reader every downstream
+# gate uses rather than from whether the path opens.
+refuses = "a value that opens as no file, or opens as a file no gate can read as a transcript carrying segments"
+excused_by = ["unfilled_oracles"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a value that is prose rather than a path"
+test = "tests/test_note_oracle.py::test_a_field_that_names_no_rendering_is_a_defect"
+[[rule.neighbour]]
+case = "a glob matching nothing"
+test = "tests/test_note_oracle.py::test_a_glob_is_how_a_chunked_run_is_named"
+[[rule.neighbour]]
+case = "a glob that names a real set of files, which must NOT be refused"
+test = "tests/test_note_oracle.py::test_a_glob_is_how_a_chunked_run_is_named"
+[[rule.neighbour]]
+case = "a run manifest that opens under this video's own run directory and carries no transcript"
+test = "tests/test_note_oracle.py::test_a_file_that_opens_and_carries_no_transcript_is_a_defect"
+[[rule.neighbour]]
+case = "a transcript that parses, names the right key and holds no segments at all"
+test = "tests/test_note_oracle.py::test_a_rendering_that_parses_and_holds_no_segments_is_a_defect"
+[[rule.neighbour]]
+case = "each of the four shapes the reader accepts, none of which may be refused"
+test = "tests/test_note_oracle.py::test_every_shape_the_reader_accepts_is_a_rendering"
+
+[[rule]]
+id = "ORACLE-UNRELATED"
+code = "E-ORACLE-UNRELATED"
+layer = "gate"
+owner = "resolve_note.check_oracle"
+trigger = "the oracle: value opens as a file"
+refuses = "a path that does not carry this note's video id as a whole component"
+excused_by = ["unfilled_oracles"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a file that exists and is not a rendering of anything"
+test = "tests/test_note_oracle.py::test_a_file_that_is_not_this_videos_rendering_is_a_defect"
+[[rule.neighbour]]
+case = "another video's rendering, reached by walking out of this video's run directory"
+test = "tests/test_note_oracle.py::test_a_file_that_is_not_this_videos_rendering_is_a_defect"
+[[rule.neighbour]]
+case = "the id as a substring of a path component rather than a whole one"
+test = "tests/test_spec_review.py::test_the_note_oracle_id_has_to_be_a_whole_name_on_the_path"
+
+[[rule]]
+id = "ORACLE-NOVIDEO"
+code = "E-ORACLE-NOVIDEO"
+layer = "gate"
+owner = "resolve_note.check_oracle"
+trigger = "the oracle: value is non-empty and the note declares no video_id:"
+refuses = "any value at all, because nothing can say the two belong together"
+excused_by = ["unfilled_oracles"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a value that would have been clean with a video id present, and an absolute path outside the corpus entirely"
+test = "tests/test_note_oracle.py::test_a_note_with_no_video_id_cannot_be_passed_on_its_oracle"
+# The second neighbour was this same case a second time until 2026-08-21: a
+# two-neighbour floor met by one function, which is the shape a reviewer found
+# and the harness could not. The direction it was missing is the one that keeps
+# the refusal from eating the corpus.
+[[rule.neighbour]]
+case = "a note that DOES declare its video id, which must NOT be refused for lacking one"
+test = "tests/test_note_oracle.py::test_a_note_that_declares_its_video_id_is_not_refused_for_lacking_one"
+
+[[rule]]
+id = "ORACLE-TWOROWS"
+code = "E-ORACLE-TWOROWS"
+layer = "gate"
+owner = "resolve_note.check_oracle"
+trigger = "the frontmatter carries more than one oracle: row"
+refuses = "two rows naming different renderings; identical rows are a typo and stay legal"
+excused_by = ["unfilled_oracles"]
+exit = 1
+
+[[rule.neighbour]]
+case = "two identical rows, which must NOT be refused"
+test = "tests/test_note_oracle.py::test_two_identical_oracle_rows_are_not_a_second_answer"
+[[rule.neighbour]]
+case = "two rows naming two renderings, both filled"
+test = "tests/test_note_oracle.py::test_two_oracle_rows_naming_two_renderings_are_refused"
+[[rule.neighbour]]
+case = "one row empty and one filled, where the empty row is the second answer"
+test = "tests/test_spec_review.py::test_an_empty_second_oracle_row_is_a_second_answer"
+
+# --- the leak scan, which is the publication gate ---------------------------
+
+[[rule]]
+id = "CORPUS-REFUSED-WORD"
+code = "E-CORPUS-REFUSED-WORD"
+layer = "gate"
+owner = "wq_corpus_scan.scan_text"
+trigger = "a published text file is read"
+refuses = "a word the corpus policy refuses, compared case-insensitively"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "the word in a different case, which passed five review rounds"
+test = "tests/test_corpus_scan.py::test_a_refused_word_is_refused_in_any_case"
+[[rule.neighbour]]
+case = "the word inside a file under a directory the walk must still reach"
+test = "tests/test_corpus_scan.py::test_a_default_run_collects_the_tests_directory"
+# ADDED 2026-08-21, from the mutation run. Both cases above feed the scanner a
+# line that DOES carry the word, so a scanner refusing every line it read would
+# have passed both -- and a leak gate that reports every line gets turned off,
+# after which it reports nothing.
+[[rule.neighbour]]
+case = "a line naming nothing refused, which must NOT be reported"
+test = "tests/test_corpus_scan.py::test_a_line_naming_nothing_refused_is_left_alone"
+[[rule.neighbour]]
+case = "an empty string in the refused list, which would otherwise match every line of every file"
+test = "tests/test_corpus_scan.py::test_an_empty_string_in_the_refused_list_refuses_nothing"
+
+[[rule]]
+id = "CORPUS-ANCHOR-SET"
+code = "E-CORPUS-ANCHOR-SET"
+layer = "gate"
+owner = "wq_corpus_scan.scan_text"
+trigger = "a published text file is read and the caller's corpus is in force"
+refuses = "a line whose timestamps all stand together on one line of one corpus note, which reproduces a private recording without using a single refusable word"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a line whose stamps sit inside one note line, the class that got through"
+test = "tests/test_corpus_scan.py::test_a_line_repeating_one_notes_timestamps_is_refused"
+[[rule.neighbour]]
+case = "one stamp, which every fixture and the README carry"
+test = "tests/test_corpus_scan.py::test_a_line_carrying_one_timestamp_is_left_alone"
+[[rule.neighbour]]
+case = "two stamps drawn from two different note lines, which reproduce nothing"
+test = "tests/test_corpus_scan.py::test_two_stamps_from_two_different_note_lines_are_left_alone"
+[[rule.neighbour]]
+case = "where the comparison set comes from, pinned apart from the comparison"
+test = "tests/test_corpus_scan.py::test_the_anchor_sets_are_read_from_the_corpus_and_not_from_a_list"
+[[rule.neighbour]]
+case = "the count of anchor sets in force, so a clean line says whether it compared"
+test = "tests/test_corpus_scan.py::test_the_summary_says_how_many_anchor_sets_were_in_force"
+# ADDED 2026-08-22, from independent verification. The first version compared
+# the stamp STRING, so six other renderings of the same two moments exited 0.
+[[rule.neighbour]]
+case = "the same moments with the pad dropped, an hour field added, no brackets, parentheses, inner spaces, or written as one range"
+test = "tests/test_corpus_scan.py::test_the_same_moment_written_differently_is_still_refused"
+[[rule.neighbour]]
+case = "two whole-minute marks, the pair anybody writes in a README, which must NOT be refused"
+test = "tests/test_corpus_scan.py::test_a_pair_of_whole_minute_marks_is_not_refused"
+[[rule.neighbour]]
+case = "three whole-minute marks, so the excuse above cannot be walked through"
+test = "tests/test_corpus_scan.py::test_three_whole_minute_marks_are_still_refused"
+
+[[rule]]
+id = "SCAN-REQUIRE-LITERALS"
+code = ""
+layer = "gate"
+owner = "wq_corpus_scan.main"
+trigger = "--require-literals is given"
+refuses = "a run that could not have found anything: no words in force, no files walked, or no anchor sets in force"
+excused_by = []
+exit = 2
+
+[[rule.neighbour]]
+case = "words in force and an empty directory"
+test = "tests/test_corpus_scan.py::test_a_run_that_walked_no_file_is_refused_too"
+[[rule.neighbour]]
+case = "files present and an empty word list"
+test = "tests/test_corpus_scan.py::test_a_wordless_run_is_refused_when_the_caller_asked_for_words"
+[[rule.neighbour]]
+case = "both present, where the flag must add no verdict of its own"
+test = "tests/test_corpus_scan.py::test_the_flag_is_not_a_second_way_to_pass"
+# ADDED 2026-08-22: the flag covered two of the three ways a run can be
+# incapable of a finding, and an absent corpus is as easy to reach as the other
+# two -- a corpus root pointed elsewhere, a notes directory not yet cloned.
+[[rule.neighbour]]
+case = "words and files present and no anchor sets at all"
+test = "tests/test_corpus_scan.py::test_a_run_with_no_anchor_sets_is_refused_when_the_caller_asked"
+
+# --- the aggregator ----------------------------------------------------------
+
+[[rule]]
+id = "AUDIT-BROKEN-IS-NOT-CLEAN"
+code = ""
+layer = "gate"
+owner = "audit.main"
+# NOT "any non-zero code". `worst = max(worst, code if code > 0 else 2 if code
+# else 0)`, so a gate returning 1 leaves the run at 1 and only a code that is
+# neither 0 nor 1 -- a negative signal code among them -- is lifted to 2. The
+# old wording read as "any failing gate exits 2", which is the opposite of the
+# distinction this rule exists for.
+trigger = "a gate returns a code that is neither 0 nor 1"
+refuses = "reporting a gate that could not run as a gate that passed, and lifting it to 2 rather than leaving it at the 1 that means a corpus has defects"
+excused_by = []
+exit = 2
+
+[[rule.neighbour]]
+case = "one gate finding defects and another failing to start, in the same run"
+test = "tests/test_audit.py::test_a_defective_gate_and_a_broken_one_get_a_line_each"
+[[rule.neighbour]]
+case = "a gate killed by a signal, which returns a negative code"
+test = "tests/test_audit.py::test_a_gate_killed_by_a_signal_is_not_a_gate_that_passed"
+[[rule.neighbour]]
+case = "a gate that only found defects, which must stay a 1 and must NOT be lifted"
+test = "tests/test_spec_review.py::test_a_gate_that_found_defects_is_not_lifted_to_the_could_not_run_code"
+
+# ADDED 2026-08-22, and the table's freeze moved from 134 to 135 to hold it.
+# The row above is about the CODE the audit returns. This one is about the
+# REPORT it prints, and the corpus proved they are not the same guarantee: the
+# aggregator captured a gate's stdout and dropped its stderr, so `note_gates`'
+# census -- "4 of 25 note(s) graded against their own rendering" -- and its 21
+# per-note skip lines reached nobody, and the section read `EXIT=0` and nothing
+# else under `# all 6 gate(s) passed`. Every code was correct. The artifact
+# people read and paste said a corpus was clean that had mostly not been
+# opened. A rule whose only witness is an exit code cannot see that.
+[[rule]]
+id = "AUDIT-FORWARDS-WHAT-A-GATE-SAID"
+code = ""
+layer = "gate"
+owner = "audit.run_gate"
+trigger = "a gate writes to stderr, whatever code it then returns"
+refuses = "printing a report that drops what a gate said about how much of the corpus it could grade, so a pass line stands with nothing under it"
+excused_by = []
+exit = 0
+
+[[rule.neighbour]]
+case = "a passing gate whose stderr census says it graded almost nothing"
+test = "tests/test_audit.py::test_a_gate_that_says_it_graded_nothing_is_not_hidden_by_a_pass"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same run under --quiet, which drops a gate's detail and must keep its census"
+test = "tests/test_audit.py::test_quiet_drops_the_detail_and_keeps_the_census"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a gate that could not run and explained why on stderr"
+test = "tests/test_audit.py::test_what_a_failing_gate_wrote_to_stderr_reaches_the_report"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a gate that said nothing at all, which must NOT gain an empty section"
+test = "tests/test_audit.py::test_a_silent_gate_adds_no_empty_section"
+kind = "pytest"
+# The two paths where nothing a gate wrote is the whole answer. Added when the
+# mutation run reported this row unpinned: the four cases above all exercise the
+# ordinary return, so three of the four mutants of this owner -- both error
+# returns among them -- survived every one of them.
+[[rule.neighbour]]
+case = "a gate that could not be loaded, where the audit's own reason is all there is to print"
+test = "tests/test_audit.py::test_a_gate_that_cannot_be_loaded_says_so_in_the_report"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a gate that wrote to both channels and then raised, where all three parts belong in the report"
+test = "tests/test_audit.py::test_a_gate_that_raises_after_speaking_keeps_both_halves"
+kind = "pytest"
+
+# --- the per-note checks, and what "not graded" means ------------------------
+#
+# WHAT `exit` MEANS ON THESE ROWS: the code `note_gates.main` returns WHEN THE
+# RULE FIRES, which is not always the code its cases assert. A skip is a 0
+# because a note nobody could read produced no finding. Refusing a stale
+# ledger row is a 1, because refusing it exposes the note to the grading the
+# row was suppressing, and the finding it was suppressing is then reported.
+# Two of these rows carried the other rule's number until a refuter noticed
+# that one row's own cited case asserted the opposite of its `exit` field.
+
+[[rule]]
+id = "NOTE-GATES-SKIP-IS-NOT-PASS"
+code = ""
+layer = "gate"
+owner = "note_gates.main"
+trigger = "a note the gate cannot read is offered to the per-note checks"
+refuses = "counting a note the gate could not read as a note that passed; each one is named and subtracted from the graded count"
+excused_by = []
+exit = 0
+
+[[rule.neighbour]]
+case = "a note whose oracle names no rendering at all"
+test = "tests/test_note_gates.py::test_a_note_it_cannot_read_is_named_and_not_counted_as_graded"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a check that exits non-zero in prose, which is a defect and not a skip"
+test = "tests/test_note_gates.py::test_a_check_that_cannot_read_the_rendering_is_a_defect_not_a_pass"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that IS graded, where the census must not claim a skip"
+test = "tests/test_note_gates.py::test_a_rendering_that_opens_is_graded_and_says_so"
+kind = "pytest"
+# ADDED 2026-08-21. A file that opens is not a rendering: a run manifest sits
+# beside the transcript under the same video id, and this gate was handed one,
+# could not read it, and reported a note that could not be graded -- while the
+# oracle gate had already called the field fine. One finding, one owner.
+[[rule.neighbour]]
+case = "a note whose oracle opens as a file no check can read as a transcript"
+test = "tests/test_note_gates.py::test_a_note_whose_oracle_is_not_a_transcript_is_not_graded"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same, asked of the resolver directly rather than through the run"
+test = "note_gates::a file that opens and carries no transcript is a skip"
+kind = "selftest"
+[[rule.neighbour]]
+case = "and the skip line says it could not be read, rather than that nothing opened"
+test = "note_gates::and says it could not be read"
+kind = "selftest"
+
+[[rule]]
+id = "NOTE-GATES-REPORT-IS-NOT-A-DEFECT"
+code = ""
+layer = "gate"
+owner = "note_gates._run"
+trigger = "a per-note check prints its report and its findings together"
+refuses = "forwarding a report line as a finding; a finding is a line that OPENS with a timestamp and a code"
+excused_by = []
+exit = 0
+
+[[rule.neighbour]]
+case = "a clean window plan, whose table rows are output and not findings"
+test = "tests/test_note_gates.py::test_the_report_beside_a_defect_is_not_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a report row whose transcript column spells the shape of a code"
+test = "tests/test_note_gates.py::test_transcript_text_that_looks_like_a_code_is_not_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same shape mid-row and after a timestamp, told apart by position alone"
+test = "note_gates::a code in the middle of a row is not a defect line"
+kind = "selftest"
+
+[[rule]]
+id = "UNGRADED-LEDGER-AGES"
+code = ""
+layer = "gate"
+owner = "resolve_note.excused"
+trigger = "a dated row is offered for a note the per-note checks would grade"
+refuses = "a row reaching a note filed after the row's own date"
+excused_by = ["ungraded_notes"]
+exit = 1
+
+[[rule.neighbour]]
+case = "a frozen note with a row, which is excused, beside a newer note the same row cannot reach"
+test = "tests/test_note_gates.py::test_a_dated_row_excuses_a_frozen_note_and_cannot_reach_a_newer_one"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row keyed by bare filename, which names no note at all"
+test = "tests/test_note_gates.py::test_a_row_excuses_the_note_it_names_and_not_its_namesake"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row that has stopped excusing anything, which has to be reported or it can never go"
+test = "tests/test_note_gates.py::test_a_ledger_row_that_names_no_note_is_reported_stale"
+kind = "pytest"
+[[rule.neighbour]]
+case = "no policy at all, where the ledger must be empty rather than absent"
+test = "tests/test_note_gates.py::test_the_ledger_is_empty_without_a_policy"
+kind = "pytest"
+
+# --- a check that failed, in whatever words it had ---------------------------
+#
+# These two rules exist because the gate keeps only the lines it can classify
+# as findings, and a check can fail without producing one. Both codes are the
+# gate speaking for a check that could not speak for itself.
+
+[[rule]]
+id = "NOTE-CHECK-FAILURE-IS-A-DEFECT"
+code = "E-NOTE-CHECK-FAILED"
+layer = "gate"
+owner = "note_gates.check_note"
+trigger = "a per-note check exits non-zero having printed no line that opens with a code"
+refuses = "reporting the note as graded and clean because its failure could not be classified"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a check that exits 1 and says what it found in ordinary words"
+test = "tests/test_note_gates.py::test_a_check_that_fails_without_a_code_is_still_a_defect"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a check that exits 2 saying it opened nothing, in prose the classifier cannot read"
+test = "tests/test_note_gates.py::test_a_check_that_cannot_read_the_rendering_is_a_defect_not_a_pass"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the gate's own finding, which must carry the shape it demands of everyone else"
+test = "tests/test_note_gates.py::test_the_gates_own_finding_is_shaped_like_every_other_finding"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a prose failure, where what the check said is kept as evidence"
+test = "note_gates::and what it said is kept as evidence"
+kind = "selftest"
+
+[[rule]]
+id = "NOTE-CHECK-RAISE-IS-A-DEFECT"
+code = "E-NOTE-CHECK-RAISED"
+layer = "gate"
+owner = "note_gates._run"
+trigger = "a per-note check raises rather than returning"
+refuses = "letting one note's exception end the whole run, and losing what raised with it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a check that raises, where the note goes down and the run does not"
+test = "note_gates::a raising check is a 2"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a check that raises, where the exception type survives into the finding"
+test = "note_gates::and reports what raised"
+kind = "selftest"
+
+# --- the policy and its ledgers ---------------------------------------------
+#
+# WHAT `exit` MEANS ON A POLICY ROW, because it is not what it looks like. The
+# policy loader RAISES; it never prints a defect line and never returns a code.
+# So the number below is the code an entry point reaches after CATCHING that
+# refusal, and only two do: `audit.main` and `wq_corpus_scan.main` both return
+# 2. `resolve_note` loads its policy at import time and mentions PolicyError
+# nowhere, so the note gate never reaches 2 at all -- the exception escapes,
+# Python prints a traceback, and the process exits 1, which is the code that
+# means "defects found". Both halves have a case below.
+
+[[rule]]
+id = "POLICY-DATED-EXEMPTION"
+code = ""
+layer = "gate"
+owner = "wq_policy._check_dated"
+trigger = "a row is read from any dated exemption table"
+refuses = "a reason with no ISO date, a date the calendar refuses, or a date that has not happened yet"
+excused_by = []
+exit = 2
+
+[[rule.neighbour]]
+case = "an impossible date, which is not a date"
+test = "tests/test_note_oracle.py::test_every_row_in_this_corpus_is_dated_and_reasoned"
+[[rule.neighbour]]
+case = "a real date in the future, which excuses everything until it arrives"
+test = "tests/test_note_oracle.py::test_a_row_dated_in_the_future_is_refused_by_the_policy"
+[[rule.neighbour]]
+case = "the same future date in every dated table, not just the newest one"
+test = "tests/test_note_oracle.py::test_a_row_dated_in_the_future_is_refused_by_the_policy"
+[[rule.neighbour]]
+case = "the exit code a gate runner actually reads, which no case on any policy row asserted"
+test = "tests/test_spec_review.py::test_a_refused_policy_is_an_exit_code_the_corpus_gate_returns"
+[[rule.neighbour]]
+case = "the note gate, which loads its policy on import and never turns the refusal into this code"
+test = "tests/test_spec_review.py::test_the_note_gate_never_turns_a_refused_policy_into_an_exit_code"
+
+[[rule]]
+id = "LEDGER-MAY-ONLY-SHRINK"
+code = ""
+layer = "gate"
+owner = "resolve_note.excused"
+trigger = "a dated exemption row is offered for a note"
+refuses = "a row reaching a note filed after the row's own date; a note whose FILENAME carries no date cannot be placed either side of that line and is left excused rather than convicted, which is the one way a row still reaches a note nobody dated"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a note filed after the row, carrying the same key"
+test = "tests/test_note_oracle.py::test_a_row_does_not_reach_a_note_filed_after_it"
+[[rule.neighbour]]
+case = "a row written for a different note entirely"
+test = "tests/test_note_oracle.py::test_a_row_for_another_note_excuses_nothing"
+[[rule.neighbour]]
+case = "a note whose filename carries no date, which the row DOES reach"
+test = "tests/test_spec_review.py::test_a_row_reaches_a_note_whose_filename_carries_no_date"
+
+[[rule]]
+id = "LEDGER-IS-PRINTED-AND-AGED"
+code = ""
+layer = "gate"
+owner = "resolve_note.stale_exemptions"
+trigger = "an ordinary check run finishes"
+# NOTHING IS REFUSED HERE, and `exit = 0` is the whole content of the row. The
+# census PRINTS the rows that no longer excuse anything -- paid, or written for
+# a note that is gone -- and the run still exits 0. A row in a table of
+# refusals whose own exit is 0 reads as a rule that can red a corpus, and this
+# one cannot: it is what makes the ledger visible, not what enforces it.
+refuses = "nothing; it prints the rows that have stopped excusing anything, so a ledger that never says which row can go cannot quietly stop shrinking"
+excused_by = []
+exit = 0
+
+[[rule.neighbour]]
+case = "a row whose note now names a rendering, so the row is paid"
+test = "tests/test_note_oracle.py::test_a_row_is_reported_stale_once_the_note_names_a_rendering"
+[[rule.neighbour]]
+case = "a row for a note that is gone"
+test = "tests/test_note_oracle.py::test_a_row_for_a_note_that_is_gone_is_reported_stale"

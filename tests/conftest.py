@@ -1,15 +1,51 @@
 """Shared pytest fixtures: ffmpeg-synthesized clips and scripts/ on sys.path."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+# NO AMBIENT CORPUS. Both variables are read at IMPORT time by the package, so
+# they are cleared here -- in the rootdir conftest, before any test module
+# imports `watchquality` -- rather than in a fixture that would run too late.
+#
+# Measured 2026-08-22: with `$WATCH_QUALITY_POLICY` pointing at a real corpus,
+# six cases in `test_spec_note_contract.py` fail. They are not wrong; the corpus
+# policy adds required lanes and oracle rules, so a fixture note carrying one
+# defect carries four, and a case asserting "1 defect(s) outstanding" reads a 4.
+# The suite grades the PACKAGE, and a suite whose answer depends on which shell
+# started it cannot be a gate -- which is exactly how it was found: the commit
+# hook exports the policy for the leak scan, and the suite inherited it.
+for _ambient in ("WATCH_QUALITY_POLICY", "WATCH_QUALITY_ROOT"):
+    os.environ.pop(_ambient, None)
+
 # Make the bundled scripts importable (mirrors watch.py's sys.path insert).
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "skills" / "watch" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register `slow`, which today means the rule-mutation run and nothing else.
+
+    That run copies the tree and starts a fresh interpreter per mutant, so it
+    takes about five minutes against fifteen seconds for everything else. It
+    stays ON by default: it is the only check that can tell a rule the table
+    enforces from a rule the table merely describes, and a check nobody runs
+    answers nothing. `-m "not slow"` is there for the edit-run loop.
+    """
+    config.addinivalue_line(
+        "markers", "slow: minutes, not seconds; deselect with -m 'not slow'")
+
+# The smallest thing that is a rendering: one segment with a start, an end and
+# words. Fixtures across this suite used to write `{}` wherever a transcript was
+# meant -- a file that opens, parses, and carries nothing. That stood in for a
+# rendering everywhere until the oracle check started asking whether a gate can
+# actually READ what a note names, at which point ten fixtures were revealed to
+# be asserting against a file no gate could read.
+RENDERING = '{"segments": [{"start": 0.0, "end": 2.0, "text": "hello there"}]}\n'
 
 # 14 visually distinct fills → 14 abrupt cuts → x264 emits a keyframe per cut.
 COLORS = [

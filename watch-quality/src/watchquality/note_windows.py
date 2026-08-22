@@ -195,6 +195,12 @@ def selftest() -> int:
         if got != want:
             raise AssertionError(f"{label}: got {got!r}, want {want!r}")
 
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private, and
+    # `done()` below is where the evidence goes and a wrong answer is refused.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
+
     def segs(count: int, step: float = 10.0) -> list[dict]:
         return [{"start": i * step, "end": i * step + step,
                  "text": f"segment number {i} said a few words"}
@@ -351,6 +357,7 @@ def selftest() -> int:
     check("--json exits clean", code, 0)
     check("...and is parseable", len(json.loads(out)), len(plan(long, 600.0, 90.0)))
 
+    proof.done()
     print(f"# selftest OK ({cases} cases)")
     return 0
 

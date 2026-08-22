@@ -1,0 +1,1098 @@
+# Layer 2 — the witnesses: what was said, what was on screen, what the note
+# carried. Twenty-nine rules over twenty-nine defect codes, promoted from
+# `proposed-l3.toml` once every neighbour they name had a case that exists.
+#
+# `tests/test_spec_conformance.py` reads this file, so every line below is
+# executable: a renamed owner, a code the package stopped printing, or a
+# neighbour whose case was deleted turns the suite red.
+#
+# SOURCE-OF-TRUTH: the package source at watch-quality/src/watchquality/, HEAD
+# of branch `review-gate-rounds`. Docstrings, comments and docs/reviews/** are
+# evidence of intent only; where they disagree with the code, the code's
+# behaviour is what is written here and the disagreement is listed under GAPS.
+#
+# `kind = "pytest"` is a `tests/<file>.py::<function>` the conformance test's
+# AST walk can see. `kind = "selftest"` is `<module>::<label>`, the label being
+# the first string argument of a `check(...)` call inside that module's own
+# `selftest()`; `tests/test_selftests.py` runs all twelve of those inside this
+# pytest run, so a neighbour pinned there is pinned.
+#
+# All examples are invented. No video id, corpus path, person or private
+# repository name appears below.
+
+# --- ocr_vote: the pixels, which may corroborate and may never correct --------
+
+[[rule]]
+id = "OCR-ROW"
+code = "E-OCR-ROW"
+layer = "evidence"
+owner = "ocr_vote.read_index"
+trigger = "a line of a cached OCR index is read"
+refuses = "a row with fewer than six columns, or one whose second or sixth column int() will not read — which is wider than a whole number, and accepts a negative, a padded, an underscored and a non-ASCII-digit one"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a row truncated after its frame name and second"
+test = "ocr_vote::malformed index row reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a word count written as a decimal, which int() refuses"
+test = "tests/test_spec_evidence_witness.py::test_a_word_count_written_as_a_decimal_is_a_malformed_row"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a count of minus four, one padded with spaces, one written with an underscore and one in non-ASCII digits, all of which int() reads and none of which is refused — and the negative one is then never textful, so its frame leaves the vote in silence"
+test = "tests/test_spec_evidence_witness.py::test_int_takes_more_than_a_whole_number_in_the_count_column"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row of eight columns, which is a floor and not a shape: it is accepted and its eighth column is discarded without a word"
+test = "tests/test_spec_evidence_witness.py::test_a_row_of_eight_columns_is_accepted_and_its_eighth_is_discarded"
+kind = "pytest"
+[[rule.neighbour]]
+case = "exactly six columns and an empty text column, which is a readable frame with no text on it and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_six_columns_and_no_text_is_a_readable_frame_with_nothing_on_it"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row whose word count is larger than the words in its own text column, which is accepted and then counted as textful on the number rather than the text"
+test = "tests/test_spec_evidence_witness.py::test_a_declared_word_count_is_believed_over_the_text_beside_it"
+kind = "pytest"
+
+[[rule]]
+id = "OCR-UNREADABLE"
+code = "E-OCR-UNREADABLE"
+layer = "evidence"
+owner = "ocr_vote.read_index"
+trigger = "a note names a video whose OCR index exists on disk"
+refuses = "an index the process cannot read back as text"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a directory sitting where the index file should be"
+test = "tests/test_spec_evidence_witness.py::test_a_directory_where_the_index_should_be_is_unreadable"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a file holding bytes that are not valid text"
+test = "tests/test_spec_evidence_witness.py::test_bytes_that_are_not_text_are_unreadable"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an index file that reads back as an empty string, which is readable and must NOT be refused — it declares the pixel channel unavailable instead"
+test = "tests/test_spec_evidence_witness.py::test_an_empty_index_is_readable_and_declares_the_channel_unavailable"
+kind = "pytest"
+[[rule.neighbour]]
+case = "no index file at all, which is silent per note and only counted in the summary"
+test = "ocr_vote::no index is not a defect"
+kind = "selftest"
+
+[[rule]]
+id = "NO-PIXEL-WITNESS"
+code = "E-NO-PIXEL-WITNESS"
+layer = "evidence"
+owner = "ocr_vote.vote_note"
+trigger = "the caller passed --require-witness and a claim carries exactly one evidence class, that class being the on-screen one"
+refuses = "a proper noun no frame within the window reads back inside its edit-distance tolerance — but ONLY where the index read back clean and at least a quarter of its frames carry text; under either of those the vote never runs and nothing is refused, so a clean run under this flag is not proof the pixels were asked"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an on-screen claim whose name appears in no frame at all"
+test = "ocr_vote::--require-witness makes it a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same claim without --require-witness, which is advisory and must NOT be refused"
+test = "ocr_vote::flagging is advisory by default"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a frame that reads the name but sits outside the window"
+test = "ocr_vote::a frame outside the window does not witness"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a claim carrying two evidence classes at once, which is skipped whole and so is never refused"
+test = "tests/test_spec_evidence_witness.py::test_a_claim_tagged_twice_leaves_the_pixel_vote_entirely"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a claim whose only name is written in capitals throughout, which yields no candidate and is never refused"
+test = "tests/test_spec_evidence_witness.py::test_a_claim_whose_only_name_is_all_capitals_yields_no_candidate"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run fewer than a quarter of whose frames carry text, where the pixel channel is declared unavailable and the same unwitnessed name is never refused"
+test = "tests/test_spec_evidence_witness.py::test_a_run_under_the_textful_floor_never_reaches_the_pixel_vote"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one malformed row in an otherwise legible index, which is refused as a row and returns before any name is checked"
+test = "tests/test_spec_evidence_witness.py::test_one_malformed_index_row_stops_the_vote_before_any_name"
+kind = "pytest"
+
+# --- spoken_vote: the words, and the index that was never built --------------
+
+[[rule]]
+id = "CAPTION-UNINDEXED"
+code = "E-CAPTION-UNINDEXED"
+layer = "evidence"
+owner = "spoken_vote.score_note"
+trigger = "a note names a video and the caption index for it is absent"
+refuses = "a missing index for a video whose caption track is sitting on disk, because one command would have built it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a caption track present and no index beside it"
+test = "tests/test_spec_evidence_witness.py::test_a_caption_track_with_no_index_beside_it_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "no caption track anywhere, which is not the note's doing and must NOT be refused"
+test = "spoken_vote::no caption index is reported, not failed"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an index that exists and holds no cue, which is a different refusal and not this one"
+test = "tests/test_spec_evidence_witness.py::test_an_index_holding_no_cue_is_a_different_refusal"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a track on disk for a neighbouring video id, which witnesses nothing here and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_track_for_a_neighbouring_video_witnesses_nothing_here"
+kind = "pytest"
+
+# --- note_coverage: what the note carried, and what it never reached ---------
+#
+# Every rule here measures CARRIED CONTENT. The module's own docstring is
+# explicit that this is not a grade: a note can carry every number in a
+# recording and misread the argument those numbers were part of. What these
+# rules cannot see is whether a carried claim is TRUE.
+
+[[rule]]
+id = "COV-DEAD"
+code = "E-COV-DEAD"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "the note's anchors are bucketed into minutes of the span"
+refuses = "three or more consecutive minutes carrying no anchor on any line that also says something"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a run of four unwritten minutes in the middle of a span"
+test = "note_coverage::a hole in the middle is counted"
+kind = "selftest"
+[[rule.neighbour]]
+case = "two consecutive unwritten minutes, which is ordinary turn-taking and must NOT be refused"
+test = "note_coverage::a well-spread note has no hole"
+kind = "selftest"
+[[rule.neighbour]]
+case = "one anchor per minute hidden inside an HTML comment, which renders as nothing and must not fill the holes"
+test = "note_coverage::an HTML comment is not the note"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a rail of bare anchors, one per unwritten minute and fewer than four other words on the line, which nobody wrote from and which must NOT close the holes it covers"
+test = "tests/test_spec_evidence_witness.py::test_a_rail_of_bare_anchors_does_not_fill_the_holes_it_covers"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a sponsor read or a long silence that was legitimately never written up, which this rule cannot tell from a skipped stretch and refuses anyway"
+test = "tests/test_spec_evidence_witness.py::test_a_stretch_nobody_wrote_up_is_refused_whatever_the_reason"
+kind = "pytest"
+
+[[rule]]
+id = "COV-DUMP"
+code = "E-COV-DUMP"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "the note's words are compared against runs of the recording's words"
+refuses = "a note where three fifths or more of its words sit inside a twelve-word run lifted from the recording"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "the recording's own text pasted in three times over"
+test = "note_coverage::a paste of the recording is a paste"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a note quoting one line of the recording and arguing around it, which must NOT be refused"
+test = "note_coverage::...and a note that quotes one line of it is not"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a paste that writes a timestamp before every line, whose digits used to break the runs this looks for"
+test = "tests/test_spec_evidence_witness.py::test_a_paste_that_stamps_every_line_is_still_a_paste"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a paste with one word changed every ten, which breaks every twelve-word run and escapes"
+test = "tests/test_spec_evidence_witness.py::test_a_paste_with_one_word_changed_every_ten_escapes_the_verbatim_run"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note shorter than twelve words, which scores zero and is never refused"
+test = "tests/test_spec_evidence_witness.py::test_a_note_shorter_than_one_verbatim_run_scores_zero"
+kind = "pytest"
+
+[[rule]]
+id = "COV-LIST"
+code = "E-COV-LIST"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "the carried tokens are divided by the words of note they arrived in"
+refuses = "three or more carried tokens per ten words of note, which is a word list wearing the shape of claims"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an alphabetised dump of the recording's vocabulary"
+test = "tests/test_spec_evidence_witness.py::test_an_alphabetised_dump_of_the_vocabulary_is_a_word_list"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one claim followed by a vocabulary appendix"
+test = "tests/test_spec_evidence_witness.py::test_one_claim_and_a_vocabulary_appendix_is_still_a_word_list"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same dump padded with enough filler to drop the ratio under the ceiling, which escapes"
+test = "tests/test_spec_evidence_witness.py::test_padding_a_dump_with_filler_drops_it_under_the_density_ceiling"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a thorough note that carries a great deal and spends real words doing it, which must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_thorough_note_that_spends_real_words_is_not_a_word_list"
+kind = "pytest"
+
+[[rule]]
+id = "COV-REPEAT"
+code = "E-COV-REPEAT"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "each claim row in the span is compared with the five rows before it"
+refuses = "more than one row in ten repeating a row beside it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a row saying the same thing as the row above it"
+test = "note_coverage::a row repeating its neighbour is caught"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a claim deliberately restated six rows later, which is outside the window and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_claim_restated_six_rows_later_is_outside_the_window"
+kind = "pytest"
+[[rule.neighbour]]
+case = "exactly one row in ten repeating, which is on the ceiling and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_exactly_one_row_in_ten_repeating_sits_on_the_ceiling"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two rows whose words match and whose anchors are minutes apart, which is a seam reconciled twice rather than padding, and is refused anyway"
+test = "tests/test_spec_evidence_witness.py::test_a_seam_reconciled_twice_is_refused_as_padding"
+kind = "pytest"
+
+[[rule]]
+id = "COV-ROWSHAPE"
+code = "E-COV-ROWSHAPE"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "a line opens like a claim row and the row pattern does not match it"
+# NARROWED 2026-08-21. The pattern refused a row spanning two anchors -- the
+# form a note uses for a claim that took two minutes to make -- and three notes
+# in the corpus write it. Neither this table nor the corpus README ever forbade
+# it, so the grammar had no oracle and a note was convicted for recording where
+# a claim ended. The range tail is spelled out in the pattern rather than
+# permitted as "anything before the dash", because the loose version would stop
+# this rule reporting the shape it exists to report.
+# AND THE TAIL IS CHECKED, from 2026-08-22. Spelling the range out was not the
+# same as reading it: the pattern captured only the START, so a claim that
+# finished fifty seconds before it began read as a row, and it had been reported
+# here on the day before the form was understood. An independent verifier found
+# it by reverting the tail in a pinned copy and watching two lines come back.
+refuses = "a line nothing counted, so its content is invisible to every number above"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a row written with no dash between the class and the text"
+test = "note_coverage::a line that meant to be a row and is not gets reported"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a row written with an en dash or a hyphen instead of an em dash, which is a row and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_row_written_with_an_en_dash_is_a_row"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row carrying a speaker mark in brackets before the dash, which must NOT be refused"
+test = "note_coverage::a speaker mark before the dash does not hide a row"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a sixth misshapen line in one note, which is dropped by a cap that says nothing about itself"
+test = "tests/test_spec_evidence_witness.py::test_a_sixth_misshapen_line_is_dropped_by_a_silent_cap"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a row spanning two anchors, which is how a claim that ran on is written and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_row_spanning_two_stamps_is_a_row"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a line that says the range word and names no second anchor, which is still misshapen"
+test = "tests/test_spec_evidence_witness.py::test_a_row_that_says_to_and_names_no_second_stamp_is_still_misshapen"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a range whose second anchor is EARLIER than its first, which no claim can be and which is refused as a shape rather than as a stamp"
+test = "tests/test_spec_evidence_witness.py::test_a_range_that_ends_before_it_starts_is_not_a_row"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same backwards range reaching the reader, because refusing it in the parser and printing it are two different halves"
+test = "tests/test_spec_evidence_witness.py::test_a_backwards_range_reaches_the_reader_as_a_defect"
+kind = "pytest"
+
+[[rule]]
+id = "COV-STAMP"
+code = "E-COV-STAMP"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "a claim row's leading stamp is turned into seconds"
+refuses = "a stamp no clock can say, because its minute or second field runs past fifty-nine"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a stamp whose seconds field reads ninety-nine"
+test = "note_coverage::an impossible stamp is named"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a stamp past ninety-nine MINUTES, which a long recording legitimately has and must NOT be refused"
+test = "note_coverage::a stamp past ninety-nine minutes is a stamp"
+kind = "selftest"
+[[rule.neighbour]]
+case = "one impossible stamp with nine good rows BELOW it, every one of which must still be read and measured"
+test = "tests/test_spec_evidence_witness.py::test_an_impossible_stamp_does_not_stop_the_rows_after_it_being_read"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same impossible stamp written in prose rather than in a claim row, which is skipped in silence and never reported"
+test = "tests/test_spec_evidence_witness.py::test_an_impossible_stamp_in_prose_is_never_reported"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an unsayable stamp at the END of a range, which answers to the same clock as the one at the start"
+test = "tests/test_spec_evidence_witness.py::test_a_range_whose_end_is_not_a_time_is_reported"
+kind = "pytest"
+
+[[rule]]
+id = "COV-THIN"
+code = "E-COV-THIN"
+layer = "evidence"
+owner = "note_coverage.defects"
+trigger = "the span's three carryable sets are counted"
+refuses = "a span offering fewer than twenty-five salient tokens, because the recall figure printed above it is noise"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a span of three short segments scored against a one-row note"
+test = "note_coverage::a thin span refuses to be quoted as a comparison"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same thin span asked for machine-readable output, where the refusal must still be reported and the exit code must not change"
+test = "note_coverage::--json exits the same way"
+kind = "selftest"
+[[rule.neighbour]]
+case = "exactly twenty-five salient tokens, which is on the floor and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_exactly_the_salient_floor_is_not_refused_as_thin"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a long recording narrowed by a span flag to twenty thin seconds, where the thinness is the caller's window and not the note's"
+test = "tests/test_spec_evidence_witness.py::test_a_span_flag_makes_the_callers_window_thin_not_the_note"
+kind = "pytest"
+
+# --- note_windows: boundaries that are computed, not chosen ------------------
+
+[[rule]]
+id = "WIN-EMPTY"
+code = "E-WIN-EMPTY"
+layer = "evidence"
+owner = "note_windows.main"
+trigger = "a planned window is counted"
+refuses = "a window holding no segment, because its boundary landed in a stretch the transcript never witnessed"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a window falling inside a long hole in a transcript"
+test = "tests/test_spec_evidence_witness.py::test_a_window_landing_in_a_long_hole_holds_no_segment"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a window from an uploader chapter whose whole span the transcript never witnessed"
+test = "tests/test_spec_evidence_witness.py::test_an_uploader_chapter_the_transcript_never_witnessed_is_empty"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a window holding exactly one zero-length segment, which is a stamp with no span and must NOT be refused"
+test = "note_windows::zero-length segments are placed"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a transcript with no segments at all, which plans nothing and so raises no empty window"
+test = "note_windows::an empty transcript plans nothing"
+kind = "selftest"
+
+[[rule]]
+id = "WIN-ORPHAN"
+code = "E-WIN-ORPHAN"
+layer = "evidence"
+owner = "note_windows.main"
+trigger = "each segment is checked against the membership lists the plan recorded"
+refuses = "a segment no window claimed, because nothing would ever be written from it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a window plan whose membership lists are empty while its printed spans look reasonable"
+test = "note_windows::a window that claims nothing orphans everything"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a segment whose end precedes its start, which satisfies a span test vacuously and must still be placed"
+test = "note_windows::a segment whose end precedes its start is still placed"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a transcript full of holes, whose seconds no window covers while every segment still lands in one, and which must NOT be refused"
+test = "note_windows::a transcript full of holes still loses no segment"
+kind = "selftest"
+[[rule.neighbour]]
+case = "an eleventh orphaned segment, which is counted in a summary line rather than named"
+test = "tests/test_spec_evidence_witness.py::test_an_eleventh_orphan_is_counted_rather_than_named"
+kind = "pytest"
+
+[[rule]]
+id = "WIN-OVERFULL"
+code = "E-WIN-OVERFULL"
+layer = "evidence"
+owner = "note_windows.main"
+trigger = "a plan of more than one window is counted"
+refuses = "one window holding more than half the segments, because the table says the video was split and the numbers say it was not"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "every segment stamped at the same second, so window one takes them all"
+test = "note_windows::...and says the split did not happen"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a short recording that is legitimately one window, which must NOT be refused"
+test = "note_windows::a short file is one window"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a window holding exactly half the segments, which is on the ceiling and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_window_holding_exactly_half_the_segments_is_on_the_ceiling"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a front-loaded recording where the first ten minutes carry most of the speech, which is real and refused anyway"
+test = "tests/test_spec_evidence_witness.py::test_a_front_loaded_recording_is_refused_as_an_unsplit_plan"
+kind = "pytest"
+
+[[rule]]
+id = "WIN-TIMELESS"
+code = "E-WIN-TIMELESS"
+layer = "evidence"
+owner = "note_windows.main"
+trigger = "the distinct start times across the transcript are counted"
+refuses = "fewer distinct starts than one per hundred segments, and never fewer than two"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a decoder with broken offsets emitting every segment at second zero"
+test = "note_windows::...by name"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a healthy transcript with a start per segment, which must NOT be refused"
+test = "note_windows::...naming no defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "three segments carrying one start between them, which is under the floor of two and so is judged on the floor rather than on the ratio"
+test = "tests/test_spec_evidence_witness.py::test_three_segments_at_one_second_are_judged_on_the_floor"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a transcript whose starts are distinct and whose ends are all identical, which has a usable timeline and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_distinct_starts_and_identical_ends_still_have_a_timeline"
+kind = "pytest"
+
+# --- transcript_align: whether a decode survived, and where a second one
+# --- disagrees. Four of these rules exist because an adversarial lane defeated
+# --- the check above them: a whole-file agreement ratio is not a per-claim
+# --- guarantee, two speech-to-text channels are one witness, a running maximum
+# --- over segment ends blinds every later check, and exact-equality repetition
+# --- detection is defeated by a counter.
+
+[[rule]]
+id = "TS-EMPTY"
+code = "E-TS-EMPTY"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "a rendering has been read into segments"
+refuses = "a rendering carrying no segment at all"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a rendering that reads back as an empty segment list"
+test = "transcript_align::an empty rendering says so"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a rendering whose every segment carries empty text, which is filtered to nothing and lands here"
+test = "tests/test_spec_evidence_witness.py::test_a_rendering_of_only_empty_texts_reads_back_as_no_segments"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a tab-separated rendering with no usable rows, which is refused one layer earlier as unreadable input and exits two rather than one"
+test = "tests/test_spec_evidence_witness.py::test_a_tsv_with_no_usable_rows_is_refused_as_unreadable_input"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a rendering of one segment, which is thin and must NOT be refused as empty"
+test = "tests/test_spec_evidence_witness.py::test_a_rendering_of_one_segment_is_thin_and_not_empty"
+kind = "pytest"
+
+[[rule]]
+id = "TS-SEGMENT"
+code = "E-TS-SEGMENT"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "each segment's claimed length is measured"
+refuses = "a segment claiming more than two minutes, because a segment that long hides every hole and every truncation after it"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "one segment claiming to run to the end of a two-hour file"
+test = "transcript_align::...and it is named"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the holes that segment used to hide, which must become visible again"
+test = "transcript_align::...so the holes after it are visible again"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a second absurd segment in the same rendering, which is never named because the scan stops at the first"
+test = "tests/test_spec_evidence_witness.py::test_only_the_first_absurd_segment_in_a_rendering_is_named"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a segment claiming exactly two minutes, which is on the cap and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_segment_claiming_exactly_two_minutes_sits_on_the_cap"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a segment whose end precedes its start, whose claimed length is negative and which is never refused here"
+test = "tests/test_spec_evidence_witness.py::test_a_segment_whose_end_precedes_its_start_is_not_refused_as_long"
+kind = "pytest"
+
+[[rule]]
+id = "TS-GAP"
+code = "E-TS-GAP"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "the stretches between consecutive segments are walked"
+refuses = "more than twenty seconds with no segment over it, because that audio is unwitnessed rather than silent"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a window that decoded nothing, leaving a hole in the middle"
+test = "transcript_align::a gap is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a rendering whose first segment begins a minute in, which is a hole at the front and not a late start"
+test = "transcript_align::a late start is a gap too"
+kind = "selftest"
+[[rule.neighbour]]
+case = "one second of speech every twenty, where no single hole exceeds the limit and almost nothing is witnessed"
+test = "transcript_align::a sawtooth transcript trips no gap"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a hole of exactly twenty seconds, which is on the limit and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_hole_of_exactly_the_gap_limit_is_not_refused"
+kind = "pytest"
+
+[[rule]]
+id = "TS-SHORT"
+code = "E-TS-SHORT"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "the caller declared how many seconds of audio there are"
+refuses = "a rendering whose last believable segment ends more than twenty seconds before that, because the tail was never decoded"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a rendering ending minutes before the declared length"
+test = "transcript_align::a short rendering is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same rendering with no declared length, where truncation must NOT be guessed at"
+test = "transcript_align::...and is not guessed at without one"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a rendering ending exactly twenty seconds early, which is on the limit and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_rendering_ending_exactly_the_gap_limit_early_is_not_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a rendering running PAST the declared length, which is a disagreement about the audio and is never refused here"
+test = "tests/test_spec_evidence_witness.py::test_a_rendering_running_past_the_declared_length_is_not_refused_here"
+kind = "pytest"
+
+[[rule]]
+id = "TS-SPARSE"
+code = "E-TS-SPARSE"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "the rendering is long enough and has enough segments for a share to mean anything"
+refuses = "segments sitting over less than half the running time, whatever the size of any single hole"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "one second of speech every twenty, which passes every per-hole gap check ever written"
+test = "tests/test_spec_evidence_witness.py::test_a_sawtooth_transcript_covers_too_little_of_its_own_running_time"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same shape in a four-minute file, which is under the statistics floor and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_sawtooth_under_the_statistics_floor_is_not_refused_as_sparse"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a rendering whose coverage is inflated by one segment claiming the whole file, which must be capped before the share is taken"
+test = "transcript_align::an absurd segment is not believed"
+kind = "selftest"
+[[rule.neighbour]]
+case = "overlapping segments covering one stretch twice, which must be counted once and must NOT lift the share"
+test = "tests/test_spec_evidence_witness.py::test_overlapping_segments_are_counted_once_when_the_share_is_taken"
+kind = "pytest"
+
+[[rule]]
+id = "TS-REPEAT"
+code = "E-TS-REPEAT"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "the distinct texts are counted against all texts"
+refuses = "fewer than half the segments being distinct, because a decode that repetitive has stalled somewhere"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a decode that collapsed and repeated one sentence to the end of the file"
+test = "transcript_align::...and so is the distinct-text share"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a loop interleaved with real speech, which lands a hair over the floor and escapes this rule entirely"
+test = "transcript_align::...and is caught by the share of one text"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a counter appended to each repeat, which makes every text distinct and escapes"
+test = "transcript_align::a counter makes every repeat distinct"
+kind = "selftest"
+[[rule.neighbour]]
+case = "two segments of which one repeats the other, which is half distinct in a file too short to mean it"
+test = "tests/test_spec_evidence_witness.py::test_two_segments_of_which_one_repeats_sit_on_the_distinct_floor"
+kind = "pytest"
+
+[[rule]]
+id = "TS-LOOP"
+code = "E-TS-LOOP"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "consecutive segments carrying identical text are counted"
+refuses = "four or more identical segments in a row, after which nothing can be quoted"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "nine copies of one line following a real sentence"
+test = "transcript_align::a loop is a defect"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the reported second, which must be where the run began and not where it was noticed"
+test = "transcript_align::the loop defect names the second"
+kind = "selftest"
+[[rule.neighbour]]
+case = "identical texts differing only in punctuation and case, which normalise to one text and are refused"
+test = "tests/test_spec_evidence_witness.py::test_identical_texts_differing_only_in_punctuation_are_one_text"
+kind = "pytest"
+[[rule.neighbour]]
+case = "three identical segments in a row, which a healthy decode of a long recording really produced and which must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_three_identical_segments_in_a_row_sit_under_the_loop_limit"
+kind = "pytest"
+
+[[rule]]
+id = "TS-NEARLOOP"
+code = "E-TS-NEARLOOP"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "no identical run was long enough to refuse"
+refuses = "eight or more consecutive segments whose word sets overlap by four fifths, because a repeat with a counter on it is still a repeat"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "six hundred copies of one sentence, each numbered, packed under the statistics floor so that no per-file share can fire instead"
+test = "tests/test_spec_evidence_witness.py::test_six_hundred_numbered_copies_of_one_sentence_are_a_near_loop"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a run that is identical rather than near-identical, which the identical-run rule already refuses and which must NOT be refused twice"
+test = "tests/test_spec_evidence_witness.py::test_an_identical_run_is_refused_once_and_not_again_as_near_identity"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a repeat with two ordinary words changed each time, which drops the overlap under four fifths and escapes"
+test = "tests/test_spec_evidence_witness.py::test_two_ordinary_words_changed_each_time_escapes_near_identity"
+kind = "pytest"
+[[rule.neighbour]]
+case = "eight consecutive sentences on one subject that share most of their vocabulary honestly, which is real speech and is refused anyway"
+test = "tests/test_spec_evidence_witness.py::test_eight_honest_sentences_on_one_subject_are_refused_as_a_near_loop"
+kind = "pytest"
+
+[[rule]]
+id = "TS-DOMINANT"
+code = "E-TS-DOMINANT"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "the rendering is long enough and has enough segments for a share to mean anything"
+refuses = "more than one segment in ten carrying the same single text, adjacent or not"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "one stuck line alternating with real speech, which holds a longest run of one"
+test = "transcript_align::an interleaved loop has no run at all"
+kind = "selftest"
+[[rule.neighbour]]
+case = "the same interleaving in a four-minute file, which is under the statistics floor and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_an_interleaved_loop_under_the_statistics_floor_is_not_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a stuck line numbered so that no two copies are equal, which is one text to a reader and many to this count, and escapes"
+test = "tests/test_spec_evidence_witness.py::test_a_stuck_line_numbered_per_copy_escapes_the_dominant_share"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a short refrain a speaker really repeats a dozen times in an hour, which is under a tenth and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_refrain_repeated_a_dozen_times_in_an_hour_is_under_the_ceiling"
+kind = "pytest"
+
+[[rule]]
+id = "TS-VOCABULARY"
+code = "E-TS-VOCABULARY"
+layer = "evidence"
+owner = "transcript_align.check_rendering"
+trigger = "the rendering is long enough and has enough segments for a rate to mean anything"
+refuses = "fewer than five distinct non-numeric words per minute, which is text that looks lively and says nothing"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "permuted filler with a counter on it, which reads as entirely distinct texts"
+test = "transcript_align::...and is caught on vocabulary"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a counter counted as vocabulary, which would lift this rate out of reach"
+test = "transcript_align::a number is not vocabulary"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a healthy wide-vocabulary transcript, which must trip none of these rules"
+test = "transcript_align::a healthy transcript trips none of them"
+kind = "selftest"
+[[rule.neighbour]]
+case = "a genuinely quiet stretch of a talk, far above this floor and therefore never refused, which is the floor working rather than a hole"
+test = "tests/test_spec_evidence_witness.py::test_a_quiet_stretch_stays_far_above_the_vocabulary_floor"
+kind = "pytest"
+
+[[rule]]
+id = "TS-DIVERGENT"
+code = "E-TS-DIVERGENT"
+layer = "evidence"
+owner = "transcript_align.main"
+trigger = "a second rendering of the same audio is aligned against the first one named"
+refuses = "whole-file token agreement under the floor, because two decodes that far apart are not renderings of the same words"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "two renderings sharing nothing but their articles"
+test = "transcript_align::unrelated renderings fall under the floor"
+kind = "selftest"
+[[rule.neighbour]]
+case = "identical words split into different segments, which is not divergence and must NOT be refused"
+test = "transcript_align::re-segmented identical text aligns exactly"
+kind = "selftest"
+[[rule.neighbour]]
+case = "two decodes differing only in whether the speaker said a negation, which scores above the floor and is never refused — the ratio is a whole-file number and not a per-claim guarantee"
+test = "transcript_align::one flipped word barely moves the ratio"
+kind = "selftest"
+[[rule.neighbour]]
+case = "three renderings where the second and third disagree wildly with each other while both agree with the first, which is never compared and so is never refused"
+test = "tests/test_spec_evidence_witness.py::test_a_third_rendering_is_never_compared_with_the_second"
+kind = "pytest"
+
+[[rule]]
+id = "TS-SINGLE-WITNESS"
+code = "E-TS-SINGLE-WITNESS"
+layer = "evidence"
+owner = "transcript_align.witness_defect"
+trigger = "the renderings handed over are counted"
+refuses = "a run supplied with one decode, which has nothing to be checked against"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "one rendering named on the command line"
+test = "transcript_align::a single rendering has no witness"
+kind = "selftest"
+[[rule.neighbour]]
+case = "two renderings, which must NOT be refused"
+test = "transcript_align::two renderings do not raise it"
+kind = "selftest"
+[[rule.neighbour]]
+case = "no renderings at all, where usage is refused first and this rule is never reached"
+test = "tests/test_spec_evidence_witness.py::test_no_renderings_at_all_is_a_usage_error_before_the_witness_rule"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one rendering that also carries a collapse, where both this rule and the degeneration rules must be reported rather than one silencing the other"
+test = "tests/test_spec_evidence_witness.py::test_a_lone_decode_that_also_collapsed_reports_both"
+kind = "pytest"
+
+[[rule]]
+id = "TS-SAME-WITNESS"
+code = "E-TS-SAME-WITNESS"
+layer = "evidence"
+owner = "transcript_align.main"
+trigger = "each rendering is fingerprinted from its own starts and normalised texts"
+refuses = "a rendering identical to an earlier one, because one decode named twice is not two decodes and the agreement between them measures nothing"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "the same file passed twice on one command line, which scores perfect agreement and clears the lone-decode rule"
+test = "tests/test_spec_evidence_witness.py::test_the_same_file_named_twice_is_one_witness"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one decode saved under two names, or exported once as machine-readable rows and once as a caption index"
+test = "tests/test_spec_evidence_witness.py::test_one_decode_under_two_names_or_two_exports_is_one_witness"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two genuinely different decodes, which fingerprint apart and must NOT be refused"
+test = "transcript_align::a different one does not"
+kind = "selftest"
+[[rule.neighbour]]
+case = "one decode re-emitted with its sentences split differently, which is still one witness and is NOT refused because the fingerprint reads segment boundaries"
+test = "tests/test_spec_evidence_witness.py::test_one_decode_re_segmented_passes_as_a_second_witness"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two decodes by two models that agree on every word and cut them half a second apart, which are two witnesses and must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_two_models_agreeing_on_words_and_differing_on_timing_are_two_witnesses"
+kind = "pytest"
+
+# --- demote_note: the same missing lane, counted rather than refused ---------
+#
+# TWO ROWS, ONE CODE. `resolve_note.check_lanes` owns the half that refuses a
+# declared lane with no report on disk, and lane L4 writes that row. THIS row is
+# the other half: `demote_note` reads the same condition through the same two
+# primitives and never prints the code at all — it renders the number onto the
+# note's own face and exits zero. One definition of "did that lane emit a
+# report", so the gate and the integrity line cannot disagree about one note.
+
+[[rule]]
+id = "LANE-MISSING-COUNTED"
+code = "E-LANE-MISSING"
+layer = "evidence"
+owner = "demote_note.review_reports"
+trigger = "a note's declared review lanes are matched against the reports on disk"
+refuses = "nothing, and that is the rule: a lane with no report is counted and rendered, never made a defect here"
+excused_by = []
+exit = 0
+
+[[rule.neighbour]]
+case = "a declared lane whose report is on disk, which counts as present"
+test = "tests/test_spec_evidence_witness.py::test_a_declared_lane_with_a_report_on_disk_counts_as_present"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a second declared lane with no report, which is counted onto the note's face and never made a defect"
+test = "tests/test_spec_evidence_witness.py::test_a_declared_lane_with_no_report_is_counted_and_rendered_not_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note written before lanes were declared in frontmatter, which falls back to the reports it cites"
+test = "tests/test_spec_evidence_witness.py::test_a_note_written_before_the_convention_falls_back_to_what_it_cites"
+kind = "pytest"
+[[rule.neighbour]]
+case = "an empty corpus, where zero notes must NOT read as zero lanes missing"
+test = "tests/test_review_gate.py::test_every_gate_refuses_an_empty_corpus_not_just_the_first"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note that cites four reports it never declared, which is prose and must not inflate the count"
+test = "tests/test_spec_evidence_witness.py::test_reports_a_note_never_declared_do_not_inflate_the_roll_call"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note declaring a lane whose id is malformed, where the parse fails and the fallback silently counts cited filenames instead of the declared lane"
+test = "tests/test_spec_evidence_witness.py::test_a_malformed_lane_id_falls_back_to_counting_cited_filenames"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a note carrying declared lanes and no video id, where every cited filename is reported missing wholesale"
+test = "tests/test_spec_evidence_witness.py::test_declared_lanes_with_no_video_id_report_every_cited_filename_missing"
+kind = "pytest"
+
+
+# ============================================================================
+# GAPS — what this file does NOT settle. In order of cost.
+# ============================================================================
+#
+# 0. RULES LEFT IN THE DRAFT: none. All twenty-nine rows extracted into
+#    `spec/proposed-l3.toml` are above, because every neighbour they name now
+#    has a case. Of the 128 neighbours, 76 are cases written for this table
+#    (`tests/test_spec_evidence_witness.py`), 51 are pinned in a module's own
+#    selftest and are cited there rather than duplicated — two tests that share
+#    a fixture are one test — and one was already in the suite
+#    (`tests/test_review_gate.py`).
+#
+#    Sixty of the 76 close a neighbour the draft carried as `kind = "none"`.
+#    Four replace citations that could not be honest: three `demote_note`
+#    neighbours pointed at that module's selftest, which asserts inline and
+#    therefore offers no label the conformance test can resolve, and one
+#    `note_coverage` neighbour pointed at a label built by an f-string
+#    (watch-quality/src/watchquality/note_coverage.py:634), which the AST walk
+#    reads as no constant at all.
+#
+#    The remaining twelve were written or re-pointed by the round recorded in
+#    GAPS 6, where a refute pass found the cited case and the neighbour it was
+#    written for describing two different fixtures.
+#
+# 1. NEIGHBOURS WHOSE CASE COULD NOT BE WRITTEN WITHOUT CHANGING SOURCE: none.
+#    Every case above drives the real function or the real command. Three
+#    needed a seam rather than a source change and got one:
+#      - `spoken_vote.find_tracks` is redirected at its ROOTS, so the search
+#        that decides E-CAPTION-UNINDEXED is the real one over a directory the
+#        test owns. Replacing the function would have tested the test.
+#      - `ocr_vote.ocr_path` and `anchor_manifest.caption_path` build the
+#        fixture paths, so a policy rename moves the fixtures with the code.
+#      - E-OCR-UNREADABLE fires only through `read_index`; `vote_note` checks
+#        `is_file()` first, so a directory in the index's place is silent one
+#        layer up. The case drives the owner named in the row.
+#
+# 2. THE LABEL `...as a defect` IS AMBIGUOUS, AND NO ROW ABOVE CITES IT ANY
+#    MORE. Three checks in `transcript_align.selftest` carry that exact label —
+#    watch-quality/src/watchquality/transcript_align.py:579 (the dominant-text
+#    share), :588 (near-identity) and :598 (coverage). The conformance test
+#    resolves a selftest neighbour by `<module>::<label>`, so a row citing it
+#    would be pinned to "one of those three" rather than to one of them.
+#    TS-SPARSE and TS-NEARLOOP used to cite it and now cite cases of their own
+#    in `tests/test_spec_evidence_witness.py`; TS-DOMINANT cites the
+#    unambiguous `an interleaved loop has no run at all`. The label is still
+#    ambiguous in the module, and the cheap repair is there rather than here:
+#    three labels, three different sentences.
+#
+# 3. WHERE THE CODE AND ITS PROSE DISAGREE.
+#
+#    3a. `E-WIN` IS NOT A RULE, AND HAS NO ROW HERE. It is a prefix harvested
+#        into `spec/unspecified.toml` from a string literal in a selftest:
+#        watch-quality/src/watchquality/note_windows.py:345 reads
+#        `check("...naming no defect", "E-WIN-" in out, False)`, and the
+#        conformance test's code pattern matches `E-WIN` inside `"E-WIN-"`
+#        because the trailing hyphen is a word boundary. No line in the package
+#        ever prints a bare `E-WIN`. A row for a rule the code does not
+#        implement is prose, so there is none. The debt list should lose the
+#        entry, and the harvest or the literal should change so it cannot come
+#        back — both are outside this lane.
+#
+#    3b. `E-LANE-MISSING` IS ATTRIBUTED TO `demote_note` BY A DOCSTRING. The
+#        only occurrence in that module is prose at
+#        watch-quality/src/watchquality/demote_note.py:27, describing what
+#        `resolve_note.check_lanes` does. `demote_note` never prints the code:
+#        it counts the same condition through the same two primitives and
+#        renders the number. The row above is written for that behaviour and
+#        says so in its trigger; lane L4 writes the half that refuses.
+#
+#    3c. `note_windows` DOES NOT ALWAYS EXIT 2 ON A USAGE ERROR, though its
+#        module docstring at watch-quality/src/watchquality/note_windows.py:34
+#        says "2 usage or unreadable input". When `--chapters` names a file
+#        that declares no chapters, the fall-back call to `plan()` at
+#        watch-quality/src/watchquality/note_windows.py:407 sits OUTSIDE the
+#        try block that catches the same error at line 410, so an overlap that
+#        leaves no stride raises through `main` as a traceback instead of a
+#        refusal. The same arguments without `--chapters` print the refusal and
+#        return 2. That is a defect in the module, not only a missing case, and
+#        it is left for its owner — this lane changes no code.
+#
+#    3d. `note_coverage.read_note` RETURNS FOUR VALUES AND IS ANNOTATED FOR
+#        THREE. The signature at
+#        watch-quality/src/watchquality/note_coverage.py:168 reads
+#        `tuple[str, list[tuple[float, str, str]], list[str]]` and the return
+#        at line 205 hands back body, rows, impossible AND misshapen. The
+#        docstring one line below describes three. Nothing breaks — the
+#        annotation is not enforced — and the misshapen list is what
+#        E-COV-ROWSHAPE is built from, so the row that matters is the one the
+#        signature does not mention.
+#
+#    3e. `E-COV-ROWSHAPE` CAPS ITS OUTPUT IN SILENCE. Only the first five
+#        misshapen lines per note are reported
+#        (watch-quality/src/watchquality/note_coverage.py:516) and nothing says
+#        the sixth exists. The sibling rule in `note_windows` prints a
+#        further-orphans line for exactly this reason, and its own comment at
+#        watch-quality/src/watchquality/note_windows.py:438 says a cap that
+#        hides what mattered is the same failure as not printing it. Pinned
+#        above as the behaviour it is, not repaired.
+#
+# 4. `refuses` LINES REWRITTEN BECAUSE THE DRAFT HAD THEM WRONG.
+#
+#    4a. WIN-TIMELESS. The draft said "fewer distinct starts than one per
+#        hundred segments". The code is
+#        `distinct_starts < max(2, len(segments) // 100)`
+#        (watch-quality/src/watchquality/note_windows.py:448), so under two
+#        hundred segments the ratio is not what decides it: three segments
+#        sharing one start are refused on the floor of two, and the ratio would
+#        have allowed them. The row now says both halves.
+#
+#    4b. COV-THIN's fourth neighbour said "narrowed by a span flag to two thin
+#        minutes". Two minutes of the fixture is not thin; the case is written
+#        at twenty seconds, and the row says twenty seconds.
+#
+#    4c. COV-ROWSHAPE's second neighbour said "an en dash instead of an em
+#        dash". The pattern at
+#        watch-quality/src/watchquality/note_coverage.py:124 accepts every
+#        dash, and the case covers all three, so the row says so.
+#
+#    4d. TS-SAME-WITNESS's last neighbour said "two decodes by two models that
+#        agree perfectly". Two decodes that agree perfectly AND cut their
+#        segments at the same seconds fingerprint the same and ARE refused —
+#        that is the rule working, not a false positive. What must not be
+#        refused is two decodes that agree on every word and differ in their
+#        boundaries, which is what the row and the case now say.
+#
+#    4e. OCR-ROW said "not a whole number", and the check is two `int()` calls.
+#        `int()` is wider than the phrase: `-4`, `  7  `, `1_0` and `١٢` are all
+#        read (as -4, 7, 10 and 12) and none of them is refused. The row now
+#        says what `int()` takes, and a neighbour pins each shape.
+#
+#    4f. NO-PIXEL-WITNESS promised a refusal its trigger does not always
+#        deliver. `vote_note` returns before the vote loop when the index
+#        produced any defect at all
+#        (watch-quality/src/watchquality/ocr_vote.py:360) and again when under a
+#        quarter of frames carry text (:362), so under exactly the stated
+#        trigger a run of blank frames or one malformed row refuses nothing.
+#        The row now states both silencing conditions and a neighbour pins each.
+#
+#    4g. AND ONE OWNER, WHICH IS THE SAME KIND OF ERROR. WIN-ORPHAN named
+#        `note_windows.orphans`, which returns a list of indices and prints
+#        nothing (watch-quality/src/watchquality/note_windows.py:129-140).
+#        `E-WIN-ORPHAN` is emitted at :435 and :442, inside `main` — which is
+#        where WIN-EMPTY already points. Both symbols exist, so the conformance
+#        test could not see it; a reader sent to `orphans()` would not find the
+#        refusal.
+#
+# 5. WHAT NO ROW HERE CLAIMS. `E-CAPTION-EMPTY`, `E-FRONTMATTER`,
+#    `E-NO-VIDEO-ID` and `E-READ` are printed by modules in this lane and by
+#    three or four others each. They are cross-layer rules with one owner
+#    apiece elsewhere, and writing a row here would fix that owner from the
+#    wrong layer. They stay in the debt list until a lane that owns their
+#    module writes them.
+#
+# 6. SELFTEST LABELS THIS TABLE STOPPED CITING, BECAUSE THE FIXTURE BEHIND THE
+#    LABEL IS NOT THE NEIGHBOUR. A refute pass mutated each rule in an isolated
+#    copy and found four rows whose cited case survived the mutation — the case
+#    passed, and it would have passed with the rule deleted. In each of these
+#    the label is accurate about its own module and wrong as a citation here,
+#    so the citation moved into `tests/test_spec_evidence_witness.py` and the
+#    label stayed where it was. None of these is a defect in the package, and
+#    none of them was repaired from this lane:
+#
+#      - `note_coverage::a line of bare anchors is not a stretch anyone wrote
+#        from` (watch-quality/src/watchquality/note_coverage.py:660-666) does
+#        not call `measure()`. It rebuilds the `MIN_LINE_WORDS` filter inline
+#        and compares the result with `[]`, so the check and the code compute
+#        the same expression and cannot disagree.
+#      - `ocr_vote::an unreadable run declares itself instead of flagging`
+#        (watch-quality/src/watchquality/ocr_vote.py:565) is the low-textful
+#        fixture. It never writes an empty index, so it says nothing about
+#        whether an empty file reads back.
+#      - `transcript_align::a clean run has no repeats`
+#        (watch-quality/src/watchquality/transcript_align.py:485) is four
+#        different texts. There is no run of three in it, so it cannot say
+#        where the identical-run limit sits.
+#      - `note_coverage::...and does not stop the run`
+#        (watch-quality/src/watchquality/note_coverage.py:681) drives a note
+#        whose ONLY row is the impossible one, so there are no other rows for
+#        the run to stop measuring.
+#      - `transcript_align::...and near-identity still sees it`
+#        (watch-quality/src/watchquality/transcript_align.py:585) runs on the
+#        counter-numbered fixture, which is precisely not the identical run the
+#        neighbour describes.

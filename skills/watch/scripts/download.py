@@ -6,6 +6,7 @@ transcribe.py can parse them without needing Whisper.
 """
 from __future__ import annotations
 
+import glob
 import json
 import shutil
 import subprocess
@@ -47,9 +48,13 @@ def resolve_local(path: str) -> dict:
             f"[watch] warning: {p.suffix} is not a known video extension, proceeding anyway",
             file=sys.stderr,
         )
+    # A subtitle file sitting beside the video is the local equivalent of a
+    # caption track, and ignoring it meant handing /watch a recording and its
+    # own transcript still transcribed the audio from scratch.
+    sidecars = sorted(p.parent.glob(f"{glob.escape(p.stem)}*.vtt"))
     return {
         "video_path": str(p),
-        "subtitle_path": None,
+        "subtitle_path": str(sidecars[0]) if sidecars else None,
         "info": {"title": p.name, "url": str(p)},
         "downloaded": False,
     }

@@ -19,5 +19,11 @@ htmlcov/
 # with E-GRADE-STALE — thirty defects, none of them real.
 *.egg-info/
 
+# Build output. It was tracked once, and that copy went stale against src/ while
+# staying published -- carrying a fixture line the leak gate structurally could
+# not read, because `build` is on the gate's own skip list. A generated tree the
+# gate cannot open has no business in a public repository.
+watch-quality/build/
+
 # local Claude Code settings
 .claude/settings.local.json

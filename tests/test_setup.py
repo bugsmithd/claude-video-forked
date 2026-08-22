@@ -82,3 +82,27 @@ def test_key_present_is_ready(tmp_path):
     assert js["status"] == "ready"
     assert js["can_proceed"] is True
     assert js["whisper_backend"] == "groq"
+
+
+def test_the_preflight_never_names_a_backend_no_unflagged_run_would_take(tmp_path):
+    """verification G4 — the setup half of the OpenRouter demotion.
+
+    `whisper.load_api_key` stopped choosing `openrouter` automatically and
+    three cases in `test_whisper.py` hold it there. The preflight was demoted
+    in the same pass and nothing held it: restoring its `OPENROUTER_API_KEY`
+    branch left all 293 cases green, and setup then reported `ready` on
+    `openrouter` while every unflagged run fell through to groq, openai or
+    local. That is the exact divergence `_have_api_key`'s own comment forbids
+    -- a preflight naming a backend the run will not use.
+    """
+    _write_env(tmp_path, "OPENROUTER_API_KEY=sk-or-test\n")
+    js = json.loads(_run(["--json"], home=tmp_path).stdout)
+    assert js["whisper_backend"] != "openrouter", js
+    assert js["status"] == "needs_key", js
+
+    # And it is not that the key is unreadable: add the one an unflagged run
+    # WOULD take, and the preflight names that one.
+    _write_env(tmp_path, "OPENROUTER_API_KEY=sk-or-test\nGROQ_API_KEY=sk-test-abc\n")
+    js = json.loads(_run(["--json"], home=tmp_path).stdout)
+    assert js["whisper_backend"] == "groq", js
+    assert js["status"] == "ready", js

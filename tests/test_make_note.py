@@ -98,6 +98,109 @@ def test_the_collapsed_seconds_are_listed_not_just_counted(static_clip: Path,
     assert run["deduped_seconds"] == sorted(run["deduped_seconds"])
 
 
+# --- the run record must not name the wrong transcript ----------------------
+# `--no-captions` downloads a caption track and then decodes the audio instead.
+# Recording that unused track as the transcript's own file handed a later reader
+# the wrong artifact to re-check a quote against.
+
+def _with_captions(clip: Path, tmp_path: Path) -> Path:
+    work = tmp_path / "src"
+    work.mkdir(parents=True, exist_ok=True)
+    target = work / "video.mp4"
+    target.write_bytes(clip.read_bytes())
+    (work / "video.en.vtt").write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nthe caption track\n",
+        encoding="utf-8")
+    return target
+
+
+def test_the_transcript_names_the_file_it_came_from(cut_clip: Path, tmp_path: Path):
+    _run(_with_captions(cut_clip, tmp_path), "--make-note",
+         note_dir=tmp_path / "runs")
+    transcript = _run_json(tmp_path / "runs")["transcript"]
+    assert transcript["source"] == "captions"
+    assert transcript["subtitle_path"].endswith("video.en.vtt")
+    assert transcript["unused_subtitle_path"] is None
+
+
+def test_an_unused_caption_track_is_not_the_transcript(cut_clip: Path, tmp_path: Path):
+    _run(_with_captions(cut_clip, tmp_path), "--make-note", "--no-captions",
+         note_dir=tmp_path / "runs")
+    transcript = _run_json(tmp_path / "runs")["transcript"]
+    assert transcript["source"] != "captions"
+    assert transcript["subtitle_path"] is None
+    assert transcript["unused_subtitle_path"].endswith("video.en.vtt")
+
+
+def _run_record(source: str | None, parsed: str | None) -> dict:
+    return notemode.build_run(
+        source="url", video_id="VID", work=Path("/tmp/w"), info={},
+        duration=1.0, resolution=360, detail="low", video_path=None,
+        frames=[], dropped_seconds=[], transcript_source=source,
+        transcript_segments=[{"start": 0.0}], subtitle_path="/tmp/w/v.en.vtt",
+        parsed_from=parsed)["transcript"]
+
+
+def test_a_run_that_says_captions_names_the_file_it_parsed(tmp_path: Path):
+    """properties I26(b), the worst finding in that review.
+
+    `watch.py` parses the track off the EARLY `dl`, rebinds `dl` from the
+    second yt-dlp pass, then hands `build_run` the late one. When the late one
+    carries no subtitle the run says `source: captions` and names no file at
+    all -- neither oracle nor witness -- so nothing downstream can re-check a
+    quote.
+    """
+    got = _run_record("captions", None)
+    assert got["subtitle_path"] is None or got["source"] != "captions", got
+    assert _run_record("captions", "/tmp/w/v.en.vtt")["subtitle_path"] == \
+        "/tmp/w/v.en.vtt"
+
+
+def test_a_second_pass_that_repicks_the_track_does_not_rewrite_history(tmp_path):
+    """properties I28: the two yt-dlp passes both call `_pick_subtitle`.
+
+    The realistic form of I26(b) is not a null path, it is a path to a
+    DIFFERENT transcript than the one the segments were parsed from.
+    """
+    got = _run_record("captions", "/tmp/w/v.en.vtt")
+    assert got["subtitle_path"] == "/tmp/w/v.en.vtt"
+    assert got["unused_subtitle_path"] is None
+    notemode_record = notemode.build_run(
+        source="url", video_id="VID", work=Path("/tmp/w"), info={},
+        duration=1.0, resolution=360, detail="low", video_path=None,
+        frames=[], dropped_seconds=[], transcript_source="captions",
+        transcript_segments=[{"start": 0.0}],
+        subtitle_path="/tmp/w/v.de-orig.vtt",
+        parsed_from="/tmp/w/v.en.vtt")["transcript"]
+    assert notemode_record["subtitle_path"] == "/tmp/w/v.en.vtt"
+    assert notemode_record["unused_subtitle_path"] == "/tmp/w/v.de-orig.vtt"
+
+
+def test_a_source_label_that_merely_begins_with_captions_is_not_captions():
+    """properties I26(a): `captionsless` was treated as captions."""
+    assert _run_record("captionsless", None)["subtitle_path"] is None
+
+
+def test_rehome_leaves_a_sibling_directory_alone(tmp_path: Path):
+    """properties I27: `startswith` with no separator boundary.
+
+    A sibling whose name merely BEGINS with the run's name had its recorded
+    paths rewritten to a location that does not exist.
+    """
+    work = tmp_path / "pending" / "run"
+    work.mkdir(parents=True)
+    sibling = tmp_path / "pending" / "run-old"
+    sibling.mkdir()
+    stray = sibling / "video.en.vtt"
+    stray.write_text("WEBVTT\n", encoding="utf-8")
+    dl = {"subtitle_path": str(stray), "video_path": None}
+
+    notemode.rehome(work, tmp_path / "abc123" / "run-01", dl)
+
+    assert dl["subtitle_path"] == str(stray)
+    assert Path(dl["subtitle_path"]).is_file()
+
+
 def test_the_source_digest_is_recorded(cut_clip: Path, tmp_path: Path):
     _run(cut_clip, "--make-note", note_dir=tmp_path)
     assert _run_json(tmp_path)["video_sha256"] == notemode.sha256(cut_clip)

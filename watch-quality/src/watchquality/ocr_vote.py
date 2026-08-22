@@ -76,6 +76,8 @@ from .resolve_note import (RE_VIDEO_ID, anchor_seconds, safe_read,  # noqa: E402
 from .wq_policy import load as load_policy  # noqa: E402
 
 PROG = "ocr_vote.py"
+# Read as a gate by `watch-audit`, with these flags (see `resolve_note`).
+GATE_FLAGS: tuple[str, ...] = ("--check",)
 PIXEL_CLASS = "ON-SCREEN"
 AUDIO_CLASSES = ("SPOKEN", "INFERRED")
 
@@ -462,7 +464,16 @@ def selftest() -> int:
             print(f"FAIL {label}: got {got!r} want {want!r}", file=sys.stderr)
             raise SystemExit(1)
 
-    check("levenshtein", levenshtein("prestey", "priestley"), 2)
+    # The harness decides what ran. `check`'s calls ARE this module's cases,
+    # which is why its name is handed over here rather than kept private, and
+    # `done()` below is where the evidence goes and a wrong answer is refused.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin(check)
+
+    # An INVENTED surname and an invented misreading of it. The pair here was
+    # once a real one taken from a private corpus, and it sat in a public fork
+    # for as long as the refused-literal match was case-sensitive.
+    check("levenshtein", levenshtein("vandell", "vandellis"), 2)
     check("levenshtein caps", levenshtein("a", "abcdefgh"), 4)
     check("tolerance by length", (tolerance("Ivy"), tolerance("Whitfield")), (1, 2))
     check("stoplist drops sentence openers",
@@ -470,7 +481,7 @@ def selftest() -> int:
     check("code spans are not claims",
           candidate_tokens("`ON-SCREEN` the `Whitfield` model"), [])
     check("all-caps tags are not proper nouns",
-          candidate_tokens("HEYGEN and Seedance"), ["Seedance"])
+          candidate_tokens("OKAPILANE and Trellick"), ["Trellick"])
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -572,6 +583,7 @@ def selftest() -> int:
               sum("E-OCR-ROW" in x
                   for x in read_index(idir / "BROKEN.tsv").defects), 1)
 
+    proof.done()
     print(f"selftest OK ({cases} cases)")
     return 0
 
@@ -633,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     files = collect_notes([p.resolve() for p in args.paths]
-                          or [root / load_policy().notes_dir()])
+                          or [root / load_policy().notes_dir()], root)
     defects: list[str] = []
     advisory: list[str] = []
     rows: list[dict] = []

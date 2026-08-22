@@ -45,11 +45,14 @@ from pathlib import Path
 from .resolve_note import (DEMOTED_MARK, INTEGRITY_PREFIX,  # noqa: E402
                           LOST_REVIEWS, ORPHAN_MARK, RE_VIDEO_ID,
                           SPECULATION_HEADING, collect, lane_ids, lane_matches,
-                          lane_reports, split_frontmatter)
+                          lane_reports, refuses_empty, split_frontmatter)
 from .wq_policy import load as load_policy  # noqa: E402
 
 POLICY = load_policy()
 
+PROG = "demote_note.py"
+# Read as a gate by `watch-audit`, with these flags (see `resolve_note`).
+GATE_FLAGS: tuple[str, ...] = ("--diff",)
 CLAIMS_SECTION = "Claims"
 OBJECTION_SECTION = "Where it breaks"
 EVIDENCE_CLASSES = ("ON-SCREEN", "SPOKEN", "INFERRED")
@@ -349,6 +352,12 @@ def review_reports(body: str, frontmatter: str, root: Path) -> tuple[int, list[s
 
 def selftest(root: Path) -> int:
     """A counter nobody has seen fire is not evidence of a clean repo."""
+    # This selftest asserts inline, so there is no comparator to name: the
+    # harness reads its `assert` statements as the cases instead, and what
+    # `done()` can still prove is that `assert` bites in this interpreter.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin()
+
     import tempfile
     head = ('---\ntitle: t\nvideo_id: FIXTURE\nduration: "1:00"\n---\n\n'
             "## Claims\n\n"
@@ -412,12 +421,17 @@ def selftest(root: Path) -> int:
         # ...and a note written before the convention still counts what it cites.
         assert review_reports(body, "video_id: VID\n", r2)[0] == 1
         cases += 1
+    proof.done()
     print(f"selftest OK ({cases} cases)")
     return 0
 
 
-def main(argv: list[str]) -> int:
-    root = POLICY.root(fallback=Path(__file__).resolve().parent.parent)
+def main(argv: list[str], root: Path | None = None) -> int:
+    # `root` is a parameter for the same reason the other two gates take one:
+    # without it this entry point can only be driven against whatever corpus
+    # the policy happens to resolve, so the one case that would have caught
+    # verification G1 could not be written at all.
+    root = root or POLICY.root(fallback=Path(__file__).resolve().parent.parent)
     ap = argparse.ArgumentParser(description="count would-be demotions per note")
     ap.add_argument("paths", nargs="*", type=Path)
     ap.add_argument("--dry-run", action="store_true", default=True,
@@ -436,11 +450,24 @@ def main(argv: list[str]) -> int:
     if args.selftest:
         return selftest(root)
 
+    # A `.md` file under the corpus that this renderer turned away is named,
+    # not dropped: a renamed or hand-written note leaving the audited set was
+    # silent in every gate at once (mechanism F15).
+    skipped: list[str] = []
+    # ONE collection, asked ONCE about being empty. Both branches below used to
+    # call `collect` themselves and neither asked, so this gate alone read an
+    # empty corpus as `# 0 notes would change`, exit 0 (verification G1).
+    files = collect([p.resolve() for p in args.paths]
+                    or [root / POLICY.notes_dir()], root, skipped)
+    for s in skipped:
+        print(f"# not collected: {s}", file=sys.stderr)
+    if refuses_empty(files, args.paths, PROG):
+        return 2
+
     if args.diff or args.apply:
         import difflib
         changed = 0
-        for f in collect([p.resolve() for p in args.paths]
-                     or [root / POLICY.notes_dir()]):
+        for f in files:
             before = f.read_text(encoding="utf-8")
             after = render(before, root)
             if after == before:
@@ -456,9 +483,7 @@ def main(argv: list[str]) -> int:
         print(f"# {changed} notes {verb}", file=sys.stderr)
         return 0
 
-    rows = [count_note(f, root, args.all_sections) for f in
-            collect([p.resolve() for p in args.paths]
-                        or [root / POLICY.notes_dir()])]
+    rows = [count_note(f, root, args.all_sections) for f in files]
 
     cols = ("claims", "untagged", "objections", "speculation", "orphans",
             "lanes_missing", "demotions")

@@ -132,28 +132,41 @@ def score(out: Path, claims: Path) -> int:
 
 
 def selftest() -> int:
+    # This selftest asserts inline, so there is no comparator to name: the
+    # harness reads its `assert` statements as the cases instead, and what
+    # `done()` can still prove is that `assert` bites in this interpreter.
+    from watchquality import selftest_proof
+    proof = selftest_proof.begin()
+
     import tempfile
+    # COUNTED, not typed. `print("selftest OK (5 cases)")` was a literal, and
+    # a literal is the same defect the case-count floor exists to catch one
+    # level down: a number that says what the selftest did without being
+    # computed from what it did. It read 5 while four `assert` statements ran.
+    cases = 0
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
         build(d, 4, seed=7, start=60, step=30)
         truth = read_pairs(d / ANSWERS)
-        assert len(truth) == 4 and len(set(truth.values())) == 4, truth
+        assert len(truth) == 4, truth; cases += 1
+        assert len(set(truth.values())) == 4, truth; cases += 1
         names = sorted(truth)
         # An exact transcription scores clean.
         good = d / "good.tsv"
         good.write_text("".join(f"{n}\t{truth[n]}\n" for n in names))
-        assert score(d, good) == 0
+        assert score(d, good) == 0; cases += 1
         # Two labels swapped -- the exact shape of R1 -- must not.
         bad = d / "bad.tsv"
         swapped = dict(truth)
         swapped[names[0]], swapped[names[1]] = truth[names[1]], truth[names[0]]
         bad.write_text("".join(f"{n}\t{swapped[n]}\n" for n in names))
-        assert score(d, bad) == 1
+        assert score(d, bad) == 1; cases += 1
         # Determinism: same seed, same codes.
         d2 = Path(td) / "again"
         build(d2, 4, seed=7, start=60, step=30)
-        assert read_pairs(d2 / ANSWERS) == truth
-    print("selftest OK (5 cases)")
+        assert read_pairs(d2 / ANSWERS) == truth; cases += 1
+    proof.done()
+    print(f"selftest OK ({cases} cases)")
     return 0
 
 
