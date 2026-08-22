@@ -164,7 +164,8 @@ def load_segments(path: Path) -> list[dict]:
         # watch-quality.toml (which say_captions reads at import) cannot stop
         # this command from checking a pair of JSON renderings.
         from .say_captions import cues
-        return [{"start": s, "end": e, "text": t} for s, e, t in cues(path)]
+        return _sayable([{"start": s, "end": e, "text": t}
+                         for s, e, t in cues(path)])
 
     if path.suffix.lower() == ".tsv":
         # The caption index a corpus keeps beside its notes is a rendering like
@@ -185,7 +186,8 @@ def load_segments(path: Path) -> list[dict]:
                 continue
         if not out:
             raise ValueError("no start/end/text rows in this .tsv")
-        return sorted([s for s in out if s["text"]], key=lambda s: s["start"])
+        return _sayable(sorted([s for s in out if s["text"]],
+                               key=lambda s: s["start"]))
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, dict) and "transcription" in raw:      # whisper.cpp -oj
@@ -209,25 +211,34 @@ def load_segments(path: Path) -> list[dict]:
         raise ValueError("not a transcript: expected .vtt, or JSON with "
                          "'transcription', 'segments', or a bare segment list")
     out = [s for s in out if s["text"]]
-    # A START AND AN END ARE NUMBERS OF SECONDS INTO A RECORDING, and `Infinity`
-    # is legal JSON that `json.loads` hands over as a float. Nothing downstream
-    # expected one: the window planner walks `at += stride` while `at < total`,
-    # so an infinite total appended to a list for ever -- killed under
-    # `timeout 20`, rc 124, reproduced twice, and nothing rescues it, because
-    # the runner catches a check that fails and one that raises and has no
-    # catch for one that never returns (V1 section D).
-    #
-    # Refused HERE and not at the planner. The planner is one consumer of these
-    # numbers; the recall counter, the aligner, the coverage walk and the
-    # caption index are others, and a guard per consumer is a guard per
-    # consumer to forget.
-    for s in out:
+    return _sayable(sorted(out, key=lambda s: s["start"]))
+
+
+def _sayable(segments: list[dict]) -> list[dict]:
+    """Every start and end is a number of seconds, or nobody reads this file.
+
+    `Infinity` is legal JSON that `json.loads` hands over as a float, and a
+    caption index is a text file where `inf` is what `float()` makes of the
+    word. Nothing downstream expected either: the window planner walks
+    `at += stride` while `at < total`, so an infinite total appended to a list
+    for ever -- killed under `timeout 20`, rc 124, reproduced twice -- and
+    nothing rescues it, because the runner catches a check that fails and one
+    that raises and has no catch for one that never returns (V1 section D).
+
+    ASKED OF EVERY BRANCH, which is why it is a function. It began as four
+    lines at the end of the JSON path, past the `return` of the `.vtt` reader
+    and the `return` of the `.tsv` one -- and the comment justifying it named
+    "the caption index" among the consumers it protected, which IS the `.tsv`
+    branch. The one reader named in the argument was one of the two the guard
+    could not see (round-14 F4).
+    """
+    for s in segments:
         for field in ("start", "end"):
             if not math.isfinite(s[field]):
                 raise ValueError(
                     f"{s[field]} is not a number of seconds into a recording; "
                     f"a segment's {field} has to be one")
-    return sorted(out, key=lambda s: s["start"])
+    return segments
 
 
 def tokens_with_times(segments: list[dict]) -> tuple[list[str], list[float]]:

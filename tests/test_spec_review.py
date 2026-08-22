@@ -910,6 +910,29 @@ def test_a_globbed_oracle_is_bounded_to_the_places_a_rendering_can_be(value):
     assert took < 2.0, f"answered in {took:.1f}s, which is a walk not a lookup"
 
 
+def test_a_globbed_oracle_cannot_climb_out_with_a_dot_dot(tmp_path):
+    """round-14 F1 — `is_relative_to` is lexical and does not normalise `..`.
+
+    `Path('/a/runs/../..').is_relative_to(Path('/a/runs'))` is True: the
+    comparison is over path COMPONENTS, and `..` is just another component. So
+    an anchor of `<runs>/../../..` passed the containment test and the glob
+    then walked from wherever `..` actually landed -- the whole-disk hang, back
+    verbatim, rc 124 twice.
+
+    Would fail if: the anchor stops being resolved before it is compared.
+    """
+    import time
+    root = tmp_path.resolve()
+    (root / "runs").mkdir()
+
+    start = time.monotonic()
+    got = rn._first_match(root / "runs/../../../**/*.json", (root,))
+    took = time.monotonic() - start
+
+    assert got is None, got
+    assert took < 2.0, f"answered in {took:.1f}s, which is a walk not a lookup"
+
+
 def test_a_globbed_oracle_inside_the_corpus_still_resolves(tmp_path):
     """The neighbour that keeps the bound from being a refusal of everything.
 

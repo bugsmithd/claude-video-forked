@@ -398,6 +398,16 @@ def test_a_note_is_not_graded_against_another_videos_transcript(tmp_path):
     assert theirs[0] is None, theirs
     assert "VID" in theirs[1], theirs[1]
 
+    # round-14 F2 — and the SAME file reached through `..`. The relatedness
+    # test asks whether the video id is a whole component of the path, and its
+    # docstring says it is asked of the normalised path. It was not: the value
+    # arrived straight from the resolver, so `runs/VID/../OTHER/run.json`
+    # carried `VID` as a component and was graded as this note's own.
+    dotted = ng.rendering_for(
+        note_naming(str(root / "runs/VID/../OTHER/run.json")), root)
+    assert dotted[0] is None, dotted
+    assert "VID" in dotted[1], dotted[1]
+
 
 def test_the_gate_declares_itself_and_runs_after_the_note_gate():
     """The roster is derived from `GATE_FLAGS`, and order from the imports.

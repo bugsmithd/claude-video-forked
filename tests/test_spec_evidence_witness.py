@@ -840,13 +840,16 @@ def test_a_seam_reconciled_twice_is_refused_as_padding(tmp_path):
 # note_coverage -- E-COV-ROWSHAPE
 # ==========================================================================
 
-def test_a_sixth_misshapen_line_is_dropped_by_a_silent_cap(tmp_path):
-    """The cap says nothing about itself, and the sibling rule does.
+def test_a_sixth_misshapen_line_is_counted_rather_than_dropped(tmp_path):
+    """round-14 F5 — the cap said nothing about itself, and the sibling does.
 
     `note_windows` prints a further-orphans line for exactly this reason, and
     its own comment says a cap that hides what mattered is the same failure as
-    not printing it. Here the sixth misshapen line is measured, counted, and
-    then dropped without a word.
+    not printing it. Here the sixth misshapen line was measured, counted, and
+    then dropped without a word -- so a reader shown 32 lines over a corpus
+    carrying 105 had no way to tell the cap from the count.
+
+    Would fail if: the remainder line goes away, or the cap changes without it.
     """
     note = "".join(f"- `[00:{i:02d}]` `SPOKEN` a claim with no dash at all "
                    f"number {i}.\n" for i in range(6))
@@ -855,8 +858,9 @@ def test_a_sixth_misshapen_line_is_dropped_by_a_silent_cap(tmp_path):
     found = nc.defects(result)
 
     assert len(result["misshapen_rows"]) == 6, "all six are seen"
-    assert len(named(found, "E-COV-ROWSHAPE")) == 5, "and five are reported"
-    assert not any("6" in line and "further" in line for line in found)
+    shapes = named(found, "E-COV-ROWSHAPE")
+    assert len(shapes) == nc.ROWSHAPE_SHOWN + 1, shapes
+    assert "6 in total" in shapes[-1], shapes[-1]
 
 
 def test_a_row_written_with_an_en_dash_is_a_row(tmp_path):
@@ -1301,7 +1305,10 @@ def test_a_window_holding_exactly_half_the_segments_is_on_the_ceiling(tmp_path):
                                 "--overlap", "0")
 
     assert [w["segments"] for w in plan] == [30, 30]
-    assert max(w["segments"] for w in plan) == len(segments) * nw.OVERFULL_SHARE
+    # Half of the segments, against a ceiling that an even two-window split
+    # puts well above it: `(1 + 0/300) / 2 * 2` is 1.0, capped at 0.9.
+    assert max(w["segments"] for w in plan) < len(segments) * nw.overfull_share(
+        len(plan), 300.0, 0.0)
     assert (code, defects) == (0, [])
 
 
@@ -1323,11 +1330,7 @@ def test_a_front_loaded_recording_is_refused_as_an_unsplit_plan(tmp_path):
     overfull = named(defects, "E-WIN-OVERFULL")
     assert code == 1
     assert len(overfull) == 1, defects
-    # "and shares none of them" is the half that was added when the count
-    # became uniquely-owned segments rather than members: the opening 500 sit
-    # inside one window and no other, which is the finding (V2-3a).
     assert "one window holds 500 of 540 segments" in overfull[0]
-    assert "shares none of them" in overfull[0]
 
 
 # ==========================================================================
@@ -1445,6 +1448,56 @@ def test_a_denser_middle_stretch_is_not_an_unsplit_video(tmp_path):
     assert not [f for f in found if "E-WIN-OVERFULL" in f], found
 
 
+def test_a_quiet_middle_is_not_an_unsplit_video(tmp_path):
+    """round-14 F6 — the replacement threshold moved the false positive.
+
+    "Some window uniquely owns nothing" fires whenever a window's exclusive
+    stretch happens to hold no segments, and a silence is an ordinary property
+    of a real recording. A 25-minute talk with a seven-minute gap in the middle
+    -- three windows, none empty, nothing orphaned, a real split -- was
+    reported as a plan that did not split, which is the same class of error as
+    the flat share it replaced, on the adjacent input.
+    """
+    segments = [{"start": float(t), "end": float(t) + 4.0,
+                 "text": f"a remark at {t} about widgets and gears"}
+                for t in range(0, 590, 5)]
+    segments += [{"start": float(t), "end": float(t) + 4.0,
+                  "text": f"a later remark at {t} about levers"}
+                 for t in range(1030, 1530, 5)]
+
+    code, found = run_windows(tmp_path, segments)
+
+    assert not [f for f in found if "E-WIN-OVERFULL" in f], found
+
+
+def test_a_window_holding_almost_the_whole_recording_is_refused(tmp_path):
+    """round-14 F3 — what costs an agent its context is what a window HOLDS.
+
+    Both conditions measured uniquely-owned segments, so a plan where every
+    window owns a small equal slice satisfied neither however much each window
+    actually held: 300 segments stamped `0 -> 3600` plus two ordinary markers
+    per window gave seven windows each holding 96% of a one-hour recording,
+    14,770 words including overlap, reported as a clean plan of seven windows.
+    That is the single overloaded context the module exists to prevent.
+
+    Would fail if: the check goes back to counting what a window owns alone.
+    """
+    segments = [{"start": 0.0, "end": 3600.0,
+                 "text": f"a segment {i} stamped across the whole hour"}
+                for i in range(300)]
+    for i in range(7):
+        at = 60.0 + i * 500.0
+        segments += [{"start": at, "end": at + 5.0,
+                      "text": f"an ordinary marker {i} inside one window"},
+                     {"start": at + 6.0, "end": at + 11.0,
+                      "text": f"a second marker {i} inside the same window"}]
+    segments.sort(key=lambda s: s["start"])
+
+    code, found = run_windows(tmp_path, segments)
+
+    assert [f for f in found if "E-WIN-OVERFULL" in f], found
+
+
 def test_one_window_holding_the_whole_recording_is_still_refused(tmp_path):
     """The shape the threshold was written for, kept.
 
@@ -1492,6 +1545,31 @@ def test_a_stamp_that_is_not_a_number_of_seconds_is_refused_at_the_reader(
     with pytest.raises(ValueError) as caught:
         ta.load_segments(path)
     assert "seconds" in str(caught.value), caught.value
+
+
+def test_every_reader_branch_refuses_a_stamp_that_is_not_seconds(tmp_path):
+    """round-14 F4 — the guard sat past two of the four return paths.
+
+    `load_segments` has four branches and the `.vtt` and `.tsv` ones return
+    before the check. The comment justifying the guard named "the caption
+    index" among the consumers it protects, and the caption index IS the `.tsv`
+    branch: the one reader named in the argument was one of the two the guard
+    could not see. A `.tsv` whose first stamp is the literal `inf` was accepted
+    and then killed the aligner in `hms`, on `int(seconds)`.
+
+    Would fail if: the guard stops being applied to every branch.
+    """
+    tsv = tmp_path / "idx.tsv"
+    tsv.write_text("# start\tend\ttext\ninf\t10\thello world one\n"
+                   "20\t30\tsecond row here\n", encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        ta.load_segments(tsv)
+    assert "seconds" in str(caught.value), caught.value
+
+    vtt = tmp_path / "r.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nhello there\n",
+                   encoding="utf-8")
+    assert ta.load_segments(vtt), "an ordinary caption file still reads"
 
 
 def test_the_window_planner_terminates_on_every_rendering_it_is_handed():

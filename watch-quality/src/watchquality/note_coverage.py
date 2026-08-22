@@ -113,6 +113,12 @@ MIN_LINE_WORDS = 4
 # How far into a file a frontmatter block may close. Beyond this the opening
 # `---` was a horizontal rule, and treating it as frontmatter deletes the note.
 FRONTMATTER_LINES = 80
+# Misshapen rows quoted one by one before the rest are counted. Five names the
+# problem; a note carrying thirty-six would bury everything else this check
+# says. The remainder is COUNTED on a line of its own -- it used to be dropped,
+# and a reader shown 32 lines over a corpus carrying 105 could not tell the cap
+# from the count (round-14 F5).
+ROWSHAPE_SHOWN = 5
 
 RE_RAW = re.compile(r"[A-Za-z0-9'’]+")
 # THREE digits in the leading field, and every dash. A two-hour recording is
@@ -652,10 +658,20 @@ def defects(result: dict) -> list[str]:
             f"[00:00] E-COV-LIST {result['recall']['all']['carried']} carried "
             f"token(s) in {result['note_words']} word(s) of note; at that "
             f"density this is a word list rather than a set of claims")
-    for line in result.get("misshapen_rows", [])[:5]:
+    shapes = result.get("misshapen_rows", [])
+    for line in shapes[:ROWSHAPE_SHOWN]:
         out.append(
             f"[00:00] E-COV-ROWSHAPE a line looks like a claim row and does not "
             f"parse as one, so nothing counted it: {line}")
+    # THE REST ARE COUNTED, not dropped. Five per note was a silent truncation:
+    # a reader shown 32 lines over a corpus carrying 105 has no way to tell the
+    # cap from the count, and "32 findings" reads as the number there are
+    # (round-14 F5).
+    if len(shapes) > ROWSHAPE_SHOWN:
+        out.append(
+            f"[00:00] E-COV-ROWSHAPE {len(shapes) - ROWSHAPE_SHOWN} more "
+            f"line(s) in this note look like claim rows and do not parse as "
+            f"one; {len(shapes)} in total, {ROWSHAPE_SHOWN} shown")
     if result["recall"]["all"]["of"] < MIN_SALIENT:
         out.append(
             f"[00:00] E-COV-THIN only {result['recall']['all']['of']} salient "

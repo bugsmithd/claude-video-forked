@@ -1496,14 +1496,28 @@ def _first_match(pattern: Path, roots: tuple[Path, ...] = ()) -> Path | None:
     globbed = next((i for i, part in enumerate(parts)
                     if any(c in part for c in "*?[")), None)
     if globbed is None:
-        return pattern if pattern.is_file() else None
+        # RESOLVED ON THE WAY OUT, every path. `oracle_names_run` asks whether
+        # the video id is a whole COMPONENT of what came back, and its own
+        # docstring says it is asked of the normalised path -- which this was
+        # not, so `runs/VID/../OTHER/run.json` carried `VID` as a component and
+        # another video's transcript was graded as this note's own
+        # (round-14 F2).
+        return pattern.resolve() if pattern.is_file() else None
     anchor = Path(*parts[:globbed]) if globbed else Path(".")
-    if anchor.is_absolute() and not any(
-            anchor == r or anchor.is_relative_to(r) for r in roots):
-        return None
+    if anchor.is_absolute():
+        # RESOLVED FIRST. `is_relative_to` compares path COMPONENTS and `..` is
+        # just another component, so `<runs>/../../..` was "inside <runs>" and
+        # the glob then walked from wherever `..` actually landed -- the
+        # whole-disk hang, back verbatim, rc 124 twice. A symlinked corpus had
+        # the mirror-image bug: the roots were resolved and the anchor was not,
+        # so every absolute globbed oracle was refused (round-14 F1, F10).
+        anchor = anchor.resolve()
+        if not any(anchor == r.resolve() or anchor.is_relative_to(r.resolve())
+                   for r in roots):
+            return None
     matches = sorted(p for p in anchor.glob(str(Path(*parts[globbed:])))
                      if p.is_file())
-    return matches[0] if matches else None
+    return matches[0].resolve() if matches else None
 
 
 def note_oracle_target(value: str, rel, root: Path, video_id: str) -> Path | None:

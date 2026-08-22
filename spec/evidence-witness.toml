@@ -310,8 +310,8 @@ case = "a row carrying a speaker mark in brackets before the dash, which must NO
 test = "note_coverage::a speaker mark before the dash does not hide a row"
 kind = "selftest"
 [[rule.neighbour]]
-case = "a sixth misshapen line in one note, which is dropped by a cap that says nothing about itself"
-test = "tests/test_spec_evidence_witness.py::test_a_sixth_misshapen_line_is_dropped_by_a_silent_cap"
+case = "a sixth misshapen line in one note, which is counted on a line of its own rather than dropped"
+test = "tests/test_spec_evidence_witness.py::test_a_sixth_misshapen_line_is_counted_rather_than_dropped"
 kind = "pytest"
 [[rule.neighbour]]
 case = "a row spanning two anchors, which is how a claim that ran on is written and must NOT be refused"

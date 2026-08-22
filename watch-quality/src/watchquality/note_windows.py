@@ -37,7 +37,6 @@ Exit: 0 windows printed, 1 a window came out empty, 2 usage or unreadable input.
 from __future__ import annotations
 
 import argparse
-import collections
 import json
 import math
 import sys
@@ -55,19 +54,39 @@ WINDOW_SECONDS = 600.0
 # windows and reconciled at merge. Below about a minute a sentence can begin in
 # one window and land its point in the next with neither having both halves.
 OVERLAP_SECONDS = 90.0
-# One window holding more than this share of a multi-window plan ALONE -- with
-# no other window sharing those segments -- means the split did not happen. An
-# adversarial lane produced it by setting every segment's start to zero: window
-# 1 took all 360 segments over a full hour, which is exactly the single
-# overloaded context the windows exist to prevent, reported as a clean plan of
-# seven windows.
+# One window holding more than its share of a multi-window plan means the split
+# did not happen. An adversarial lane produced it by setting every segment's
+# start to zero: window 1 took all 360 segments over a full hour, which is
+# exactly the single overloaded context the windows exist to prevent, reported
+# as a clean plan of seven windows.
 #
-# Measured against uniquely-owned segments rather than members, because windows
-# overlap by design and a member count double-counts every segment at a seam.
-# The shares of a three-window plan then sum to about 115%, so a recording
-# whose middle talks faster cleared a flat half without anything being wrong
-# (V2 finding V2-3a).
-OVERFULL_SHARE = 0.5
+# WHAT A WINDOW HOLDS is the quantity that costs an agent its context, and two
+# earlier versions of this rule measured something else. A flat half over the
+# member count fired on a recording whose middle simply talks faster, because
+# windows overlap by design and the shares of a three-window plan sum to about
+# 115% while the arithmetic floor for the largest of three is already 33%
+# (V2-3a). Counting only what a window owns ALONE fixed that and opened a
+# hole a lane walked straight through: where every window holds every segment,
+# no window owns anything alone, so seven windows each holding 96% of an hour
+# passed (round-14 F3), and a recording with a quiet middle failed for having
+# a window whose exclusive stretch was silent (round-14 F6).
+#
+# So the share is compared against what an EVEN split of this plan would give.
+# A segment lands in at most two windows, so an even split puts about
+# `(1 + overlap/stride) / windows` of them in each; twice that is the ceiling,
+# and OVERFULL_CEILING caps it so a two-window plan is not left unguarded.
+OVERFULL_SLACK = 2.0
+OVERFULL_CEILING = 0.9
+
+
+def overfull_share(windows: int, window_seconds: float,
+                   overlap_seconds: float) -> float:
+    """The share of segments one window may hold before the split is a fiction."""
+    stride = max(window_seconds - overlap_seconds, 1e-9)
+    even = (1.0 + overlap_seconds / stride) / max(windows, 1)
+    return min(even * OVERFULL_SLACK, OVERFULL_CEILING)
+
+
 # Orphans printed one by one before the rest are counted. Ten names the problem;
 # eight hundred would bury the window table that explains it.
 ORPHANS_SHOWN = 10
@@ -491,26 +510,13 @@ def main(argv: list[str] | None = None) -> int:
     # Uniquely-owned segments answer the question the threshold's own comment
     # describes -- one window holding the whole recording -- and the answer does
     # not move with the window count or with the overlap.
-    owners = collections.Counter(
-        i for w in windows for i in w.get("members", []))
-    alone = [sum(1 for i in w.get("members", []) if owners[i] == 1)
-             for w in windows]
-    if len(windows) > 1 and max(alone, default=0) > len(segments) * OVERFULL_SHARE:
+    biggest = max((w["segments"] for w in windows), default=0)
+    if len(windows) > 1 and biggest > len(segments) * overfull_share(
+            len(windows), args.window, args.overlap):
         defects.append(
-            f"[00:00] E-WIN-OVERFULL one window holds {max(alone)} of "
-            f"{len(segments)} segments and shares none of them; the plan says "
-            f"it split the video and the numbers say it did not")
-    # THE OTHER SHAPE, which uniqueness alone cannot see. When every window
-    # holds every segment -- a decoder that stamped the whole hour at zero --
-    # NO window owns anything alone, so the count above is 0 for all of them
-    # and the worst plan there is looks like the best. A window that owns
-    # nothing of its own is a window that added nothing to the split.
-    elif len(windows) > 1 and min(alone, default=1) == 0:
-        empty = alone.index(0)
-        defects.append(
-            f"[00:00] E-WIN-OVERFULL window {empty + 1} of {len(windows)} "
-            f"holds no segment another window does not already hold; the plan "
-            f"says it split the video and the numbers say it did not")
+            f"[00:00] E-WIN-OVERFULL one window holds {biggest} of "
+            f"{len(segments)} segments; the plan says it split the video and "
+            f"the numbers say it did not")
     for defect in defects:
         print(defect)
     print(f"# {len(windows)} window(s), "
