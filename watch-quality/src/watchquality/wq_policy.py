@@ -219,10 +219,49 @@ def _check_dated(table: str, key: str, reason: object) -> None:
             f"in the future excuses everything filed before that day")
 
 
+def _check_caps(raw: dict) -> None:
+    """Every ledger may only shrink, and now that is a number rather than a sentence.
+
+    Five tables here say it in their own comments and nothing read any of their
+    sizes. `unheadered_reviews` is the one that matters most: it decides
+    whether the report header is checked at all, and in the corpus this package
+    was written for it reaches 55 of 59 report files -- every one of which
+    would be a defect without its row, so it is load-bearing for all of what it
+    covers rather than a formality over a legacy tail (verification-3 T1, T2,
+    T4).
+
+    A corpus declares the caps because the rows are a fact about that corpus;
+    the package supplies the rule. A cap naming no table is refused, because a
+    rename would otherwise leave the number sitting there enforcing nothing.
+    """
+    caps = raw.get("ledger_caps", {})
+    if not isinstance(caps, dict):
+        raise PolicyError("[ledger_caps] must be a table")
+    known = set(TABLES) | set(NESTED_TABLES)
+    for table, cap in caps.items():
+        if table not in known:
+            raise PolicyError(
+                f"[ledger_caps] {table}: no such ledger; a cap on a table "
+                f"nobody keeps enforces nothing")
+        if not isinstance(cap, int) or isinstance(cap, bool) or cap < 0:
+            raise PolicyError(
+                f"[ledger_caps] {table}: {cap!r} is not a number of rows")
+        held = raw.get(table, {})
+        rows = (sum(len(v) for v in held.values())
+                if table in NESTED_TABLES else len(held))
+        if rows > cap:
+            raise PolicyError(
+                f"[{table}] holds {rows} row(s) against a declared cap of "
+                f"{cap}; this table may only shrink -- pay the debt, or lower "
+                f"the cap in the same commit as the row you deleted")
+
+
 def _validate(raw: dict) -> None:
-    unknown = set(raw) - set(DEFAULTS) - set(TABLES) - set(NESTED_TABLES)
+    unknown = (set(raw) - set(DEFAULTS) - set(TABLES) - set(NESTED_TABLES)
+               - {"ledger_caps"})
     if unknown:
         raise PolicyError(f"unknown key(s): {', '.join(sorted(unknown))}")
+    _check_caps(raw)
     for table in TABLES:
         entries = raw.get(table, {})
         if not isinstance(entries, dict):

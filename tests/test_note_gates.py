@@ -409,6 +409,52 @@ def test_a_note_is_not_graded_against_another_videos_transcript(tmp_path):
     assert "VID" in dotted[1], dotted[1]
 
 
+def test_a_finding_reaches_main_with_the_exit_code_and_shape_it_declares(corpus):
+    """V1 Q2 and Q3 — the rules declared `exit = 1` and a greppable shape.
+
+    Every case they cited called `_run` with a SUBSTITUTED function, asserted
+    the returned tuple, and never reached `main`. So the exit code the table
+    declares was pinned by nothing, and the docstring's claim about a single
+    shape a reader can grep for was checked by cases that stripped the note
+    path off the front of the line before matching -- which proves the line
+    matches its siblings, not that it matches what `watch-audit` prints. A
+    reader grepping that output for the declared shape matched zero of this
+    gate's lines.
+
+    Nothing is substituted here: a real note, a real rendering on disk, the
+    entry point a caller uses, and the shape asserted whole.
+
+    Would fail if: `main` returns 0 having printed a defect, or the note path
+    stops prefixing the line.
+    """
+    (corpus / "runs" / "VID" / "real.json").write_text(json.dumps(
+        {"segments": [{"start": i * 30.0, "end": i * 30.0 + 30.0,
+                       "text": f"segment {i} about widgets and gears"}
+                      for i in range(40)]}), encoding="utf-8")
+    note = corpus / "notes" / "2026-08-20--real--VID.md"
+    note.write_text(
+        '---\nvideo_id: VID\nduration: "20:00"\nstatus: distilled\n'
+        "oracle: runs/VID/real.json\n---\n" + BODY, encoding="utf-8")
+
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = ng.main([str(note)], root=corpus)
+
+    printed = out.getvalue() + err.getvalue()
+    said = [ln for ln in printed.splitlines() if " E-" in ln]
+    assert code == 1, printed
+    assert said, printed
+    # And every line carries the shape the package demands of a finding, from
+    # the entry point rather than from a helper: `<path>: [MM:SS] E-CODE ...`.
+    # The cases this row cited stripped the note-path prefix before matching,
+    # so they proved the line matched its siblings rather than the shape a
+    # reader greps `watch-audit` output for -- and that grep matched zero of
+    # this gate's lines (V1 Q3).
+    import re
+    shape = re.compile(r"^\S+\.md: \[\d{2}:\d{2}\] E-[A-Z0-9-]+ \S")
+    assert all(shape.match(ln) for ln in said), said
+
+
 def test_the_gate_declares_itself_and_runs_after_the_note_gate():
     """The roster is derived from `GATE_FLAGS`, and order from the imports.
 

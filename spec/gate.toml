@@ -478,6 +478,10 @@ case = "the gate's own finding, which must carry the shape it demands of everyon
 test = "tests/test_note_gates.py::test_the_gates_own_finding_is_shaped_like_every_other_finding"
 kind = "pytest"
 [[rule.neighbour]]
+case = "the same finding through main rather than through a substituted check, with the note path still on the front of the line"
+test = "tests/test_note_gates.py::test_a_finding_reaches_main_with_the_exit_code_and_shape_it_declares"
+kind = "pytest"
+[[rule.neighbour]]
 case = "a prose failure, where what the check said is kept as evidence"
 test = "note_gates::and what it said is kept as evidence"
 kind = "selftest"
@@ -500,6 +504,11 @@ kind = "selftest"
 case = "a check that raises, where the exception type survives into the finding"
 test = "note_gates::and reports what raised"
 kind = "selftest"
+
+[[rule.neighbour]]
+case = "a real note and a real rendering through main, where the declared exit code and the declared line shape are both asserted whole"
+test = "tests/test_note_gates.py::test_a_finding_reaches_main_with_the_exit_code_and_shape_it_declares"
+kind = "pytest"
 
 # --- the policy and its ledgers ---------------------------------------------
 #

@@ -3359,6 +3359,24 @@ def main(argv: list[str], root: Path | None = None) -> int:
               file=sys.stderr)
     for line in stale_exemptions(root):
         print(line, file=sys.stderr)
+    # HOW MUCH OF THE REVIEW LAYER THIS RUN ACTUALLY READ. The same argument as
+    # the line below, one layer up: "all gates passed" over a corpus where 55
+    # of 59 report files are exempt from the header check is a clean bill of
+    # health for the four that were graded. Every one of the 55 would be a
+    # defect without its row, so the table is load-bearing for all of what it
+    # covers rather than a formality over a legacy tail (verification-3 T1, T2).
+    graded = excused = 0
+    for directory in sorted((root / REVIEW_DIR).glob("*")):
+        if not directory.is_dir():
+            continue
+        found = sum(1 for _ in directory.rglob("*.md"))
+        if directory.name in UNHEADERED_REVIEWS:
+            excused += found
+        else:
+            graded += found
+    print(f"# {graded + excused} review report(s) on disk, {graded} graded "
+          f"against a header, {excused} excused by "
+          f"{len(UNHEADERED_REVIEWS)} row(s)", file=sys.stderr)
     # "0 defects" over 8 notes used to read as "8 notes verified" when only the
     # 2 carrying a declaration were ever tested. Say how many were testable.
     print(f"# {len(files)} notes checked, {declared} with a declared density, "

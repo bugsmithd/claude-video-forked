@@ -30,6 +30,7 @@ from conftest import RENDERING
 BODY = "\n# t\n\nA body the lanes read.\n"
 
 
+
 def _fm(video_id: str = "VID", reviews: str | None = "[facts, quality, coverage]") -> str:
     # The rendering the note declares. `check_oracle` opens it, and the corpus
     # fixture puts a run under `runs/<video_id>/` for the value to name.
@@ -1047,6 +1048,78 @@ def test_an_undated_note_does_not_buy_the_whole_header_bypass(corpus):
         assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
     finally:
         del rn.UNHEADERED_REVIEWS["VID"]
+
+
+# --------------------------------------------------------------------------
+# verification-3 T1/T2/T4 — how much of the review layer is graded at all
+# --------------------------------------------------------------------------
+
+def test_the_run_says_how_many_reports_it_graded_and_how_many_it_excused(corpus):
+    """A gate that grades 4 of 59 files and prints "passed" is not reporting.
+
+    Measured on the corpus: 17 of 18 review directories carry an
+    `unheadered_reviews` row, so 55 of 59 report files are exempt from the
+    header check and 4 are graded -- and the audit printed "all gates passed"
+    with nothing saying which of those two numbers it was talking about. Every
+    one of the 55 would be a defect without its row, so the table is not a
+    formality covering a legacy tail; it is load-bearing for all of what it
+    covers (verification-3 T1, T2).
+
+    Would fail if: the reach line goes away, or stops counting the reports the
+    exemption reaches.
+    """
+    for lane in ("facts", "quality", "coverage"):
+        (_reports(corpus) / f"{lane}.md").write_text(
+            _header(_sha(), lane), encoding="utf-8")
+    note = corpus / "notes" / "2026-08-20--n--VID.md"
+    note.write_text(f"---\n{_fm()}---\n{BODY}", encoding="utf-8")
+
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+    err = io.StringIO()
+    rn.UNHEADERED_REVIEWS["VID"] = OLD_ROW
+    try:
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            rn.main(["--check", str(note)], root=corpus)
+    finally:
+        del rn.UNHEADERED_REVIEWS["VID"]
+    printed = err.getvalue()
+
+    assert "review report(s)" in printed, printed
+    assert "3 excused by 1 row" in printed, printed
+
+
+def test_a_ledger_may_not_grow_past_the_cap_its_own_policy_declares():
+    """"May only shrink" was a sentence in five files and a number in none.
+
+    Every debt table in the policy says it, and nothing read any of their
+    sizes. `unheadered_reviews` is the one that matters most -- it decides
+    whether the header check applies at all, and in the corpus this suite ships
+    beside it reaches 55 of 59 report files, every one of which would be a
+    defect without its row (verification-3 T4).
+
+    So a corpus declares the size of each ledger it keeps, and the loader
+    refuses a table that has outgrown its own declaration. The cap lives with
+    the table rather than in this file, because the rows are a fact about one
+    corpus and the rule is a fact about the package.
+
+    Would fail if: `_validate` stops reading `[ledger_caps]`.
+    """
+    rows = {f"VID{i}": "2020-01-01 filed before the header existed"
+            for i in range(3)}
+
+    wq_policy.Policy({"unheadered_reviews": rows,
+                      "ledger_caps": {"unheadered_reviews": 3}}, None)
+
+    with pytest.raises(wq_policy.PolicyError) as caught:
+        wq_policy.Policy({"unheadered_reviews": rows,
+                          "ledger_caps": {"unheadered_reviews": 2}}, None)
+    assert "may only shrink" in str(caught.value), caught.value
+
+    # A cap naming a table nobody keeps is a cap that enforces nothing, and it
+    # is the way this mechanism goes quiet: a rename, and the number is inert.
+    with pytest.raises(wq_policy.PolicyError):
+        wq_policy.Policy({"ledger_caps": {"no_such_table": 0}}, None)
 
 
 # --------------------------------------------------------------------------
