@@ -58,18 +58,33 @@ exit code, and a hook reads nothing else. With the flag, no words in force is a 
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
 
 PROG = "wq_corpus_scan.py"
 REQUIRE_FLAG = "--require-literals"
+# The one excuse this file gets, and it is a LINE rather than the file.
+#
+# This scanner quotes every shape it refuses, so something has to be excused.
+# Excusing the whole file meant a refused word written into it could never be
+# found, by construction -- and excusing it by RESOLVED path meant a copy of the
+# package anywhere else was scanned in full and refused its own invented
+# fixtures, so pointing the gate at a release tarball or a second worktree
+# exited 1 on files that leak nothing.
+#
+# A marked line is excused, and the marker is honoured only in a file with this
+# module's name -- so the original and every copy behave identically, no other
+# published page can spend the token, and every unmarked line of this file is
+# scanned like any other line.
+FIXTURE = "# WQ-FIXTURE"
 
 # An id is 11 chars of [A-Za-z0-9_-]. Bounded on both sides so a longer token
 # (a sha, a base64 blob) does not match a window inside itself.
 RE_ID = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{11}(?![A-Za-z0-9_-])")
 # EITHER ORDER. The first version required the date to come first, so
-# `frames reaped 2026-08-05` -- the way a person actually writes it -- walked
+# `frames reaped 2026-08-05` -- the way a person writes it -- walked  # WQ-FIXTURE
 # straight through a rule whose whole subject is that sentence.
 RE_DATED_EXEMPTION = re.compile(
     r"\d{4}-\d{2}-\d{2}.{0,80}?\b(exempt|exemption|reaped|waiv)"
@@ -172,6 +187,41 @@ def publishable(path: Path) -> bool:
     return path.suffix.lower() in TEXT_SUFFIXES or not path.suffix
 
 
+def _walk(target: Path):
+    """Every path under `target`, following symlinked directories exactly once.
+
+    `rglob` does not follow a symlinked directory, so a tree reachable only
+    through a link was never read -- and private content linked into a published
+    repository is precisely the thing this gate exists to catch. Following them
+    needs the seen-set in the same breath: a link back up the tree is a cycle,
+    and a link to a sibling would report the same file twice under two names.
+
+    Keyed on the RESOLVED directory, so two names for one directory are one
+    visit. Files are yielded under the name the walk reached them by, because
+    that is the name a reader has to go and look at.
+    """
+    seen: set[Path] = set()
+    stack = [target]
+    while stack:
+        directory = stack.pop()
+        try:
+            here = directory.resolve()
+        except OSError:
+            continue
+        if here in seen:
+            continue
+        seen.add(here)
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_dir():
+                stack.append(entry)
+            else:
+                yield entry
+
+
 def collect(targets: list[Path],
             skipped: list[Path] | None = None,
             unread: list[Path] | None = None) -> list[Path]:
@@ -197,7 +247,7 @@ def collect(targets: list[Path],
         if not target.is_dir():
             files.append(target)
             continue
-        for p in target.rglob("*"):
+        for p in _walk(target):
             if not p.is_file():
                 continue
             # DIRECTORY components only. Matching the whole path meant a
@@ -218,19 +268,23 @@ def collect(targets: list[Path],
                     unread.append(p)
                 continue
             files.append(p)
-    # This scanner quotes every shape it refuses, so it would refuse itself --
-    # ITSELF, resolved, and not every file that shares its name. A stale build
-    # copy of this module is tracked, published, and was permanently unscanned
-    # under the name comparison this replaces.
-    me = Path(__file__).resolve()
-    return sorted({f for f in files if f.resolve() != me})
+    # Deduplicated by RESOLVED path, because two names for one file -- a link
+    # and its target, a directory reached twice -- are one file to scan.
+    out: dict[Path, Path] = {}
+    for f in files:
+        try:
+            key = f.resolve()
+        except OSError:
+            key = f
+        out.setdefault(key, f)
+    return sorted(out.values())
 
 
 # A moment, however it is written. NOT bracket-scoped: the first version matched
-# `[07:04]` only, so the same second published as `[7:04]`, `[0:07:04]`,
-# `(07:04)`, `[ 07:04 ]`, `[07:04-08:04]` or bare `07:04` was a different STRING
-# and walked straight through -- six renderings, one keystroke apart from the
-# one that was caught. Bounded on both sides so a longer number does not match a
+# `[06:47]` only, so the same second published as `[6:47]`, `[0:06:47]`,
+# `(06:47)`, `[ 06:47 ]`, inside a range, or bare, was a different STRING and
+# walked straight through -- six renderings, one keystroke apart from the one
+# that was caught. Bounded on both sides so a longer number does not match a
 # window inside itself, and minutes and seconds are 00-59 so a version or a
 # ratio is not read as a time.
 # A FRACTIONAL SECOND IS NOT AN ANCHOR. `00:00:02.000` is a subtitle cue, and a
@@ -384,7 +438,13 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
     this scanner did.
     """
     out: list[str] = []
+    # This module's own fixtures, and nobody else's. See FIXTURE.
+    mine = os.path.basename(rel) == PROG
+    excused = {n for n, line in enumerate(text.splitlines(), 1)
+               if mine and FIXTURE in line}
     for n, line in enumerate(text.splitlines(), 1):
+        if n in excused:
+            continue
         for tok in RE_ID.findall(line):
             if _is_id_shaped(tok) and tok not in ALLOW:
                 out.append(f"{rel}:{n} E-CORPUS-VIDEO-ID {tok} "
@@ -406,7 +466,9 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
     # written as a hyphen or an underscore or not at all was a different string.
     # Case folding closed casing and closed none of those. Squashed, they are one
     # word again -- and so is anything else somebody puts between the letters.
-    squashed, line_of = _squash(text)
+    kept = "\n".join("" if n in excused else line
+                     for n, line in enumerate(text.splitlines(), 1))
+    squashed, line_of = _squash(kept)
     for word in refused:
         needle, _ = _squash(word)
         if not needle:
@@ -477,10 +539,10 @@ def selftest() -> int:
     # has to be, since it quotes the shapes it refuses -- so a real id written
     # here would be published by the very check meant to prevent that. The tests
     # are about shape, and a made-up id has the same shape as a real one.
-    check("an id is caught", n_hits('vid = "Qm4Zt8Xv2Ly"'), 1)
-    check("a dash id is caught", n_hits('"-Pk9Nb3Wc6R": {}'), 1)
+    check("an id is caught", n_hits('vid = "Qm4Zt8Xv2Ly"'), 1)  # WQ-FIXTURE
+    check("a dash id is caught", n_hits('"-Pk9Nb3Wc6R": {}'), 1)  # WQ-FIXTURE
     check("an id in a comment is caught too",
-          n_hits("# measured on Hd5Jq7Vt1Nz"), 1)
+          n_hits("# measured on Hd5Jq7Vt1Nz"), 1)  # WQ-FIXTURE
     check("an allowed fixture passes", n_hits('"-Xk4Rm2Qp7Z"'), 0)
     # A PUBLISHED MODEL SLUG has the shape and none of the risk, and this is the
     # first false positive that could not be reworded away: the eleven
@@ -503,12 +565,12 @@ def selftest() -> int:
     # unfalsifiable about it. A fixture in the scanner's own source has to be
     # further from the truth than anything else, not closer.
     check("a dated exemption is caught",
-          n_hits('# 1999-01-01 exempt: placeholder'), 1)
+          n_hits('# 1999-01-01 exempt: placeholder'), 1)  # WQ-FIXTURE
     check("a plain date passes", n_hits("# written 1999-01-01"), 0)
     # EITHER ORDER. The rule required the date first, so the way a person
     # actually writes the sentence walked straight through it.
     check("...and the reason may come first",
-          n_hits('# frames reaped 1999-01-01'), 1)
+          n_hits('# frames reaped 1999-01-01'), 1)  # WQ-FIXTURE
     check("a reason with no date still passes", n_hits("# frames reaped"), 0)
     check("a clean line passes", n_hits("def scan(paths, root):"), 0)
     # The refused list is the caller's, so with none supplied nothing is refused
@@ -546,9 +608,22 @@ def selftest() -> int:
           any(".git" in p.parts for p in collect([root])), False)
     check("a cache is not walked",
           any("__pycache__" in p.parts for p in collect([root])), False)
-    check("the scanner excuses itself",
+    # THE SCANNER IS SCANNED. It excused itself, so a refused word written into
+    # this one file could never be found; the excuse is a marked line now.
+    check("the scanner is reached",
           any(p.resolve() == Path(__file__).resolve() for p in collect([root])),
-          False)
+          True)
+    check("and it comes back clean over its own source",
+          scan([Path(__file__).resolve()], root, ("acmeprivate",)), [])  # WQ-FIXTURE
+    marked = 'x = "Qm4Zt8Xv2Ly"  ' + FIXTURE + "\n"  # WQ-FIXTURE
+    plain = 'x = "Qm4Zt8Xv2Ly"\n'  # WQ-FIXTURE
+    check("a marked fixture line is excused", len(scan_text(marked, PROG)), 0)
+    check("...only in a file with this module's name",
+          len(scan_text(marked, "README.md")), 1)
+    check("...and in a copy of it at any other path",
+          len(scan_text(marked, f"/tmp/release/{PROG}")), 0)
+    check("an unmarked line in this file is read like any other",
+          len(scan_text(plain, PROG)), 1)
     # What was dropped is handed back, as the DIRECTORY the caller can act on.
     dropped: list[Path] = []
     collect([root], dropped)

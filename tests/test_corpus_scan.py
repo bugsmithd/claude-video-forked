@@ -416,11 +416,12 @@ def test_a_file_with_no_suffix_is_published_text_too(tmp_path: Path):
     assert len(hits) == 3, hits
 
 
-def test_the_scanner_excuses_itself_and_not_its_namesakes(tmp_path: Path):
+def test_a_namesake_of_the_scanner_is_read_like_any_other_file(tmp_path: Path):
     """A stale build copy of this module is tracked, published and was unread.
 
-    Excusing by FILENAME excused every file that happens to share the name. The
-    exemption is for this file, so it is keyed on this file's resolved path.
+    Excusing by FILENAME excused every file that happens to share the name, and
+    a vendored copy of this module is exactly that. The excuse is a marked LINE
+    now, so an unmarked line in a namesake is read like any other line.
     """
     repo = _fake_repo(tmp_path)
     twin = repo / "vendored" / Path(wcs.__file__).name
@@ -478,16 +479,21 @@ def test_an_untracked_file_is_still_scanned(tmp_path: Path):
     assert repo / "draft.md" in wcs.collect([repo])
 
 
-def test_the_scanner_still_excuses_itself():
-    """It quotes every shape it refuses, so including it would red every run.
+def test_the_scanner_is_collected_and_comes_back_clean():
+    """It is in the walk now, and it still has to be clean over the real file.
 
-    Asserted against the real checkout, because the exemption is now keyed on
-    this file's resolved path and a copy in a temporary tree is a DIFFERENT
-    file that must be scanned -- which is the case below this one.
+    The whole file was excused, so a refused word written into it could never be
+    found. It is scanned like anything else; only lines it marks as fixtures are
+    excused, and this asserts BOTH -- that the file is reached, and that the
+    real file with the real policy has nothing left over.
     """
     collected = wcs.collect([REPO])
     assert collected, "nothing was collected, so nothing was proved"
-    assert Path(wcs.__file__).resolve() not in collected
+    assert Path(wcs.__file__).resolve() in collected
+
+    hits = wcs.scan([Path(wcs.__file__).resolve()], REPO, ("acmeprivate",))
+
+    assert not hits, hits
 
 
 def test_a_named_path_is_still_scanned_as_named(tmp_path: Path):
@@ -517,6 +523,64 @@ def test_the_whole_repository_is_clean_of_the_two_rules_it_can_run_here():
     assert any(p.parts[-2] == "tests" for p in files)
     hits = wcs.scan(files, REPO, ())
     assert not hits, hits[:20]
+
+
+def test_the_scanner_is_scanned_and_only_its_marked_fixtures_are_excused():
+    """It excused itself by resolved path, so a leak in it was invisible.
+
+    The scanner quotes every shape it refuses, so something has to be excused --
+    but excusing the FILE meant a refused word written into that one file could
+    never be found, by construction. And excusing it by RESOLVED path meant a
+    copy of the package at any other path was scanned in full and refused its own
+    invented fixtures: point the gate at a release tarball, a CI copy or a second
+    worktree and it exits 1 on files that leak nothing.
+
+    Both come from the same choice. The unit of excuse is the marked LINE now,
+    and the marker is honoured only in a file with this scanner's name -- so the
+    original and every copy of it behave the same way, and every other line of
+    the scanner is scanned like any other line.
+
+    Restoring the whole-file excuse leaves the first assertion green and the
+    second red; dropping the filename condition reverses that.
+    """
+    leak = 'path = "acmeprivate/notes"\n'
+    fixture = f'check("a refused word is caught", {leak.strip()})  {wcs.FIXTURE}\n'
+
+    assert wcs.scan_text(leak, "wq_corpus_scan.py", ("acmeprivate",))
+    assert not wcs.scan_text(fixture, "wq_corpus_scan.py", ("acmeprivate",))
+    # The marker is this file's, not a token any published page can spend.
+    assert wcs.scan_text(fixture, "README.md", ("acmeprivate",))
+    # And a copy of the scanner at another path is excused exactly as the
+    # original is -- same bytes, same verdict, wherever it sits (§8).
+    assert not wcs.scan_text(fixture, "/tmp/release/wq_corpus_scan.py",
+                             ("acmeprivate",))
+
+
+def test_the_walk_descends_a_symlinked_directory_once(tmp_path):
+    """A tree reachable only through a link was never read.
+
+    `rglob` does not follow a symlinked directory, so private content linked into
+    the repository would have been published unscanned. Following them needs a
+    seen-set in the same breath: a link back up the tree is a cycle, and a link
+    to a sibling directory would otherwise report the same file twice.
+
+    Walking without following leaves the first assertion red; following without
+    the seen-set leaves the third red or never returns.
+    """
+    repo = _fake_repo(tmp_path / "repo")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # Reachable ONLY through the link: a directory of published pages that lives
+    # somewhere else, which is the shape that would publish unscanned.
+    (outside / "page.md").write_text("acmeprivate\n", encoding="utf-8")
+    (repo / "linked").symlink_to(outside, target_is_directory=True)
+    (repo / "loop").symlink_to(repo, target_is_directory=True)
+
+    files = wcs.collect([repo])
+
+    assert any(p.name == "page.md" for p in files), files
+    assert [p.name for p in files].count("page.md") == 1, files
+    assert len(files) < 50, "the cycle was walked more than once"
 
 
 def test_a_refused_word_is_caught_whatever_the_file_is_encoded_in(tmp_path):
