@@ -426,7 +426,7 @@ kind = "selftest"
 id = "UNGRADED-LEDGER-AGES"
 code = ""
 layer = "gate"
-owner = "resolve_note.excused"
+owner = "wq_policy.excused"
 trigger = "a dated row is offered for a note the per-note checks would grade"
 refuses = "a row reaching a note filed after the row's own date"
 excused_by = ["ungraded_notes"]
@@ -542,7 +542,7 @@ test = "tests/test_spec_review.py::test_the_note_gate_never_turns_a_refused_poli
 id = "LEDGER-MAY-ONLY-SHRINK"
 code = ""
 layer = "gate"
-owner = "resolve_note.excused"
+owner = "wq_policy.excused"
 trigger = "a dated exemption row is offered for a note"
 refuses = "a row reaching a note filed after the row's own date; a note whose FILENAME carries no date cannot be placed either side of that line and is left excused rather than convicted, which is the one way a row still reaches a note nobody dated"
 excused_by = []
@@ -556,7 +556,7 @@ case = "a row written for a different note entirely"
 test = "tests/test_note_oracle.py::test_a_row_for_another_note_excuses_nothing"
 [[rule.neighbour]]
 case = "a note whose filename carries no date, which the row DOES reach"
-test = "tests/test_spec_review.py::test_a_row_reaches_a_note_whose_filename_carries_no_date"
+test = "tests/test_spec_review.py::test_what_a_row_costs_a_note_whose_filename_carries_no_date"
 
 [[rule]]
 id = "LEDGER-IS-PRINTED-AND-AGED"

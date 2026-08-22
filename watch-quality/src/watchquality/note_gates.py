@@ -147,8 +147,12 @@ def check_note(note: Path, root: Path) -> tuple[list[str], str | None]:
     # KEYED BY PATH, never by bare name. Two directories can hold one
     # filename, and a row that excuses "whatever is called this" is a pattern
     # nobody wrote and nobody dated.
+    # AND NOT ON AN ABSENCE. This row returns before the whole per-note grading
+    # layer -- every coverage code and every window code at once -- which makes
+    # it the widest excuse in the policy. A filename with no date is the
+    # weakest evidence in it, and the two do not go together (round-13 F3).
     excuse = UNGRADED_NOTES.get(str(rel))
-    if resolve_note.excused(excuse, rel):
+    if resolve_note.excused(excuse, rel, undated=False):
         return [], f"excused by the ledger [{excuse}]"
     rendering, why = rendering_for(note, root)
     if rendering is None:

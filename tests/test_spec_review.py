@@ -885,21 +885,37 @@ def test_a_block_list_under_the_oracle_key_reads_as_an_empty_value(note_corpus):
     assert "oracle: is empty" in got[0], got[0]
 
 
-def test_a_row_reaches_a_note_whose_filename_carries_no_date(note_corpus):
+def test_what_a_row_costs_a_note_whose_filename_carries_no_date(note_corpus):
     """The unlisted half of "a row may only shrink", stated out loud.
 
     The row is aged against the note's FILENAME date, and a note that has none
-    cannot be placed either side of the line. It is left EXCUSED rather than
-    convicted -- a real decision, and one the table did not mention, so a
-    reader who knew only that a row cannot reach a later note would be
-    surprised by the note it does reach.
+    cannot be placed either side of the line. What happens then is a real
+    decision the table did not mention, and it is now TWO decisions, split by
+    how much the row forgives.
+
+    The narrow tables forgive one thing -- a lane's lost report, a run that has
+    gone -- and there an absence is still left excused rather than convicted.
+    The three wide ones forgive the whole grading layer, the whole report
+    header, or the field that decides which rendering a note is graded against,
+    and there it is not: the widest excuse in the policy may not rest on the
+    weakest evidence in it (round-4 F-7, round-13 F3).
     """
-    rn.UNFILLED_ORACLES["n.md"] = "2026-08-21 note frozen"
-    assert rn.excused("2026-08-21 note frozen", "n.md") is True
-    assert rn.check_oracle(_note_fm(oracle=""), "n.md", note_corpus) == []
-    # ...and the dated note beside it, so this case cannot pass by the ageing
-    # rule having been switched off altogether.
-    rn.UNFILLED_ORACLES["2026-08-22--later--VID.md"] = "2026-08-21 note frozen"
+    ROW = "2026-08-21 note frozen"
+    assert rn.excused(ROW, "n.md") is True
+    assert rn.excused(ROW, "n.md", undated=False) is False
+
+    # `unfilled_oracles` is one of the three, so the undated note is graded.
+    rn.UNFILLED_ORACLES["n.md"] = ROW
+    got = rn.check_oracle(_note_fm(oracle=""), "n.md", note_corpus)
+    assert _codes(got) == ["E-ORACLE-EMPTY"], got
+    # And a note that IS dated, and pre-dates the row, is still excused -- so
+    # this case cannot pass by the ledger having been switched off altogether.
+    rn.UNFILLED_ORACLES["2026-08-20--earlier--VID.md"] = ROW
+    assert rn.check_oracle(_note_fm(oracle=""),
+                           "notes/2026-08-20--earlier--VID.md",
+                           note_corpus) == []
+    # ...and one filed after it is not.
+    rn.UNFILLED_ORACLES["2026-08-22--later--VID.md"] = ROW
     got = rn.check_oracle(_note_fm(oracle=""),
                           "notes/2026-08-22--later--VID.md", note_corpus)
     assert _codes(got) == ["E-ORACLE-EMPTY"], got

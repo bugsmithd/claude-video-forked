@@ -452,8 +452,14 @@ def test_a_pile_spliced_in_over_a_report_column_breaks_the_partition(
 def test_a_run_in_the_unresolvable_runs_ledger_is_printed_rather_than_refused(
         tmp_path, monkeypatch):
     """The one rule that ledger excuses -- and the downgrade is to a PRINTED
-    line carrying the dated reason, not to silence."""
-    reason = "the run directory went before the manifest was built"
+    line carrying the dated reason, not to silence.
+
+    The reason is DATED because this row is aged now. This module read it with
+    a bare `in` test for as long as it existed, so an undated reason excused
+    every note about that video for ever and a fixture could carry one
+    (round-13 F1).
+    """
+    reason = "2026-06-01 the run directory went before the manifest was built"
     monkeypatch.setitem(am.UNRESOLVABLE_RUNS, VIDEO_ID, reason)
     note = _write_note(tmp_path, "- `[00:20]` `ON-SCREEN` the second slide.")
 

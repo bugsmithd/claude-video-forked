@@ -171,7 +171,7 @@ rows = 2
 #
 # AND ONE FINDING ABOUT THIS TABLE, recorded because it has no fix that belongs
 # in the harness. LEDGER-MAY-ONLY-SHRINK and UNGRADED-LEDGER-AGES both own
-# `resolve_note.excused`, both carry no code, and both refuse "a row reaching a
+# `wq_policy.excused`, both carry no code, and both refuse "a row reaching a
 # note filed after the row's own date". One guard, written down twice: no
 # mutation of it can tell them apart, so as each other's control both are
 # unpinnable by construction. A code-less row therefore keeps the sibling-

@@ -848,7 +848,7 @@ def test_two_code_less_rows_on_one_owner_are_not_each_others_control():
     """Two rows describing one guard cannot separate each other.
 
     `LEDGER-MAY-ONLY-SHRINK` and `UNGRADED-LEDGER-AGES` both own
-    `resolve_note.excused` and both refuse a row reaching a note filed after the
+    `wq_policy.excused` and both refuse a row reaching a note filed after the
     row's own date. Neither carries a code, so neither can ever show its own
     branch, and every mutation of that guard reddens both -- which under a
     family control makes both unpinnable by construction.
@@ -857,7 +857,7 @@ def test_two_code_less_rows_on_one_owner_are_not_each_others_control():
     down twice. Until a row goes, a code-less rule keeps the sibling-function
     control and does not take a sibling rule as one.
     """
-    pair = [r for r in RULES if r["owner"] == "resolve_note.excused"]
+    pair = [r for r in RULES if r["owner"] == "wq_policy.excused"]
     assert len(pair) >= 2 and not any(r.get("code") for r in pair), pair
 
     for rule in pair:

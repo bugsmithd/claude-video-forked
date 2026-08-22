@@ -186,7 +186,25 @@ def stem(word: str) -> str:
 # the anchor walk in `measure`, which has to know which lines were REFUSED --
 # and a line that is a thrown-out row to one and ordinary prose to the other is
 # exactly the half-credit this vocabulary exists to close (V5 section 1 gap a).
-ROW, IMPOSSIBLE, MISSHAPEN, PROSE = "row", "impossible", "misshapen", "prose"
+ROW, IMPOSSIBLE, MISSHAPEN, UNREAD, PROSE = (
+    "row", "impossible", "misshapen", "unread", "prose")
+# The two refusals are NOT the same finding, and treating them alike cost the
+# corpus 234 anchors across 8 notes on its first day (round-13 F2).
+#
+#   MISSHAPEN / IMPOSSIBLE  the parser READ the line and refused what it said:
+#                           a range ending before it starts, a stamp no clock
+#                           can say. The note's own claim about the clock is
+#                           wrong, so it buys nothing.
+#   UNREAD                  the parser could not read the line at all. In this
+#                           corpus that is overwhelmingly one form -- a claim
+#                           written across two stamps with no joining word,
+#                           95 of 105 refused lines -- carrying seven to
+#                           sixteen words of written claim each. The form not
+#                           being in `RE_ROW` is a fact about `RE_ROW`, and it
+#                           is not evidence that nobody wrote from that minute.
+#
+# Both are reported, exactly as before. Only the first forfeits anchors.
+REFUSED = (IMPOSSIBLE, MISSHAPEN)
 
 
 def _row_of(line: str) -> tuple[str, object]:
@@ -194,14 +212,15 @@ def _row_of(line: str) -> tuple[str, object]:
 
     `(ROW, (seconds, class, text))` when it parses. `(IMPOSSIBLE, stamp)` when
     a stamp is not a time a clock can say. `(MISSHAPEN, line)` when the line
-    was trying to be a row and is not one. `(PROSE, line)` when it never was.
+    parsed and what it said about the clock is wrong. `(UNREAD, line)` when it
+    was trying to be a row in a shape this pattern has never read. `(PROSE,
+    line)` when it never was one.
 
-    The last two are the distinction that matters downstream: prose carries its
-    anchors, and a refused row does not.
+    UNREAD and PROSE keep their anchors; the other two refusals do not.
     """
     match = RE_ROW.match(line)
     if not match:
-        return (MISSHAPEN, line) if RE_ROWISH.match(line) else (PROSE, line)
+        return (UNREAD, line) if RE_ROWISH.match(line) else (PROSE, line)
     try:
         at = seconds_of(match.group(1))
     except ValueError:
@@ -263,7 +282,7 @@ def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
             rows.append(value)
         elif kind == IMPOSSIBLE:
             impossible.append(value)
-        elif kind == MISSHAPEN:
+        elif kind in (MISSHAPEN, UNREAD):
             misshapen.append(value.strip()[:60])
     return text, rows, impossible, misshapen
 
@@ -512,18 +531,23 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     # keeps its anchors -- it never claimed to be a row -- but a line that
     # tried and failed buys nothing (V5 section 1 gap a).
     anchors: list[float] = []
-    on_refused = 0
+    lost: set[int] = set()
     for line in body.splitlines():
         stamps = RE_ANCHOR.findall(line)
         if not stamps:
             continue
-        if _row_of(line)[0] in (IMPOSSIBLE, MISSHAPEN):
-            # Counted as ANCHORS, which is what the name says: a stamp no clock
-            # can say was never going to fill a bucket, so reporting it here
-            # would overstate what the refusal cost.
-            on_refused += sum(1 for s in stamps if _in_span(s, span))
-            continue
         said = len(RE_WORD.findall(RE_ANCHOR.sub(" ", line).lower()))
+        if _row_of(line)[0] in REFUSED:
+            # WHAT THE REFUSAL COST, and not a stamp more. Every filter the
+            # anchors themselves pass is applied first: a line too thin to have
+            # been read at all cost nothing, a stamp no clock can say was never
+            # going to fill a bucket, and one second written twice on one line
+            # is one bucket. The number is read by a person deciding whether a
+            # dead stretch is real (round-13 F6).
+            if said >= MIN_LINE_WORDS:
+                lost |= {int(seconds_of(s)) for s in stamps
+                         if _in_span(s, span)}
+            continue
         if said < MIN_LINE_WORDS:
             continue
         for stamp in stamps:
@@ -539,7 +563,7 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     result["anchors"] = len(anchors)
     # Printed rather than silently dropped: a note whose coverage fell when its
     # rows stopped parsing should be able to see why in the same object.
-    result["anchors_on_refused_rows"] = on_refused
+    result["anchors_on_refused_rows"] = len(lost)
     result["anchored_seconds"] = len({int(a) for a in anchors})
     # THE FRAGMENTATION NUMBER. Rows per second turned out not to be one: the
     # corpus sits at 1.0-1.5 whatever the note's quality, because a fragmented

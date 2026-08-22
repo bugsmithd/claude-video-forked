@@ -107,6 +107,67 @@ RE_DATED = re.compile(r"^\d{4}-\d{2}-\d{2}\s+\S")
 RE_LANE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
+# The date a note's own filename carries. It lives here, beside the rule about
+# exemption rows, because the two are one comparison and were written in two
+# places: `resolve_note` aged a row against this and `anchor_manifest` read the
+# same rows with a bare `in` test, no reason and no date, for as long as both
+# existed. The comment in `resolve_note` that justified sharing the tables said
+# "anchor_manifest already owns this table and already ages it", which was the
+# false half of a true sentence (round-13 F1).
+RE_NOTE_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})--")
+
+
+def note_date(rel) -> str | None:
+    """The ISO date in a note's filename, or None when it has none."""
+    m = RE_NOTE_DATE.match(os.path.basename(str(rel)))
+    return m.group(1) if m else None
+
+
+def excused(reason: str | None, rel, undated: bool = True) -> bool:
+    """Does this dated exemption row reach the note in front of it?
+
+    Every debt row is keyed by video id or note name, and two notes about one
+    video share it, so a note written after the debt was recorded was BORN
+    EXCUSED -- re-watching a video already on the ledger being the single most
+    likely reason a second note exists. `watch-quality.toml` says the opposite
+    in as many words: "A new note does not belong in this list -- the gate
+    firing on it is the gate working" (mechanism F8, premortem F8).
+
+    The row's own date is the boundary that makes that sentence true. It
+    excuses the notes that existed when it was written and nothing filed after.
+    A note whose filename carries no date cannot be placed either side of the
+    line, and is left excused rather than convicted on an absence.
+
+    `undated=False` withdraws that last sentence, and the callers that pass it
+    are the ones whose row forgives more than one thing. The narrowest tables
+    forgive a lane's lost report or a run that has gone, so an undated note
+    costs one row. `ungraded_notes` returns before the entire per-note grading
+    layer, `unfilled_oracles` forgives the field that decides WHICH rendering a
+    note is graded against, and `unheadered_reviews` skips a whole report
+    header. Those three are the widest excuses in the policy and an absence is
+    the weakest evidence in it (round-4 refutation F-7, round-13 F3).
+
+    THE ROW HAS TO CARRY A DATE for any of that to mean anything, and until
+    2026-08-22 this comparison assumed one. It is between STRINGS, so every ISO
+    date sorts below every letter: `permanent` and `frozen, recorded
+    2026-08-21` each excused every note they named, forever, and `9999-99-99`
+    is a shape rather than a day. `_validate` refuses all three at load, which
+    is why the corpus was never holed -- but the tables are plain dicts and a
+    caller that writes a row into one without going through a `Policy` gets no
+    such refusal. The guard belongs where the comparison is (V1 finding V1-4).
+    """
+    if reason is None or not RE_DATED.match(reason):
+        return False
+    try:
+        date.fromisoformat(reason[:10])
+    except ValueError:
+        return False
+    when = note_date(rel)
+    if when is None:
+        return undated
+    return when <= reason[:10]
+
+
 class PolicyError(Exception):
     """The policy file exists and is wrong. Never fall back on this."""
 

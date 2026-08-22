@@ -84,10 +84,12 @@ from importlib import metadata
 from pathlib import Path
 
 
-# RE_DATED is the shape every exemption row must carry. Imported rather than
-# rewritten here so the loader and `excused` cannot drift apart on what a dated
-# row looks like.
-from .wq_policy import RE_DATED, load as load_policy  # noqa: E402
+# The exemption rule lives beside the loader that validates the rows, so the
+# two cannot drift apart on what a dated row is -- and so the OTHER module
+# reading these same rows reaches the same comparison rather than keeping its
+# own (round-13 F1).
+from .wq_policy import (RE_DATED, excused as _excused,  # noqa: E402,F401
+                        note_date as _note_date, load as load_policy)
 
 POLICY = load_policy()
 
@@ -1451,56 +1453,12 @@ def covered_lanes(declared: list[str], required: list[str]) -> set[str]:
     return out
 
 
-def note_date(rel) -> str | None:
-    """The ISO date in a note's filename, or None when it has none."""
-    m = RE_NOTE_DATE.match(Path(rel).name)
-    return m.group(1) if m else None
-
-
-def excused(reason: str | None, rel, undated: bool = True) -> bool:
-    """Does this dated exemption row reach the note in front of it?
-
-    Every debt row is keyed by video id, and two notes about one video share
-    it, so a note written after the debt was recorded was BORN EXCUSED --
-    re-watching a video already on the ledger being the single most likely
-    reason a second note exists. `watch-quality.toml` says the opposite in as
-    many words: "A new note does not belong in this list -- the gate firing on
-    it is the gate working" (mechanism F8, premortem F8).
-
-    The row's own date is the boundary that makes that sentence true. It
-    excuses the notes that existed when it was written and nothing filed after.
-    A note whose filename carries no date cannot be placed either side of the
-    line, and is left excused rather than convicted on an absence.
-
-    `undated=False` withdraws that last sentence for ONE caller. Every other
-    table forgives a single thing -- a lane's missing report, a run that has
-    gone, an oracle nobody filled -- so an undated note costs one row. The
-    unheadered-review row skips the whole header: oracle, verdict, lane label
-    and body hash together. That is the widest excuse in the policy, and
-    letting an absence buy it is the weakest evidence in the policy buying the
-    most (round-4 refutation F-7).
-
-    THE ROW HAS TO CARRY A DATE FOR ANY OF THAT TO MEAN ANYTHING, and until
-    2026-08-22 this function assumed one. The comparison is between STRINGS, so
-    every ISO date sorts below every letter: `permanent` and
-    `frozen, recorded 2026-08-21` each excused every note they named, forever,
-    and `9999-99-99` is a shape rather than a day. `wq_policy._validate`
-    refuses all three at load, which is why the corpus was never holed -- but
-    the three tables are plain dicts and a caller that writes a row into one
-    without going through a `Policy` gets no such refusal. The guard belongs
-    where the comparison is, and lives in both places now (V1 finding V1-4;
-    two lanes read this and disagreed, and the probe decided).
-    """
-    if reason is None or not RE_DATED.match(reason):
-        return False
-    try:
-        date.fromisoformat(reason[:10])
-    except ValueError:
-        return False
-    when = note_date(rel)
-    if when is None:
-        return undated
-    return when <= reason[:10]
+# Both live in `wq_policy` now. `anchor_manifest` reads the SAME exemption rows
+# this module ages, and it read them with a bare `in` test -- no reason, no
+# date -- for as long as both existed, while the comment beside these tables
+# said it already aged them (round-13 F1). One comparison, one home.
+note_date = _note_date
+excused = _excused
 
 
 def oracle_token(value: str) -> str:
@@ -1579,7 +1537,11 @@ def check_oracle(frontmatter: str, rel, root: Path,
     if honour_ledger:
         excuse = (UNFILLED_ORACLES.get(str(rel))
                   or UNFILLED_ORACLES.get(Path(rel).name))
-        if excused(excuse, rel):
+        # An absence does not pay for this one. The field decides WHICH
+        # rendering every downstream gate reads, so a row written to forgive an
+        # empty one also forgave a note declaring two different renderings --
+        # bought with a filename that carries no date (round-13 F3).
+        if excused(excuse, rel, undated=False):
             return []
     rows = RE_NOTE_ORACLE.findall(frontmatter)
     if not rows:

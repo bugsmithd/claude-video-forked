@@ -992,6 +992,84 @@ def test_a_row_the_parser_refused_carries_no_anchors(tmp_path):
     assert bad["dead"]["minutes"] > good["dead"]["minutes"], (good, bad)
 
 
+def test_a_shape_the_parser_never_learned_keeps_its_anchors(tmp_path):
+    """round-13 F2 — the refusal was superstitious about shape.
+
+    A claim written across two stamps with no joining word is a form `RE_ROW`
+    has never read. It was already reported as a row shape nothing counts; what
+    the first version of this change added was forfeiting its anchors as well,
+    and the dead-minute count a reader acts on moved because of it. Measured
+    over the frozen corpus: 234 anchors and 8 dead minutes lost across 8 notes,
+    on lines each carrying seven to sixteen words of written claim, and 95 of
+    the 105 refused lines were this one shape.
+
+    So the two refusals are told apart. A line the parser READ and refused --
+    a range that ends before it starts, a stamp no clock can say -- buys
+    nothing. A line the parser could not read at all is reported as before and
+    keeps its anchors, because the note did write from that stretch and the
+    parser not knowing the form is not evidence that it did not.
+
+    Would fail if: `_row_of` stops distinguishing UNREAD from MISSHAPEN.
+    """
+    segments = cov_transcript(180)
+    unlearned = ("- `[05:00]` `SPOKEN` `[06:00]` `SPOKEN` — "
+                 "the speaker explains the zone at some length.\n")
+
+    got = cov_measure(tmp_path, unlearned, segments)
+
+    assert got["rows"] == 0, "the parser still cannot read this form"
+    assert got["misshapen_rows"], "and it is still reported as a shape"
+    assert got["anchors"] == 2, "but the stretch was written from"
+    assert got["anchors_on_refused_rows"] == 0, got
+
+
+@pytest.mark.parametrize("line", [
+    "| `[05:00]` `SPOKEN` | the speaker explains the zone at some length. |",
+    "At `[05:00]` the speaker explains the zone at some length here.",
+    "- `[05:00]` `SPOKEN` `[06:00]` `SPOKEN` — the speaker explains the zone.",
+])
+def test_one_claim_written_three_ways_keeps_its_anchors_all_three(tmp_path, line):
+    """round-13 F8 — the refusal was launderable by changing the bullet.
+
+    `RE_ROWISH` anchors on `^\\s*[-*]`, so identical content kept its anchors as
+    a table row or a sentence and forfeited them as a bullet. A note that
+    wanted its coverage back would have changed `- ` to `| `. Whatever else is
+    true of these three lines, they say the same thing about the same second
+    and they may not be scored differently for their punctuation.
+    """
+    got = cov_measure(tmp_path, line + "\n", cov_transcript(180))
+    assert got["anchors"] >= 1, got
+    assert got["anchors_on_refused_rows"] == 0, got
+
+
+def test_the_cost_of_a_refusal_is_counted_in_anchors_a_bucket_would_have_seen(
+        tmp_path):
+    """round-13 F6 — the number overstated what the refusal cost.
+
+    Two ways. A refused line too thin to have been read at all was counted,
+    though `MIN_LINE_WORDS` would have dropped every one of its stamps anyway;
+    and one second written twice on one line was counted twice, though it is
+    one bucket. Neither occurs in the frozen corpus, so this is a number
+    printed for a human that would have misled one.
+    """
+    segments = cov_transcript(180)
+
+    thin = "- `[05:00]` `X` to `[04:00]` `X` —\n"
+    got = cov_measure(tmp_path, thin, segments)
+    assert got["rows"] == 0 and got["anchors"] == 0, got
+    assert got["anchors_on_refused_rows"] == 0, "too thin to have counted"
+
+    twice = tmp_path / "b"
+    twice.mkdir()
+    repeated = ("- `[05:00]` `SPOKEN` to `[04:00]` `SPOKEN` — "
+                "at `[05:00]` alpha bravo charlie delta echo\n")
+    got = cov_measure(twice, repeated, segments)
+    assert got["rows"] == 0 and got["anchors"] == 0, got
+    # Three stamps on the line, two seconds, two buckets. The second written
+    # twice is one bucket and is counted once.
+    assert got["anchors_on_refused_rows"] == 2, got
+
+
 def test_prose_that_was_never_a_row_keeps_its_anchors(tmp_path):
     """The neighbour that keeps the change above from being too wide.
 

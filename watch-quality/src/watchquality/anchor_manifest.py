@@ -155,7 +155,7 @@ from .resolve_note import (DEMOTED_MARK, ORPHAN_MARK, RE_ANCHOR,  # noqa: E402
                           RE_NOTE_NAME, RE_VIDEO_ID, anchor_seconds, collect,
                           corpus_video_ids, is_note, parse_duration,
                           refuses_empty, safe_read, sha256, split_frontmatter)
-from .wq_policy import load as load_policy  # noqa: E402
+from .wq_policy import excused, load as load_policy  # noqa: E402
 
 POLICY = load_policy()
 
@@ -184,6 +184,24 @@ RE_LOOSE_STAMP = re.compile(r"(.?)\[(\d{1,3}:\d{1,2}(?::\d{1,2})?)\](.?)")
 # both lists are EMPTY -- a missing policy can never invent an exemption.
 UNRESOLVABLE_RUNS = POLICY.unresolvable_runs()
 UNATTRIBUTED_NOTES: dict[str, str] = POLICY.unattributed_notes()
+
+
+# AND BOTH AGE, which for as long as this module existed they did not. The two
+# lookups below were `video_id in TABLE`: no reason read, no date compared, so
+# a row recorded in 2020 excused every note about that video for ever --
+# including the ones written years later, which is the single most likely
+# reason a second note about a video exists. `resolve_note` reads these same
+# rows and says in its own comment that this module "already ages" them; that
+# was the false half of a true sentence, and the ledger it declined to open was
+# never needed -- only this call (round-13 F1).
+def exempt_run(video_id: str, rel) -> bool:
+    """Is this note old enough for the written-off-run row to reach it?"""
+    return excused(UNRESOLVABLE_RUNS.get(video_id), rel)
+
+
+def exempt_class(video_id: str, rel) -> bool:
+    """Is this note old enough for the unattributed-anchors row to reach it?"""
+    return excused(UNATTRIBUTED_NOTES.get(video_id), rel)
 
 RE_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
 RE_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
@@ -1245,7 +1263,7 @@ def check_note(path: Path, root: Path, require_manifest: bool = True,
         return [f"{rel}:1 E-NO-VIDEO-ID cannot address a manifest"], row
     video_id = m.group(1)
     row["video_id"] = video_id
-    exempt = video_id in UNRESOLVABLE_RUNS
+    exempt = exempt_run(video_id, rel)
 
     ancs = note_anchors(body, body_start_line, video_id)
     row["anchors"] = len(ancs)
@@ -1381,7 +1399,7 @@ def check_note(path: Path, root: Path, require_manifest: bool = True,
                   f"evidence class or two ({kinds['NONE']} unlabelled, "
                   f"{kinds['MULTI']} labelled but untouched, "
                   f"{kinds['CONTESTED']} contested)")
-        if video_id in UNATTRIBUTED_NOTES:
+        if exempt_class(video_id, rel):
             row["class_exempt"] = detail
         else:
             defects.append(f"{rel}:1 E-ANCHOR-UNATTRIBUTED {detail}")

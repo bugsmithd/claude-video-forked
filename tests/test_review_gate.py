@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from watchquality import (anchor_manifest as am, audit, demote_note as dn,
-                          resolve_note as rn, wq_policy)
+                          note_gates as ng, resolve_note as rn, wq_policy)
 
 from conftest import RENDERING
 
@@ -1047,3 +1047,92 @@ def test_an_undated_note_does_not_buy_the_whole_header_bypass(corpus):
         assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
     finally:
         del rn.UNHEADERED_REVIEWS["VID"]
+
+
+# --------------------------------------------------------------------------
+# round-13 F1 — the third layer, which read no date at all
+# --------------------------------------------------------------------------
+
+def test_the_manifest_gate_ages_the_two_tables_it_shares(corpus):
+    """A bare membership test on the SAME rows the oracle check ages.
+
+    `resolve_note` says out loud that it reads these rows rather than opening a
+    fourth ledger because "`anchor_manifest` already owns this table and
+    already ages it". It did not. `exempt = video_id in UNRESOLVABLE_RUNS` and
+    `if video_id in UNATTRIBUTED_NOTES` read no reason, compared no date, and
+    excused every note about that video for ever -- including notes filed years
+    after the row. The comment that justified not opening a fourth ledger was
+    the false one (round-13 F1).
+
+    Would fail if: either lookup goes back to `in`.
+    """
+    late = "2026-08-22--new--VID.md"
+    early = "2019-12-31--old--VID.md"
+    for table in (am.UNRESOLVABLE_RUNS, am.UNATTRIBUTED_NOTES):
+        table["VID"] = OLD_ROW
+    try:
+        assert am.exempt_run("VID", early) is True
+        assert am.exempt_run("VID", late) is False
+        assert am.exempt_class("VID", early) is True
+        assert am.exempt_class("VID", late) is False
+        # A reason that is not a date excuses nothing here either, which is
+        # the guard the other two layers already carry.
+        for table in (am.UNRESOLVABLE_RUNS, am.UNATTRIBUTED_NOTES):
+            table["VID"] = "permanent"
+        assert am.exempt_run("VID", early) is False
+        assert am.exempt_class("VID", early) is False
+    finally:
+        for table in (am.UNRESOLVABLE_RUNS, am.UNATTRIBUTED_NOTES):
+            del table["VID"]
+
+
+# --------------------------------------------------------------------------
+# round-13 F3 — the two tables that forgive more and still took an absence
+# --------------------------------------------------------------------------
+
+def test_the_oracle_ledger_does_not_take_an_absence_as_payment(corpus):
+    """`unheadered_reviews` was narrowed and it is the THIRD-widest table.
+
+    A row in `unfilled_oracles` forgives the field every downstream gate reads
+    to decide WHICH rendering a note is graded against. So a row written to
+    forgive an empty field also forgave a note declaring two different ones,
+    and it took a missing filename date as payment (round-13 F3).
+
+    Would fail if: `check_oracle` stops passing `undated=False`.
+    """
+    fm = "video_id: VID\noracle: a.json\noracle: b.json\n"
+    dated, undated = "2019-12-31--old--VID.md", "no-date-here.md"
+    for rel in (dated, undated):
+        rn.UNFILLED_ORACLES[rel] = OLD_ROW
+    try:
+        assert rn.check_oracle(fm, dated, corpus) == []
+        got = rn.check_oracle(fm, undated, corpus)
+        assert got and "E-ORACLE" in got[0], got
+    finally:
+        for rel in (dated, undated):
+            del rn.UNFILLED_ORACLES[rel]
+
+
+def test_the_ungraded_ledger_does_not_take_an_absence_as_payment(corpus, tmp_path):
+    """The WIDEST table of the five, and it forgave on an absence too.
+
+    A row here returns before the whole per-note grading layer -- every
+    coverage code and every window code at once. That is strictly wider than
+    the header bypass this slice narrowed first (round-13 F3).
+
+    Would fail if: `note_gates.check_note` stops passing `undated=False`.
+    """
+    notes = corpus / "notes"
+    dated = notes / "2019-12-31--old--VID.md"
+    undated = notes / "no-date-here.md"
+    for note in (dated, undated):
+        note.write_text(f"---\n{_fm()}---\n{BODY}", encoding="utf-8")
+        ng.UNGRADED_NOTES[str(note.relative_to(corpus))] = OLD_ROW
+    try:
+        _, why = ng.check_note(dated, corpus)
+        assert why and "excused by the ledger" in why, why
+        _, why = ng.check_note(undated, corpus)
+        assert not (why and "excused by the ledger" in why), why
+    finally:
+        for note in (dated, undated):
+            del ng.UNGRADED_NOTES[str(note.relative_to(corpus))]
