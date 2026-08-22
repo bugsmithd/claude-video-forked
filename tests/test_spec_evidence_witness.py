@@ -955,6 +955,81 @@ def test_a_range_that_ends_before_it_starts_is_not_a_row(tmp_path):
     assert len(misshapen) == 1, "the line is reported rather than dropped"
 
 
+def test_a_row_the_parser_refused_carries_no_anchors(tmp_path):
+    """V5 gap a — the half-credit a refused row kept.
+
+    `measure` builds its anchor list from the note BODY, so a line the row
+    parser threw out still filled the dead-stretch buckets its two stamps sat
+    in. Measured on a thirty-minute transcript: the forwards row gave 1 row and
+    2 anchors, the backwards row gave 0 rows and the SAME 2 anchors, and both
+    reported the same dead minutes -- a note scoring identical coverage whether
+    its row parsed or not.
+
+    A line that was never row-shaped is prose and keeps its anchors; that is
+    the neighbour below. This is about a line that TRIED to be a row and was
+    refused.
+
+    Would fail if: the anchor walk stops asking `_row_of` and goes back to
+    reading every line of the body alike.
+    """
+    segments = cov_transcript(180)  # thirty minutes
+    forwards = ("- `[05:00]` `SPOKEN` to `[06:00]` `SPOKEN` — "
+                "the speaker explains the zone at some length.\n")
+    backwards = ("- `[06:00]` `SPOKEN` to `[05:00]` `SPOKEN` — "
+                 "the speaker explains the zone at some length.\n")
+
+    other = tmp_path / "b"
+    other.mkdir()
+    good = cov_measure(tmp_path, forwards, segments)
+    bad = cov_measure(other, backwards, segments)
+
+    assert good["rows"] == 1 and good["anchors"] == 2, good
+    assert bad["rows"] == 0, bad
+    assert bad["misshapen_rows"], "the line is still reported as misshapen"
+    assert bad["anchors"] == 0, "a refused row buys no coverage"
+    assert bad["anchors_on_refused_rows"] == 2, bad
+    # And the consequence a reader acts on moves with it.
+    assert bad["dead"]["minutes"] > good["dead"]["minutes"], (good, bad)
+
+
+def test_prose_that_was_never_a_row_keeps_its_anchors(tmp_path):
+    """The neighbour that keeps the change above from being too wide.
+
+    Notes in this corpus cite seconds inside prose and inside tables as well as
+    in rows, and a dead-stretch count drawn from rows alone once reported 29
+    unwritten minutes in a note that had written from all of them. Only a line
+    the ROW PARSER refused loses its anchors.
+    """
+    segments = cov_transcript(180)
+    prose = ("At `[05:00]` the speaker explains the zone at some length "
+             "and returns to it at `[06:00]` before moving on.\n")
+
+    got = cov_measure(tmp_path, prose, segments)
+
+    assert got["rows"] == 0, "prose is not a row"
+    assert got["misshapen_rows"] == [], "and it is not a refused one either"
+    assert got["anchors"] == 2, got
+    assert got["anchors_on_refused_rows"] == 0, got
+
+
+def test_a_range_ending_on_an_unsayable_stamp_carries_no_anchors_either(tmp_path):
+    """The other refusal, which the same walk has to reach.
+
+    `impossible` and `misshapen` are two names for one thing here: the parser
+    would not make a row of the line. A fix written against the backwards range
+    alone would leave the unsayable end still buying its start's bucket.
+    """
+    segments = cov_transcript(180)
+    note = ("- `[05:00]` `SPOKEN` to `[00:99]` `SPOKEN` — "
+            "the speaker explains the zone at some length.\n")
+
+    got = cov_measure(tmp_path, note, segments)
+
+    assert got["rows"] == 0 and got["impossible_stamps"] == ["00:99"], got
+    assert got["anchors"] == 0, got
+    assert got["anchors_on_refused_rows"] == 1, "only the sayable one is an anchor"
+
+
 def test_a_backwards_range_reaches_the_reader_as_a_defect(tmp_path):
     """The pair above is only a finding if it survives to `defects`.
 

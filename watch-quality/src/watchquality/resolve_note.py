@@ -79,11 +79,15 @@ import sys
 import importlib
 import tempfile
 import unicodedata
+from datetime import date
 from importlib import metadata
 from pathlib import Path
 
 
-from .wq_policy import load as load_policy  # noqa: E402
+# RE_DATED is the shape every exemption row must carry. Imported rather than
+# rewritten here so the loader and `excused` cannot drift apart on what a dated
+# row looks like.
+from .wq_policy import RE_DATED, load as load_policy  # noqa: E402
 
 POLICY = load_policy()
 
@@ -1453,7 +1457,7 @@ def note_date(rel) -> str | None:
     return m.group(1) if m else None
 
 
-def excused(reason: str | None, rel) -> bool:
+def excused(reason: str | None, rel, undated: bool = True) -> bool:
     """Does this dated exemption row reach the note in front of it?
 
     Every debt row is keyed by video id, and two notes about one video share
@@ -1467,11 +1471,36 @@ def excused(reason: str | None, rel) -> bool:
     excuses the notes that existed when it was written and nothing filed after.
     A note whose filename carries no date cannot be placed either side of the
     line, and is left excused rather than convicted on an absence.
+
+    `undated=False` withdraws that last sentence for ONE caller. Every other
+    table forgives a single thing -- a lane's missing report, a run that has
+    gone, an oracle nobody filled -- so an undated note costs one row. The
+    unheadered-review row skips the whole header: oracle, verdict, lane label
+    and body hash together. That is the widest excuse in the policy, and
+    letting an absence buy it is the weakest evidence in the policy buying the
+    most (round-4 refutation F-7).
+
+    THE ROW HAS TO CARRY A DATE FOR ANY OF THAT TO MEAN ANYTHING, and until
+    2026-08-22 this function assumed one. The comparison is between STRINGS, so
+    every ISO date sorts below every letter: `permanent` and
+    `frozen, recorded 2026-08-21` each excused every note they named, forever,
+    and `9999-99-99` is a shape rather than a day. `wq_policy._validate`
+    refuses all three at load, which is why the corpus was never holed -- but
+    the three tables are plain dicts and a caller that writes a row into one
+    without going through a `Policy` gets no such refusal. The guard belongs
+    where the comparison is, and lives in both places now (V1 finding V1-4;
+    two lanes read this and disagreed, and the probe decided).
     """
-    if reason is None:
+    if reason is None or not RE_DATED.match(reason):
+        return False
+    try:
+        date.fromisoformat(reason[:10])
+    except ValueError:
         return False
     when = note_date(rel)
-    return when is None or when <= reason[:10]
+    if when is None:
+        return undated
+    return when <= reason[:10]
 
 
 def oracle_token(value: str) -> str:
@@ -1864,7 +1893,11 @@ def check_lanes(root: Path, frontmatter: str, rel, body: str) -> list[str]:
     # that covered work nobody had done yet: a report filed today, under a video
     # id grandfathered in weeks ago, bought the whole header bypass -- oracle,
     # verdict and all -- for a note written after the row.
-    unheadered = excused(UNHEADERED_REVIEWS.get(video_id), rel)
+    # ...and an UNDATED note does not buy it at all. Every other table forgives
+    # one thing on an absence; this one forgives four, so it is the one place
+    # where a missing date has to be answered with the header rather than with
+    # the bypass (round-4 refutation F-7).
+    unheadered = excused(UNHEADERED_REVIEWS.get(video_id), rel, undated=False)
     want = note_body_sha256(body)
     out: list[str] = []
     # Keyed by PATH, not by name. `rglob` spans subdirectories, so name-keying
@@ -2915,9 +2948,16 @@ def selftest() -> int:
         cases += 1
         UNHEADERED_REVIEWS["VID"] = "2026-01-01 filed before the header existed"
         try:
-            assert check_lanes(r, deep_fm, "n.md", note_body) == []; cases += 1
-            got = check_lanes(r, fm4, "n.md", note_body)
+            old = "2025-12-31--n--VID.md"
+            assert check_lanes(r, deep_fm, old, note_body) == []; cases += 1
+            got = check_lanes(r, fm4, old, note_body)
             assert any("E-LANE-MISSING" in g for g in got), got
+            cases += 1
+            # An UNDATED note buys nothing here. Every other table forgives one
+            # thing on an absence; this row forgives the whole header, so the
+            # report is read rather than skipped (round-4 refutation F-7).
+            got = check_lanes(r, deep_fm, "n.md", note_body)
+            assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
             cases += 1
             # ...and it AGES, like every other debt row. Membership alone made
             # this the one table that covered work nobody had done yet: a note

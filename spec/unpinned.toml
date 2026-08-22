@@ -29,6 +29,16 @@
 #      looks exactly like an unpinned rule and is not one. That is why a row
 #      here is a dated finding rather than a hard failure on the day it is made.
 
+# THE SIZE OF THIS TABLE, DECLARED. Every paragraph below turns on this number
+# and one of them was wrong for a day: it said "130 of 134 pinned, 4 unpinned"
+# and then, one sentence later, that three rows had left a table of five --
+# wrong against the run report, against the row count two screens down, and
+# against its own arithmetic. The conformance suite reads the rows and never
+# the comments, so nothing could notice. A key a test can read is the smallest
+# thing that makes the count checkable, and it moves in the same commit as a
+# row (V4 item 6, V3 Q0).
+rows = 2
+
 # Rows are written from a measured run, never from memory. An empty table means
 # the run has not been read yet, not that every rule is pinned.
 #

@@ -479,12 +479,18 @@ def test_an_applied_field_that_says_nothing_is_not_an_edge(corpus):
 
 
 def test_a_grandfathered_video_id_keeps_its_headerless_reports(corpus):
-    """The 17 directories that pre-date the header, exempted by dated row."""
+    """The 17 directories that pre-date the header, exempted by dated row.
+
+    The note is named with a date because this row no longer forgives an
+    undated one: it skips four checks at once, and an absence may not buy that
+    (round-4 refutation F-7). Every note in the corpus is filed with a date, so
+    the fixture was the only thing relying on the old width.
+    """
     for lane in ("facts", "quality", "coverage"):
         (_reports(corpus) / f"{lane}.md").write_text("old report\n", encoding="utf-8")
     rn.UNHEADERED_REVIEWS["VID"] = "2026-08-20 filed before the header existed"
     try:
-        assert rn.check_lanes(corpus, _fm(), "n.md", BODY) == []
+        assert rn.check_lanes(corpus, _fm(), "2026-08-19--n--VID.md", BODY) == []
     finally:
         del rn.UNHEADERED_REVIEWS["VID"]
 
@@ -903,3 +909,141 @@ def test_the_manifest_gate_pointed_at_reviews_grades_no_reports(corpus):
         "x", encoding="utf-8")
     with pytest.raises(SystemExit):
         am.collect_notes([_reports(corpus)], corpus)
+
+
+# --------------------------------------------------------------------------
+# V1-4 — the date rule lived in the loader and nowhere else
+# --------------------------------------------------------------------------
+
+# The four rows V1 measured. Row one is the only legal shape; the other three
+# are the three ways a reason can carry no date the ageing comparison reads.
+V1_PROBE = ("2026-08-21 note frozen",
+            "frozen, recorded 2026-08-21",
+            "permanent",
+            "9999-99-99 impossible")
+
+
+@pytest.mark.parametrize("reason", V1_PROBE[1:])
+def test_a_reason_that_is_not_dated_first_excuses_nothing(reason):
+    """Two lanes read this code and disagreed; the probe decided.
+
+    `excused` compares `when <= reason[:10]` as STRINGS, so every ISO date
+    sorts below every letter and a reason beginning with a word excused every
+    note it named, forever. `wq_policy._validate` refuses those rows at load,
+    which is why the corpus was never actually holed -- but the function makes
+    no such assumption in its own body, and `UNHEADERED_REVIEWS` and its
+    neighbours are plain dicts any caller can write a row into without passing
+    a `Policy` at all. The guard belongs where the comparison is.
+
+    Would fail if: the ISO-date test is removed from `excused`.
+    """
+    assert rn.excused(reason, "2026-08-22--new--VID.md") is False
+
+
+def test_a_reason_dated_first_still_ages_the_note_in_front_of_it():
+    """The other half of the same guard: row one of V1's probe still works."""
+    assert rn.excused(V1_PROBE[0], "2026-08-20--old--VID.md") is True
+    assert rn.excused(V1_PROBE[0], "2026-08-22--new--VID.md") is False
+
+
+@pytest.mark.parametrize("reason", V1_PROBE[1:])
+def test_the_loader_refuses_the_same_three_rows(reason):
+    """Both layers, so neither one is the only thing holding the door."""
+    with pytest.raises(wq_policy.PolicyError):
+        wq_policy.Policy({"unheadered_reviews": {"VID": reason}}, None)
+
+
+# --------------------------------------------------------------------------
+# verification-3 T3 — the widest bypass, and whether it is a boundary
+# --------------------------------------------------------------------------
+
+OLD_ROW = "2020-01-01 filed before the header existed"
+
+
+def test_the_unheadered_row_is_a_boundary_and_not_a_membership_card(corpus):
+    """The whole header bypass, aged like every other debt row.
+
+    A row here skips the header entirely -- oracle, verdict, lane label and
+    body hash together -- so it is the widest excuse in the policy. Read as
+    bare membership it covered work nobody had done yet: a report filed today,
+    under a video id grandfathered in years ago, bought all four.
+
+    This lived only in the module selftest. The pytest layer is where a
+    refactor gets noticed, so it is asserted here too.
+
+    Would fail if: `check_lanes` goes back to `video_id in UNHEADERED_REVIEWS`.
+    """
+    (_reports(corpus) / "facts.md").write_text("not a review\n", encoding="utf-8")
+    fm = _fm("VID", "[facts]")
+    rn.UNHEADERED_REVIEWS["VID"] = OLD_ROW
+    try:
+        # A note that existed when the row was written: the header is skipped.
+        assert rn.check_lanes(corpus, fm, "2020-01-01--old--VID.md", BODY) == []
+
+        # A note filed after it: the report is read, and it is not a review.
+        got = rn.check_lanes(corpus, fm, "2026-06-01--later--VID.md", BODY)
+        assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
+
+        # What the case discriminates, said out loud: membership is true for
+        # BOTH notes, so a bare `in` test cannot tell them apart and the date
+        # comparison is the only thing that does.
+        assert "VID" in rn.UNHEADERED_REVIEWS
+        assert rn.excused(OLD_ROW, "2026-06-01--later--VID.md") is False
+    finally:
+        del rn.UNHEADERED_REVIEWS["VID"]
+
+
+@pytest.mark.parametrize("table", ["UNRESOLVABLE_RUNS", "UNHEADERED_REVIEWS",
+                                   "UNFILLED_ORACLES", "UNGRADED_NOTES"])
+def test_every_dated_table_ages_the_same_way(table):
+    """One rule, four tables. Two of them read it differently for a while.
+
+    Each of these promises the same thing at the head of the policy file --
+    dated, reasoned, printed, may only shrink -- and the ageing is what makes
+    "dated" mean anything. A table that holds rows of the same shape and reads
+    them by a different rule is the defect this parametrisation exists to stop
+    coming back one table at a time.
+    """
+    assert isinstance(getattr(rn, table), dict)
+    assert rn.excused(OLD_ROW, "2019-12-31--before--VID.md") is True
+    assert rn.excused(OLD_ROW, "2020-01-01--same-day--VID.md") is True
+    assert rn.excused(OLD_ROW, "2020-01-02--after--VID.md") is False
+
+
+# --------------------------------------------------------------------------
+# round-4 F-7 — an undated note bought the whole header bypass
+# --------------------------------------------------------------------------
+
+def test_an_undated_note_still_buys_one_rows_worth_of_forgiveness():
+    """The default is unchanged: absence is not a conviction.
+
+    A note whose filename carries no date cannot be placed either side of the
+    row's line. For `lost_reviews` and `unresolvable_runs` that forgives ONE
+    thing -- a lane's missing report, a run that has gone -- so leaving it
+    excused costs a row and no more.
+    """
+    assert rn.excused(OLD_ROW, "no-date-here.md") is True
+
+
+def test_an_undated_note_does_not_buy_the_whole_header_bypass(corpus):
+    """...and where the row forgives four things at once, it does not.
+
+    The unheadered row skips oracle, verdict, lane label and body hash
+    together. An undated note filed under an old row bought all four on an
+    absence, which is the widest excuse in the policy resting on the weakest
+    evidence in it -- the one place where "left excused rather than convicted"
+    costs more than the finding it was protecting.
+
+    Would fail if: `check_lanes` stops passing `undated=False`, or `excused`
+    stops reading it.
+    """
+    assert rn.excused(OLD_ROW, "no-date-here.md", undated=False) is False
+
+    (_reports(corpus) / "facts.md").write_text("not a review\n", encoding="utf-8")
+    fm = _fm("VID", "[facts]")
+    rn.UNHEADERED_REVIEWS["VID"] = OLD_ROW
+    try:
+        got = rn.check_lanes(corpus, fm, "no-date-here.md", BODY)
+        assert len(got) == 1 and "E-LANE-UNPARSED" in got[0], got
+    finally:
+        del rn.UNHEADERED_REVIEWS["VID"]

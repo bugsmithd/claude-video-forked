@@ -67,6 +67,14 @@ def _unspecified() -> dict[str, str]:
     return dict(tomllib.loads(path.read_text(encoding="utf-8")).get("codes", {}))
 
 
+# The size of the debt list, committed. `spec/unspecified.toml` says it may
+# only shrink and nothing read its length: a code with no rule row is legal so
+# long as it is written down as owed, which makes this list the escape hatch
+# for the conformance case below. Lower this in the same commit as the row you
+# struck off. Raising it is the edit the file's first sentence forbids.
+UNSPECIFIED_CAP = 0
+
+
 def _codes_in_source() -> dict[str, set[str]]:
     """Every defect code the package can PRINT, and which module prints it.
 
@@ -295,6 +303,29 @@ def test_the_debt_list_holds_no_code_that_is_already_specified():
     specified = {r["code"] for r in RULES if r.get("code")}
     both = specified & set(_unspecified())
     assert not both, sorted(both)
+
+
+def test_the_debt_list_may_only_shrink():
+    """The sentence at the head of the file, given a number a test can read.
+
+    `spec/unspecified.toml` says it may only shrink and nothing read its size.
+    A code added with no rule row is legal as long as it is ALSO written down
+    as owed -- so the debt list is the escape hatch for the case above, and an
+    unbounded escape hatch is not one. The list has been empty since
+    2026-08-21; committing that zero is what stops the next new code being
+    parked here instead of specified (V3 Q5, V4 item 9).
+
+    Would fail if: a row is added to the debt list without lowering the cap,
+    which is the edit the file's own first sentence forbids.
+    """
+    rows = sorted(_unspecified())
+    assert len(rows) <= UNSPECIFIED_CAP, (
+        f"the debt list holds {len(rows)} row(s) and was capped at "
+        f"{UNSPECIFIED_CAP}: {rows}. This list may only shrink -- write the "
+        f"rule, or lower the cap in the same commit as the row you struck off.")
+    # Grown by one, the same comparison is red. A cap resting on the current
+    # count proves nothing on its own about what it would refuse.
+    assert len({**_unspecified(), "E-GROWN-IN-A-SANDBOX": "x"}) > UNSPECIFIED_CAP
 
 
 def test_the_debt_list_holds_no_code_the_package_no_longer_prints():

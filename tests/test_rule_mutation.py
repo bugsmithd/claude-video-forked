@@ -64,6 +64,17 @@ def _ledgered() -> dict[str, str]:
 
 UNPINNED = _ledgered()
 
+
+def _rows_naming_no_rule(ledger: dict[str, str], rules: list[dict]) -> list[str]:
+    """Ledger ids that answer to no rule in the table.
+
+    `_ledgered` reads an id and a date and never asks whether the id names
+    anything. A typo, a renamed rule or a deleted one leaves a row that skips
+    no case while still counting against the cap, which is a ledger that cannot
+    reach zero because part of it stopped meaning anything.
+    """
+    return sorted(set(ledger) - {r["id"] for r in rules})
+
 # The size of the ledger, committed. `spec/unpinned.toml` says it may only
 # shrink, and nothing enforced that: adding a row turns the pin test into a skip
 # for that rule, silently, with the suite green. Lower this in the same commit
@@ -874,6 +885,61 @@ def test_the_unpinned_ledger_may_only_shrink():
         f"the ledger holds {len(UNPINNED)} rows and was capped at {LEDGER_CAP}. "
         "This table may only shrink: pin the rule, or lower the cap in the same "
         "commit as the row you deleted.")
+    # And the comparison DISCRIMINATES, which a cap sitting exactly on the row
+    # count does not prove by itself. Grow the ledger by one and the same test
+    # is red -- so this case cannot go quietly inert the day somebody raises
+    # the cap and the row count together.
+    grown = {**UNPINNED, "wq-grown-in-a-sandbox": "1999-01-01 appended"}
+    assert len(grown) > LEDGER_CAP
+
+
+def test_the_ledger_states_its_own_size_and_the_number_is_read():
+    """The prose in that file was wrong for a day and nothing could notice.
+
+    `spec/unpinned.toml` carries several paragraphs of run history, and one of
+    them stated "130 of 134 pinned, 4 unpinned" and then, one sentence later,
+    that three rows had left a table of five -- wrong against the run report,
+    against the row count two screens down, and against its own arithmetic. The
+    conformance suite reads the rows and never the comments, so prose and table
+    could disagree indefinitely (V4 item 6, V3 Q0).
+
+    A declared `rows` key is the smallest thing a test can read. It does not
+    make the paragraphs true; it makes the one number they all turn on
+    checkable, and it has to be edited in the same commit as a row.
+
+    Would fail if: a row is added or deleted without touching the count.
+    """
+    doc = tomllib.loads((SPEC_DIR / "unpinned.toml").read_text(encoding="utf-8"))
+    assert "rows" in doc, (
+        "spec/unpinned.toml must declare `rows = <n>` beside its table, so the "
+        "count its prose turns on is a number rather than a sentence")
+    assert doc["rows"] == len(doc.get("rule", [])), (
+        f"the file declares {doc['rows']} row(s) and holds "
+        f"{len(doc.get('rule', []))}")
+    assert doc["rows"] == len(UNPINNED), (
+        "the declared count and the ledger the harness actually reads have "
+        "come apart, which means a row has a duplicate id")
+
+
+def test_a_ledger_row_naming_no_rule_is_reported_rather_than_silent():
+    """A rotten row skips nothing, and nothing ever said so.
+
+    `_ledgered` reads an id and a date and never asks whether the id names a
+    rule that exists. So a row whose id is a typo -- or whose rule was renamed,
+    or deleted -- sits on the ledger looking like a paid-for exemption while
+    skipping no case at all, and the cap above counts it as one of the two rows
+    the table is allowed. The ledger cannot shrink toward zero if part of it is
+    already naming nothing (V3 Q5, V4 item 9).
+
+    Would fail if: `_rows_naming_no_rule` stops comparing against the real ids.
+    """
+    # The ledger that ships names only rules that exist.
+    assert _rows_naming_no_rule(UNPINNED, RULES) == []
+
+    # And the check is the reason that sentence is worth reading: a row whose
+    # id nothing answers to is named, not counted as coverage.
+    rotten = {**UNPINNED, "no-such-rule-id": "2026-08-21 typo"}
+    assert _rows_naming_no_rule(rotten, RULES) == ["no-such-rule-id"]
 
 
 def test_the_constructed_wrecking_ball_is_refused_over_the_real_roll_call():

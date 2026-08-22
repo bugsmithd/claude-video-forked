@@ -181,6 +181,56 @@ def stem(word: str) -> str:
     return word
 
 
+# What one line is to the row parser. Named rather than spelled out, because
+# two readers ask this question -- `read_note`, which collects the rows, and
+# the anchor walk in `measure`, which has to know which lines were REFUSED --
+# and a line that is a thrown-out row to one and ordinary prose to the other is
+# exactly the half-credit this vocabulary exists to close (V5 section 1 gap a).
+ROW, IMPOSSIBLE, MISSHAPEN, PROSE = "row", "impossible", "misshapen", "prose"
+
+
+def _row_of(line: str) -> tuple[str, object]:
+    """Read one line as a claim row, a refusal, or neither.
+
+    `(ROW, (seconds, class, text))` when it parses. `(IMPOSSIBLE, stamp)` when
+    a stamp is not a time a clock can say. `(MISSHAPEN, line)` when the line
+    was trying to be a row and is not one. `(PROSE, line)` when it never was.
+
+    The last two are the distinction that matters downstream: prose carries its
+    anchors, and a refused row does not.
+    """
+    match = RE_ROW.match(line)
+    if not match:
+        return (MISSHAPEN, line) if RE_ROWISH.match(line) else (PROSE, line)
+    try:
+        at = seconds_of(match.group(1))
+    except ValueError:
+        return (IMPOSSIBLE, match.group(1))
+    # Where a row names where it ENDED, that stamp answers to the same clock.
+    # An unsayable end is the same finding as an unsayable start, so it gets
+    # the same name; an end BEFORE the start is neither stamp's fault and is
+    # reported as the shape it is, which is what this line was reported as
+    # before the range form was read at all.
+    end = match.group(3)
+    if end is not None:
+        try:
+            until = seconds_of(end)
+        except ValueError:
+            return (IMPOSSIBLE, end)
+        if until < at:
+            return (MISSHAPEN, line)
+    return (ROW, (at, match.group(2), match.group(4).strip()))
+
+
+def _in_span(stamp: str, span: tuple[float, float]) -> bool:
+    """Is this written stamp a second inside the span being measured?"""
+    try:
+        at = seconds_of(stamp)
+    except ValueError:
+        return False
+    return span[0] <= at <= span[1]
+
+
 def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
                                    list[str], list[str]]:
     """The note's carried text, its claim rows, unsayable stamps, and misshapen lines.
@@ -208,32 +258,13 @@ def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
     impossible: list[str] = []
     misshapen: list[str] = []
     for line in text.splitlines():
-        match = RE_ROW.match(line)
-        if not match:
-            if RE_ROWISH.match(line):
-                misshapen.append(line.strip()[:60])
-            continue
-        try:
-            at = seconds_of(match.group(1))
-        except ValueError:
-            impossible.append(match.group(1))
-            continue
-        # Where a row names where it ENDED, that stamp answers to the same
-        # clock. An unsayable end is the same finding as an unsayable start, so
-        # it goes to the same list; an end BEFORE the start is neither stamp's
-        # fault and is reported as the shape it is, which is what this line was
-        # reported as before the range form was read at all.
-        end = match.group(3)
-        if end is not None:
-            try:
-                until = seconds_of(end)
-            except ValueError:
-                impossible.append(end)
-                continue
-            if until < at:
-                misshapen.append(line.strip()[:60])
-                continue
-        rows.append((at, match.group(2), match.group(4).strip()))
+        kind, value = _row_of(line)
+        if kind == ROW:
+            rows.append(value)
+        elif kind == IMPOSSIBLE:
+            impossible.append(value)
+        elif kind == MISSHAPEN:
+            misshapen.append(value.strip()[:60])
     return text, rows, impossible, misshapen
 
 
@@ -474,10 +505,23 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     # timestamps fills every hole in this check while saying nothing, which is
     # how an adversarial lane made a note with a twenty-nine-minute gap report
     # none: it hid one anchor per minute in an HTML comment.
+    # AND A ROW THE PARSER REFUSED IS NOT ONE OF THEM. This walk read every
+    # line of the body alike, so a backwards range gave 0 rows and the same two
+    # anchors as the row that parsed, and both reported the same dead minutes:
+    # a note scored identical coverage whether its row was legal or not. Prose
+    # keeps its anchors -- it never claimed to be a row -- but a line that
+    # tried and failed buys nothing (V5 section 1 gap a).
     anchors: list[float] = []
+    on_refused = 0
     for line in body.splitlines():
         stamps = RE_ANCHOR.findall(line)
         if not stamps:
+            continue
+        if _row_of(line)[0] in (IMPOSSIBLE, MISSHAPEN):
+            # Counted as ANCHORS, which is what the name says: a stamp no clock
+            # can say was never going to fill a bucket, so reporting it here
+            # would overstate what the refusal cost.
+            on_refused += sum(1 for s in stamps if _in_span(s, span))
             continue
         said = len(RE_WORD.findall(RE_ANCHOR.sub(" ", line).lower()))
         if said < MIN_LINE_WORDS:
@@ -493,6 +537,9 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     result["dead"] = {"minutes": dead, "of": buckets, "longest_run": run,
                       "longest_run_at": run_at}
     result["anchors"] = len(anchors)
+    # Printed rather than silently dropped: a note whose coverage fell when its
+    # rows stopped parsing should be able to see why in the same object.
+    result["anchors_on_refused_rows"] = on_refused
     result["anchored_seconds"] = len({int(a) for a in anchors})
     # THE FRAGMENTATION NUMBER. Rows per second turned out not to be one: the
     # corpus sits at 1.0-1.5 whatever the note's quality, because a fragmented
