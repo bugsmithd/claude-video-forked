@@ -588,6 +588,42 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     return result
 
 
+def note_only_defects(note: Path) -> list[str]:
+    """The findings that read the NOTE and never the rendering.
+
+    `E-COV-STAMP` and `E-COV-ROWSHAPE` are both about how a line is written,
+    and neither has ever needed a transcript. They were unreachable anyway,
+    because the only route to this module is `note_gates`, which skips a note
+    whose oracle it cannot open -- so for these two a skip was exactly a pass.
+    The corpus reported zero misshapen rows while 21 skipped notes carried 105
+    of them (V2 finding V2-6).
+
+    Reads the note itself and reports nothing when it cannot: inventing a row
+    shape for a file nobody could parse is the opposite mistake.
+    """
+    try:
+        result = {"impossible_stamps": [], "misshapen_rows": []}
+        _body, _rows, impossible, misshapen = read_note(note)
+    except (OSError, UnicodeDecodeError):
+        return []
+    result["impossible_stamps"] = impossible
+    result["misshapen_rows"] = misshapen
+    return [line for line in defects({**_EMPTY_RESULT, **result})
+            if "E-COV-STAMP" in line or "E-COV-ROWSHAPE" in line]
+
+
+# The shape `defects` reads, with every threshold answered in the direction
+# that reports nothing. `note_only_defects` fills in the two fields it owns and
+# takes the two lines they produce, so the wording of a finding lives once.
+_EMPTY_RESULT: dict = {
+    "impossible_stamps": [], "misshapen_rows": [], "rows": 0,
+    "dead": {"minutes": 0, "of": 0, "longest_run": 0, "longest_run_at": 0.0},
+    "near_duplicate_rows": 0, "near_duplicate_share": 0.0,
+    "verbatim_share": 0.0, "list_density": 0.0, "note_words": 0,
+    "recall": {"all": {"carried": 0, "of": MIN_SALIENT, "share": 0.0}},
+}
+
+
 def defects(result: dict) -> list[str]:
     out: list[str] = []
     for stamp in result.get("impossible_stamps", []):

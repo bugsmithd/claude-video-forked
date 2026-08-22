@@ -37,7 +37,9 @@ Exit: 0 windows printed, 1 a window came out empty, 2 usage or unreadable input.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -53,15 +55,30 @@ WINDOW_SECONDS = 600.0
 # windows and reconciled at merge. Below about a minute a sentence can begin in
 # one window and land its point in the next with neither having both halves.
 OVERLAP_SECONDS = 90.0
-# One window holding more than this share of a multi-window plan means the split
-# did not happen. An adversarial lane produced it by setting every segment's
-# start to zero: window 1 took all 360 segments over a full hour, which is
-# exactly the single overloaded context the windows exist to prevent, reported
-# as a clean plan of seven windows.
+# One window holding more than this share of a multi-window plan ALONE -- with
+# no other window sharing those segments -- means the split did not happen. An
+# adversarial lane produced it by setting every segment's start to zero: window
+# 1 took all 360 segments over a full hour, which is exactly the single
+# overloaded context the windows exist to prevent, reported as a clean plan of
+# seven windows.
+#
+# Measured against uniquely-owned segments rather than members, because windows
+# overlap by design and a member count double-counts every segment at a seam.
+# The shares of a three-window plan then sum to about 115%, so a recording
+# whose middle talks faster cleared a flat half without anything being wrong
+# (V2 finding V2-3a).
 OVERFULL_SHARE = 0.5
 # Orphans printed one by one before the rest are counted. Ten names the problem;
 # eight hundred would bury the window table that explains it.
 ORPHANS_SHOWN = 10
+# A CEILING ON THE PLAN, because the loop that builds it takes its bound from
+# the file it was handed. `at += stride` while `at < total` is unbounded in
+# `total`, and `total` is the largest number in a rendering that arrived from
+# disk -- so a segment ending at 1e18 asks for two thousand million million
+# windows and the process dies holding a list. Ten thousand windows is
+# 1,700 hours at the default span, past anything anybody watches, and being
+# refused by a named number beats being killed by the allocator (V1 section D).
+MAX_WINDOWS = 10_000
 
 
 def plan(segments: list[dict], window_seconds: float,
@@ -101,6 +118,19 @@ def plan(segments: list[dict], window_seconds: float,
                 max(s["start"] for s in segments))
     if duration is not None:
         total = max(total, duration)
+    # THE LOOP BELOW TAKES ITS BOUND FROM THE FILE. `load_segments` refuses a
+    # non-finite stamp, and `plan` is a public function a caller can hand a
+    # hand-built list to -- which is how the corpus reaches it in one place --
+    # so the same two questions are asked here rather than assumed answered.
+    if not math.isfinite(total):
+        raise ValueError(
+            f"a recording {total} seconds long is not one; a segment's start "
+            f"and end have to be numbers of seconds")
+    if total / stride > MAX_WINDOWS:
+        raise ValueError(
+            f"{total:.0f}s at a {stride:.0f}s stride is more than "
+            f"{MAX_WINDOWS} windows; that is not a recording anybody watched, "
+            f"and building the plan would cost more memory than the answer")
     starts: list[float] = []
     at = 0.0
     while at < total:
@@ -450,12 +480,37 @@ def main(argv: list[str] | None = None) -> int:
             f"[00:00] E-WIN-TIMELESS {distinct_starts} distinct start time(s) "
             f"across {len(segments)} segments; this transcript has no usable "
             f"timeline, so any window plan over it is arithmetic on one number")
-    biggest = max((w["segments"] for w in windows), default=0)
-    if len(windows) > 1 and biggest > len(segments) * OVERFULL_SHARE:
+    # WHAT A WINDOW OWNS ALONE, not what it holds. Windows overlap by design,
+    # so a member count double-counts every segment at a seam: the shares of a
+    # three-window plan sum to about 115%, and against a flat half that made a
+    # recording whose middle simply talks faster into a plan that "did not
+    # split" -- 22 minutes, three windows, none empty, nothing orphaned, shares
+    # 32/52/31 (V2 finding V2-3a). With three windows the arithmetic floor for
+    # the largest share is already 33%.
+    #
+    # Uniquely-owned segments answer the question the threshold's own comment
+    # describes -- one window holding the whole recording -- and the answer does
+    # not move with the window count or with the overlap.
+    owners = collections.Counter(
+        i for w in windows for i in w.get("members", []))
+    alone = [sum(1 for i in w.get("members", []) if owners[i] == 1)
+             for w in windows]
+    if len(windows) > 1 and max(alone, default=0) > len(segments) * OVERFULL_SHARE:
         defects.append(
-            f"[00:00] E-WIN-OVERFULL one window holds {biggest} of "
-            f"{len(segments)} segments; the plan says it split the video and "
-            f"the numbers say it did not")
+            f"[00:00] E-WIN-OVERFULL one window holds {max(alone)} of "
+            f"{len(segments)} segments and shares none of them; the plan says "
+            f"it split the video and the numbers say it did not")
+    # THE OTHER SHAPE, which uniqueness alone cannot see. When every window
+    # holds every segment -- a decoder that stamped the whole hour at zero --
+    # NO window owns anything alone, so the count above is 0 for all of them
+    # and the worst plan there is looks like the best. A window that owns
+    # nothing of its own is a window that added nothing to the split.
+    elif len(windows) > 1 and min(alone, default=1) == 0:
+        empty = alone.index(0)
+        defects.append(
+            f"[00:00] E-WIN-OVERFULL window {empty + 1} of {len(windows)} "
+            f"holds no segment another window does not already hold; the plan "
+            f"says it split the video and the numbers say it did not")
     for defect in defects:
         print(defect)
     print(f"# {len(windows)} window(s), "

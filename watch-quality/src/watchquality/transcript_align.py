@@ -52,6 +52,7 @@ import argparse
 import difflib
 import hashlib
 import json
+import math
 import re
 import sys
 from collections import Counter
@@ -208,6 +209,24 @@ def load_segments(path: Path) -> list[dict]:
         raise ValueError("not a transcript: expected .vtt, or JSON with "
                          "'transcription', 'segments', or a bare segment list")
     out = [s for s in out if s["text"]]
+    # A START AND AN END ARE NUMBERS OF SECONDS INTO A RECORDING, and `Infinity`
+    # is legal JSON that `json.loads` hands over as a float. Nothing downstream
+    # expected one: the window planner walks `at += stride` while `at < total`,
+    # so an infinite total appended to a list for ever -- killed under
+    # `timeout 20`, rc 124, reproduced twice, and nothing rescues it, because
+    # the runner catches a check that fails and one that raises and has no
+    # catch for one that never returns (V1 section D).
+    #
+    # Refused HERE and not at the planner. The planner is one consumer of these
+    # numbers; the recall counter, the aligner, the coverage walk and the
+    # caption index are others, and a guard per consumer is a guard per
+    # consumer to forget.
+    for s in out:
+        for field in ("start", "end"):
+            if not math.isfinite(s[field]):
+                raise ValueError(
+                    f"{s[field]} is not a number of seconds into a recording; "
+                    f"a segment's {field} has to be one")
     return sorted(out, key=lambda s: s["start"])
 
 

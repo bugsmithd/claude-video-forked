@@ -89,6 +89,17 @@ def rendering_for(note: Path, root: Path) -> tuple[Path | None, str]:
                                           vid.group(1))
     if hit is None:
         return None, f"names {resolve_note.oracle_token(rows[0])}, which opens nothing"
+    # AND IT HAS TO BE THIS VIDEO'S. `check_oracle` asks two questions of the
+    # field -- is this the note's own rendering, and can a gate read it -- and
+    # this function asked only the second. So a note whose oracle was an
+    # absolute path to ANOTHER video's transcript was graded against it, and
+    # counted in the census as graded against its own: arithmetic defects about
+    # a recording the note was never written from. The relatedness test is
+    # `resolve_note`'s, called rather than restated, because two copies of one
+    # question are two answers waiting to differ (V2 finding V2-10).
+    if not resolve_note.oracle_names_run(hit, vid.group(1), root):
+        return None, (f"names {resolve_note.oracle_token(rows[0])}, which is "
+                      f"not a rendering of {vid.group(1)}")
     # A FILE THAT OPENS IS NOT A RENDERING. A run manifest sits beside the real
     # transcript, under the same video id, and opens -- so this gate was handed
     # one, could not read it, and reported a note that "cannot be graded", while
@@ -156,7 +167,15 @@ def check_note(note: Path, root: Path) -> tuple[list[str], str | None]:
         return [], f"excused by the ledger [{excuse}]"
     rendering, why = rendering_for(note, root)
     if rendering is None:
-        return [], why
+        # A SKIP IS NOT A PASS, and for two of these findings it was exactly
+        # one. `E-COV-STAMP` and `E-COV-ROWSHAPE` read the note and never the
+        # rendering, so a note skipped for an unreadable oracle was never asked
+        # about the shape of its own rows: the corpus reported zero misshapen
+        # rows while 21 skipped notes carried 105 (V2 finding V2-6). The note
+        # is still reported as ungraded -- the census is unchanged -- and now
+        # the checks that did not need a rendering have run.
+        return ([f"{rel}: {line}"
+                 for line in note_coverage.note_only_defects(note)], why)
     out: list[str] = []
     for fn, argv in ((note_coverage.main, [str(note), str(rendering)]),
                      (note_windows.main, [str(rendering)])):
@@ -207,12 +226,12 @@ def main(argv: list[str] | None = None, root: Path | None = None) -> int:
     notes = [p.resolve() for p in args.paths] or resolve_note.corpus_notes(root)
 
     defects: list[str] = []
-    skipped: list[tuple[Path, str]] = []
+    skipped: list[tuple[Path, str, list[str]]] = []
     for note in notes:
         found, why = check_note(note, root)
         if why is not None:
             rel = note.relative_to(root) if note.is_relative_to(root) else note
-            skipped.append((rel, why))
+            skipped.append((rel, why, found))
             continue
         defects.extend(found)
 
@@ -220,10 +239,23 @@ def main(argv: list[str] | None = None, root: Path | None = None) -> int:
         print(line)
     # NAMED, not counted. "19 skipped" under a line reading "0 defects" is the
     # shape of a clean bill of health for a corpus this gate never opened.
-    for rel, why in skipped:
+    #
+    # AND WHAT THE SKIP DID NOT EXCUSE IS NAMED TOO. Two of these findings read
+    # the note and never the rendering, so for them a skip was exactly a pass
+    # and the corpus reported zero misshapen rows while 21 skipped notes
+    # carried 105 (V2 finding V2-6). They are printed here rather than counted
+    # as defects: a skipped note is one this gate could not grade, its rows are
+    # a real and permanent finding, and reddening a frozen corpus over a
+    # finding nobody can repair teaches its reader to stop reading the output.
+    unreached = 0
+    for rel, why, found in skipped:
         print(f"# not graded: {rel} {why}", file=sys.stderr)
+        unreached += len(found)
+        for line in found:
+            print(f"# even so: {line}", file=sys.stderr)
     print(f"# {len(notes) - len(skipped)} of {len(notes)} note(s) graded "
-          f"against their own rendering, {len(defects)} defect(s)",
+          f"against their own rendering, {len(defects)} defect(s), "
+          f"{unreached} finding(s) in notes this gate could not grade",
           file=sys.stderr)
     return 1 if defects else 0
 

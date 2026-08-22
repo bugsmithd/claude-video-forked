@@ -1471,12 +1471,26 @@ def oracle_token(value: str) -> str:
     return value.strip().split()[0] if value.strip() else ""
 
 
-def _first_match(pattern: Path) -> Path | None:
+def _first_match(pattern: Path, roots: tuple[Path, ...] = ()) -> Path | None:
     """The file a candidate names, resolving a glob rather than refusing one.
 
     `watch-whisper/chunks/*.whisper.json` is how a chunked run is written down,
     and it names a real set of files. Treating the literal string as a filename
     would report the only honest way to name that rendering as unresolvable.
+
+    THE ANCHOR IS THE PART BEFORE THE FIRST WILDCARD, and that is where the walk
+    starts. For a relative value it is a directory the caller named and the walk
+    is bounded by construction. For an ABSOLUTE one it was whatever the value
+    began with, which for `/**/*.json` is the filesystem root: a note carrying
+    that sent this function, and the note gate behind it, across the whole disk
+    -- killed under `timeout 20`, rc 124, twice (V2 finding V2-5).
+
+    So an absolute pattern has to be anchored somewhere a rendering can be.
+    `roots` is that list -- the corpus and the runs directory -- and an anchor
+    outside all of them names no rendering whatever it would have matched. It
+    is a comparison of path parts, so the refusal costs nothing and, unlike a
+    depth rule, it does not turn on how deep somebody's home directory happens
+    to be.
     """
     parts = pattern.parts
     globbed = next((i for i, part in enumerate(parts)
@@ -1484,6 +1498,9 @@ def _first_match(pattern: Path) -> Path | None:
     if globbed is None:
         return pattern if pattern.is_file() else None
     anchor = Path(*parts[:globbed]) if globbed else Path(".")
+    if anchor.is_absolute() and not any(
+            anchor == r or anchor.is_relative_to(r) for r in roots):
+        return None
     matches = sorted(p for p in anchor.glob(str(Path(*parts[globbed:])))
                      if p.is_file())
     return matches[0] if matches else None
@@ -1502,12 +1519,17 @@ def note_oracle_target(value: str, rel, root: Path, video_id: str) -> Path | Non
     if not token:
         return None
     p = Path(token).expanduser()
+    # The places a rendering of this corpus can be. An absolute globbed value is
+    # resolved only from inside one of them, so a wildcard cannot turn a lookup
+    # into a walk of the disk (V2 finding V2-5).
+    runs = POLICY.runs_root().expanduser()
+    roots = (root.resolve(), runs.resolve() if runs.exists() else runs)
     if p.is_absolute():
-        return _first_match(p)
-    bases = [POLICY.runs_root().expanduser() / video_id] if video_id else []
+        return _first_match(p, roots)
+    bases = [runs / video_id] if video_id else []
     bases.append(root)
     for base in bases:
-        hit = _first_match(base / p)
+        hit = _first_match(base / p, roots)
         if hit is not None:
             return hit
     return None

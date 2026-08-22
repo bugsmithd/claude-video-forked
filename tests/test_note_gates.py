@@ -301,6 +301,104 @@ def test_the_ledger_is_empty_without_a_policy():
     assert wq_policy.Policy({}, None).ungraded_notes() == {}
 
 
+def test_a_finding_that_reads_only_the_note_survives_a_missing_rendering(corpus):
+    """V2 finding V2-6 — for these two, a skip was exactly a pass.
+
+    This gate skips a note whose oracle it cannot open, and `note_coverage` is
+    the only owner of `E-COV-ROWSHAPE` and `E-COV-STAMP`. Both read the NOTE
+    and never the rendering, so they were unreachable for every skipped note:
+    the corpus reported zero misshapen rows while 21 skipped notes carried 105
+    of them, and the worst of those notes exits 1 the moment a rendering is
+    handed to it by hand.
+
+    The census does name the skipped notes, so this was never silent. But
+    "skipping is not passing" is only true of a finding that needs the thing
+    that is missing.
+
+    Would fail if: `check_note` returns on the skip path without asking the
+    note-only checks.
+    """
+    note = corpus / "notes" / "2026-08-20--m--VID.md"
+    note.write_text(
+        '---\nvideo_id: VID\nduration: "22:00"\nstatus: distilled\n'
+        "oracle: runs/VID/gone.json\n---\n\n# t\n\n"
+        "- `[59:99]` `SPOKEN` — a stamp no clock can say.\n", encoding="utf-8")
+
+    lines, why = ng.check_note(note, corpus)
+
+    assert why and "opens nothing" in why, why
+    assert any("E-COV-STAMP" in ln for ln in lines), lines
+
+    # ...and it reaches a reader, as a named line under the skip rather than as
+    # a defect. A skipped note is one this gate could not grade; its rows are a
+    # real and permanent finding, and reddening a frozen corpus over one nobody
+    # can repair teaches its reader to stop reading the output.
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        code = ng.main([str(note)], root=corpus)
+    printed = err.getvalue()
+    assert code == 0, printed
+    assert "E-COV-STAMP" in printed, printed
+    assert "1 finding(s) in notes this gate could not grade" in printed, printed
+
+
+def test_a_note_the_gate_cannot_read_at_all_reports_nothing_about_its_rows(corpus):
+    """The neighbour: the note-only checks need the NOTE.
+
+    A note that cannot be read, or carries no frontmatter, is skipped whole.
+    Reporting a row shape from a file nobody could parse would be inventing a
+    finding, which is the opposite failure to the one above.
+    """
+    note = corpus / "notes" / "2026-08-20--unreadable--VID.md"
+    note.write_bytes(b"\xff\xfe\x00not a note at all")
+
+    lines, why = ng.check_note(note, corpus)
+
+    assert why, why
+    assert lines == [], lines
+
+
+def test_a_note_is_not_graded_against_another_videos_transcript(tmp_path):
+    """V2 finding V2-10 — two gates, two different questions about one field.
+
+    `check_oracle` asks whether a value is THIS video's rendering and whether a
+    gate can read it. `rendering_for` asked only the second. So a note whose
+    oracle is an absolute path to another video's transcript was graded,
+    counted in the census as graded against its own rendering, and scored
+    against the wrong recording -- producing arithmetic defects about a talk it
+    was not written from. `E-ORACLE-UNRELATED` still fired from the other gate,
+    so nothing was silent; the note was simply graded anyway.
+
+    Would fail if: `rendering_for` stops asking whether the file it found
+    belongs to the note in front of it.
+    """
+    root = tmp_path.resolve()
+    (root / "notes").mkdir()
+    segments = json.dumps({"segments": [
+        {"start": float(i) * 30, "end": float(i) * 30 + 30,
+         "text": f"sentence {i} about widgets"} for i in range(44)]})
+    for vid in ("VID", "OTHER"):
+        (root / "runs" / vid).mkdir(parents=True)
+        (root / "runs" / vid / "run.json").write_text(segments, encoding="utf-8")
+
+    def note_naming(oracle: str) -> Path:
+        note = root / "notes" / "2026-08-20--n--VID.md"
+        note.write_text(
+            f'---\nvideo_id: VID\nduration: "22:00"\nstatus: distilled\n'
+            f"oracle: {oracle}\n---\n\n# t\n\nA body.\n", encoding="utf-8")
+        return note
+
+    # Its own run, named absolutely: graded, which is the behaviour to keep.
+    mine = ng.rendering_for(note_naming(str(root / "runs/VID/run.json")), root)
+    assert mine[0] is not None and "VID" in str(mine[0]), mine
+
+    # Another video's, equally readable: not graded, and the census says why.
+    theirs = ng.rendering_for(
+        note_naming(str(root / "runs/OTHER/run.json")), root)
+    assert theirs[0] is None, theirs
+    assert "VID" in theirs[1], theirs[1]
+
+
 def test_the_gate_declares_itself_and_runs_after_the_note_gate():
     """The roster is derived from `GATE_FLAGS`, and order from the imports.
 

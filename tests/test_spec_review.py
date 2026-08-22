@@ -885,6 +885,52 @@ def test_a_block_list_under_the_oracle_key_reads_as_an_empty_value(note_corpus):
     assert "oracle: is empty" in got[0], got[0]
 
 
+@pytest.mark.parametrize("value", ["/**/*.json", "/*/*/*/*.json", "~/**/*.json"])
+def test_a_globbed_oracle_is_bounded_to_the_places_a_rendering_can_be(value):
+    """V2 finding V2-5 — the anchor of an absolute glob is `/`.
+
+    `_first_match` splits a pattern at its first wildcard and globs from the
+    part before it. For a relative value that part is inside the corpus and the
+    walk is bounded; for an absolute one it is the filesystem root, so a note
+    carrying `oracle: /**/*.json` sends both the resolver and the note gate
+    across the whole disk. Killed under `timeout 20`, rc 124, twice.
+
+    A rendering lives under the corpus or under the runs root. A pattern whose
+    anchor is neither names no rendering, whatever it matches, so it is refused
+    without walking anything.
+
+    Would fail if: `_first_match` stops checking where its anchor is.
+    """
+    import time
+    start = time.monotonic()
+    got = rn._first_match(Path(value).expanduser(), (Path("/no/such/corpus"),))
+    took = time.monotonic() - start
+
+    assert got is None, got
+    assert took < 2.0, f"answered in {took:.1f}s, which is a walk not a lookup"
+
+
+def test_a_globbed_oracle_inside_the_corpus_still_resolves(tmp_path):
+    """The neighbour that keeps the bound from being a refusal of everything.
+
+    `watch-whisper/chunks/*.whisper.json` is how a chunked run is written down
+    and it names a real set of files. That is why the glob is read at all.
+    """
+    root = tmp_path.resolve()
+    chunks = root / "runs" / "VID" / "chunks"
+    chunks.mkdir(parents=True)
+    (chunks / "a.whisper.json").write_text("{}", encoding="utf-8")
+
+    got = rn._first_match(root / "runs/VID/chunks/*.whisper.json", (root,))
+
+    assert got is not None and got.name == "a.whisper.json", got
+
+    # ...and the same pattern, with the corpus somewhere else, resolves to
+    # nothing. The bound is where the anchor sits, not what it matches.
+    assert rn._first_match(root / "runs/VID/chunks/*.whisper.json",
+                           (Path("/no/such/corpus"),)) is None
+
+
 def test_what_a_row_costs_a_note_whose_filename_carries_no_date(note_corpus):
     """The unlisted half of "a row may only shrink", stated out loud.
 

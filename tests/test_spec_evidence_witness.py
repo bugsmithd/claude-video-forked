@@ -1323,7 +1323,11 @@ def test_a_front_loaded_recording_is_refused_as_an_unsplit_plan(tmp_path):
     overfull = named(defects, "E-WIN-OVERFULL")
     assert code == 1
     assert len(overfull) == 1, defects
+    # "and shares none of them" is the half that was added when the count
+    # became uniquely-owned segments rather than members: the opening 500 sit
+    # inside one window and no other, which is the finding (V2-3a).
     assert "one window holds 500 of 540 segments" in overfull[0]
+    assert "shares none of them" in overfull[0]
 
 
 # ==========================================================================
@@ -1406,6 +1410,116 @@ def test_a_tsv_with_no_usable_rows_is_refused_as_unreadable_input(tmp_path):
     assert code == 2
     assert "no start/end/text rows in this .tsv" in err.getvalue()
     assert "E-TS-EMPTY" not in out.getvalue()
+
+
+def test_a_denser_middle_stretch_is_not_an_unsplit_video(tmp_path):
+    """V2 finding V2-3a — a flat half, over shares that do not sum to one.
+
+    `OVERFULL_SHARE` was compared against each window's segment count including
+    the 90-second overlap, so the shares of a three-window plan sum to about
+    115% rather than 100%. With three windows the arithmetic floor for the
+    largest share is 33%, and a recording whose middle simply talks faster
+    clears 50% without anything having gone wrong: a 22-minute talk split into
+    three windows, none empty, nothing orphaned, shares 32/52/31, reported as a
+    plan that did not split.
+
+    The threshold's own comment describes the shape it was written for -- ONE
+    window holding every segment -- and that is a question about what a window
+    uniquely owns, which is immune both to the overlap and to the window count.
+
+    Would fail if: the check goes back to counting a window's members.
+    """
+    # A middle stretch with three times the segment density of its neighbours,
+    # which is a talk that got specific, not a plan that failed.
+    segments = []
+    for i in range(120):
+        at = i * 11.0
+        if 440.0 <= at <= 880.0:
+            at = 440.0 + (i - 40) * 5.5
+        segments.append({"start": at, "end": at + 5.0,
+                         "text": f"segment {i} says a thing about widgets"})
+    segments.sort(key=lambda s: s["start"])
+
+    code, found = run_windows(tmp_path, segments)
+
+    assert not [f for f in found if "E-WIN-OVERFULL" in f], found
+
+
+def test_one_window_holding_the_whole_recording_is_still_refused(tmp_path):
+    """The shape the threshold was written for, kept.
+
+    An adversarial lane produced it by setting every segment's start to zero:
+    window 1 took all 360 segments over a full hour -- the single overloaded
+    context the windows exist to prevent -- reported as a clean plan of seven
+    windows.
+    """
+    segments = [{"start": 0.0, "end": 3600.0,
+                 "text": f"segment {i} says a thing about widgets"}
+                for i in range(360)]
+
+    code, found = run_windows(tmp_path, segments)
+
+    assert [f for f in found if "E-WIN-OVERFULL" in f], found
+
+
+@pytest.mark.parametrize("bad", ["Infinity", "-Infinity", "NaN"])
+@pytest.mark.parametrize("field", ["start", "end"])
+def test_a_stamp_that_is_not_a_number_of_seconds_is_refused_at_the_reader(
+        tmp_path, field, bad):
+    """V1 section D — `json.loads` accepts these and every reader inherits them.
+
+    `Infinity` is legal JSON to Python and nothing downstream expects it. The
+    window planner walks `at += stride` while `at < total`, so with an infinite
+    total it appends to a list for ever: killed under `timeout 20`, rc 124,
+    reproduced twice. Nothing rescues it -- `_run` catches a check that fails
+    and one that raises, and there is no catch for one that never returns, so
+    the whole audit stalls with no exit code at all.
+
+    The refusal belongs HERE rather than at the planner. The planner is one
+    consumer of these numbers; the recall counter, the aligner, the coverage
+    walk and the caption index are others, and each would need its own guard.
+    A start or an end is a number of seconds into a recording, and none of
+    these three is one.
+
+    Would fail if: `load_segments` stops testing what it parsed.
+    """
+    other = "end" if field == "start" else "start"
+    path = tmp_path / "r.json"
+    path.write_text(
+        '{"segments": [{"%s": %s, "%s": 1.0, "text": "a thing"}]}'
+        % (field, bad, other), encoding="utf-8")
+
+    with pytest.raises(ValueError) as caught:
+        ta.load_segments(path)
+    assert "seconds" in str(caught.value), caught.value
+
+
+def test_the_window_planner_terminates_on_every_rendering_it_is_handed():
+    """The other half, stated as the property rather than as one input.
+
+    `load_segments` is the door and it is shut. This says what the planner
+    itself promises: handed segments, it returns. It is asserted directly
+    because `plan` is a public function and a caller can build a segment list
+    without going through the reader -- which is how the corpus reaches it in
+    one place already.
+    """
+    for end in (float("inf"), float("nan")):
+        with pytest.raises(ValueError) as caught:
+            nw.plan([{"start": 0.0, "end": end, "text": "one"}], 600.0, 90.0)
+        assert "seconds" in str(caught.value), (end, caught.value)
+
+    # A finite length can still be absurd, and `at += stride` over 1e18 seconds
+    # is a list nothing can hold. The refusal names the ceiling rather than
+    # running until the machine says no.
+    with pytest.raises(ValueError) as caught:
+        nw.plan([{"start": 0.0, "end": 1e18, "text": "one"}], 600.0, 90.0)
+    assert "window" in str(caught.value).lower(), caught.value
+
+    # ...and an ordinary rendering still plans, so the guard is not a refusal
+    # of everything.
+    got = nw.plan([{"start": float(i) * 30, "end": float(i) * 30 + 30,
+                    "text": f"segment {i}"} for i in range(60)], 600.0, 90.0)
+    assert len(got) >= 2, got
 
 
 def test_a_rendering_of_one_segment_is_thin_and_not_empty():
