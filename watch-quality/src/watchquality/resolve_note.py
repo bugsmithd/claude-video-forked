@@ -1193,14 +1193,19 @@ def applied_target(root: Path, value: str) -> Path | None:
     and the rest tried under the root: the note names the repository, which is
     not the same fact as what the directory is called today.
 
-    Dropping it is not a licence. The remainder still has to exist under the
-    root, so a value under no base at all is a phantom whatever it is prefixed
-    with.
+    Dropping it is not a licence, AND IT IS NOT A WILDCARD. `README.md` exists
+    under every root, so dropping any first component made every
+    `<anything>/README.md` resolve, and the guarantee quietly became "a file
+    with this suffix-path exists somewhere in this corpus". What is left after
+    the drop has to be a path INTO a directory of this corpus -- two components
+    at least, the first of them a directory that is really here -- and the file
+    at the end of it still has to exist.
     """
     p = Path(value).expanduser()
     bases = [p, root / p, root.parent / p]
-    if len(p.parts) > 1 and not p.is_absolute():
-        bases.append(root.joinpath(*p.parts[1:]))
+    rest = p.parts[1:]
+    if len(rest) > 1 and not p.is_absolute() and (root / rest[0]).is_dir():
+        bases.append(root.joinpath(*rest))
     for cand in bases:
         if cand.exists():
             return cand

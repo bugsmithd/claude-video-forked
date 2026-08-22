@@ -543,16 +543,18 @@ def test_the_scanner_is_scanned_and_only_its_marked_fixtures_are_excused():
     Restoring the whole-file excuse leaves the first assertion green and the
     second red; dropping the filename condition reverses that.
     """
+    real = Path(wcs.__file__).read_text(encoding="utf-8")
     leak = 'path = "acmeprivate/notes"\n'
     fixture = f'check("a refused word is caught", {leak.strip()})  {wcs.FIXTURE}\n'
 
-    assert wcs.scan_text(leak, "wq_corpus_scan.py", ("acmeprivate",))
-    assert not wcs.scan_text(fixture, "wq_corpus_scan.py", ("acmeprivate",))
+    assert wcs.scan_text(real + leak, "wq_corpus_scan.py", ("acmeprivate",))
+    assert not wcs.scan_text(real + fixture, "wq_corpus_scan.py",
+                             ("acmeprivate",))
     # The marker is this file's, not a token any published page can spend.
     assert wcs.scan_text(fixture, "README.md", ("acmeprivate",))
     # And a copy of the scanner at another path is excused exactly as the
     # original is -- same bytes, same verdict, wherever it sits (§8).
-    assert not wcs.scan_text(fixture, "/tmp/release/wq_corpus_scan.py",
+    assert not wcs.scan_text(real + fixture, "/tmp/release/wq_corpus_scan.py",
                              ("acmeprivate",))
 
 
@@ -581,6 +583,106 @@ def test_the_walk_descends_a_symlinked_directory_once(tmp_path):
     assert any(p.name == "page.md" for p in files), files
     assert [p.name for p in files].count("page.md") == 1, files
     assert len(files) < 50, "the cycle was walked more than once"
+
+
+def test_a_link_named_after_a_skipped_directory_does_not_hide_a_real_one(tmp_path):
+    """The skip list read the name the walk arrived by, not what the thing is.
+
+    Two names for one directory are one visit, and the visit keeps whichever
+    name the stack happened to pop -- so a symlink `venv -> docs` made the walk
+    reach a published page under the name `venv`, the skip list dropped it as
+    vendored, and a tree carrying a live literal exited 0 with the skip printed
+    as though it were a courtesy.
+
+    Deciding on the resolved name leaves this green and the arrangement below
+    red.
+    """
+    repo = _fake_repo(tmp_path)
+    (repo / "docs").mkdir()
+    (repo / "docs" / "leak.md").write_text("acmeprivate\n", encoding="utf-8")
+    (repo / "venv").symlink_to(repo / "docs", target_is_directory=True)
+
+    hits = wcs.scan(wcs.collect([repo]), repo, ("acmeprivate",))
+
+    assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h], hits
+
+
+def test_the_walk_does_not_climb_out_of_the_target_it_was_given(tmp_path):
+    """Following links is the point; leaving the named tree is not.
+
+    A link to an unrelated directory is followed on purpose -- private content
+    linked into a published checkout is this gate's whole subject. A link to an
+    ANCESTOR of the target is different: `link -> /` or `link -> ~` makes a run
+    named after one directory walk the machine, and report it under that
+    directory's name.
+
+    Dropping the ancestor test makes the second assertion red, and it does so by
+    scanning a sibling tree nobody named.
+    """
+    repo = _fake_repo(tmp_path / "nest" / "repo")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "wanted.md").write_text("acmeprivate\n", encoding="utf-8")
+    (tmp_path / "nest" / "sibling").mkdir()
+    (tmp_path / "nest" / "sibling" / "unrelated.md").write_text(
+        "acmeprivate\n", encoding="utf-8")
+    (repo / "into").symlink_to(outside, target_is_directory=True)
+    (repo / "up").symlink_to(tmp_path / "nest", target_is_directory=True)
+
+    names = {p.name for p in wcs.collect([repo])}
+
+    assert "wanted.md" in names, names
+    assert "unrelated.md" not in names, names
+
+
+def test_wide_text_and_a_nul_between_the_letters_are_not_read_as_clean(tmp_path):
+    """Three ways a file decodes into something nobody wrote.
+
+    UTF-32 begins with the UTF-16 mark's own bytes, so it took the UTF-16 branch
+    and came back as garbage. UTF-16 without a mark decodes as UTF-8 -- a NUL is
+    valid UTF-8 -- so it never reached the wide branch at all. And a NUL typed
+    between the letters of a name is invisible to a reader and fatal to a match.
+    Each one counted toward the scanned total and matched nothing.
+
+    Reverting the NUL rule leaves the first row green and the rest red.
+    """
+    tree = tmp_path / "pub"
+    tree.mkdir()
+    body = "a line naming acmeprivate in prose\n"
+    (tree / "utf8.md").write_bytes(body.encode("utf-8"))
+    (tree / "utf32.md").write_bytes(body.encode("utf-32"))
+    (tree / "utf16-nobom.md").write_bytes(body.encode("utf-16-le"))
+    (tree / "nul.md").write_bytes(b"a line naming acme\x00private in prose\n")
+
+    undecodable: list[Path] = []
+    hits = wcs.scan(wcs.collect([tree]), tree, ("acmeprivate",), (), undecodable)
+
+    caught = {h.split(":")[0] for h in hits if "E-CORPUS-REFUSED-WORD" in h}
+    missed = {"utf8.md", "utf32.md", "utf16-nobom.md", "nul.md"} - caught
+    assert not missed, (sorted(missed), sorted(caught), undecodable)
+
+
+def test_the_fixture_marker_cannot_be_spent_by_a_page_that_borrowed_the_name(
+        tmp_path):
+    """The marker was honoured on a BASENAME, which is a namespace, not an identity.
+
+    A published page called `docs/wq_corpus_scan.py` -- or `wq_corpus_scan.md` --
+    could excuse arbitrary lines from every rule, one comment at a time. The
+    excuse buys copy-invariance and it must not buy a token anybody can spend,
+    so the file has to look like this module and not merely be named after it.
+
+    Dropping the identity check leaves the first two assertions green and the
+    third red.
+    """
+    marked = f'x = "acmeprivate"  {wcs.FIXTURE}\n'
+    real = Path(wcs.__file__).read_text(encoding="utf-8")
+
+    # The real module, and a copy of it at any other path: excused.
+    assert not wcs.scan_text(real + marked, "wq_corpus_scan.py", ("acmeprivate",))
+    assert not wcs.scan_text(real + marked, "/tmp/release/wq_corpus_scan.py",
+                             ("acmeprivate",))
+    # A page that only borrowed the name: read like any other page.
+    assert wcs.scan_text(marked, "docs/wq_corpus_scan.py", ("acmeprivate",))
 
 
 def test_a_refused_word_is_caught_whatever_the_file_is_encoded_in(tmp_path):
@@ -763,6 +865,32 @@ def test_the_anchor_sets_are_read_from_the_corpus_and_not_from_a_list(tmp_path):
     sets = wcs.anchor_sets(notes)
 
     assert sets == (frozenset({80, 185}),), sets       # 1:20 and 3:05, in seconds
+
+
+def test_the_anchor_sets_come_from_the_notes_and_not_from_pages_about_them():
+    """The walk was recursive, so two thirds of the count came from reviews.
+
+    A review page is an artifact ABOUT the corpus, written by a reader, and
+    anything quoted into one became a permanent refusal set -- quote a published
+    chapter list into a review and that published line is refusable from then
+    on. A feedback loop with no brake, and the summary line called all of it
+    "the notes' own pages".
+
+    Making the walk recursive again leaves the count wrong and this red.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        notes = Path(d) / "notes"
+        (notes / "reviews").mkdir(parents=True)
+        (notes / "a.md").write_text("- `[01:20]` to `[03:05]` COV\n",
+                                    encoding="utf-8")
+        (notes / "reviews" / "r.md").write_text(
+            "the note cites `[09:13]` and `[52:29]`\n", encoding="utf-8")
+
+        sets = wcs.anchor_sets(notes)
+
+    assert sets == (frozenset({80, 185}),), sets
 
 
 def test_the_same_moment_written_differently_is_still_refused():

@@ -79,6 +79,12 @@ REQUIRE_FLAG = "--require-literals"
 # published page can spend the token, and every unmarked line of this file is
 # scanned like any other line.
 FIXTURE = "# WQ-FIXTURE"
+# What a file has to CONTAIN before its marks are honoured, beside being named
+# after this module. Three of this module's own declarations, quoted in halves
+# so that quoting them here does not itself satisfy the test.
+SELF = ("REQUIRE_FLAG = " '"--require-literals"',
+        "def scan_text(" "text: str, rel: str",
+        "def read_scannable(" "path: Path)")
 
 # An id is 11 chars of [A-Za-z0-9_-]. Bounded on both sides so a longer token
 # (a sha, a base64 blob) does not match a window inside itself.
@@ -200,6 +206,10 @@ def _walk(target: Path):
     visit. Files are yielded under the name the walk reached them by, because
     that is the name a reader has to go and look at.
     """
+    try:
+        top = target.resolve()
+    except OSError:
+        return
     seen: set[Path] = set()
     stack = [target]
     while stack:
@@ -216,10 +226,39 @@ def _walk(target: Path):
         except OSError:
             continue
         for entry in entries:
-            if entry.is_dir():
-                stack.append(entry)
-            else:
+            if not entry.is_dir():
                 yield entry
+                continue
+            # OUTWARD IS THE POINT; UPWARD IS NOT. A link into an unrelated tree
+            # is followed on purpose -- private content linked into a published
+            # checkout is this gate's whole subject. A link to an ANCESTOR of
+            # the target is a different thing: `link -> /` or `link -> ~` makes
+            # a run named after one directory walk the machine and report it
+            # under that directory's name.
+            try:
+                there = entry.resolve()
+            except OSError:
+                continue
+            if there == top or there in top.parents:
+                continue
+            stack.append(entry)
+
+
+def _reached_by(p: Path, target: Path) -> tuple[str, ...]:
+    """The directory names above `p`, as the directories really are.
+
+    Resolved relative to the resolved target where that is possible, so a link
+    cannot lend a directory a skipped name -- and relative to the target as
+    named otherwise, because a file the walk followed OUT of the tree still has
+    to be reported under a name the caller recognises.
+    """
+    try:
+        return p.resolve().relative_to(target.resolve()).parts[:-1]
+    except (OSError, ValueError):
+        try:
+            return p.relative_to(target).parts[:-1]
+        except ValueError:
+            return ()
 
 
 def collect(targets: list[Path],
@@ -253,7 +292,13 @@ def collect(targets: list[Path],
             # DIRECTORY components only. Matching the whole path meant a
             # published file NAMED `build` was dropped, and reported as a
             # directory nobody could go and look at.
-            parts = p.relative_to(target).parts[:-1]
+            #
+            # AND THE NAME THE DIRECTORY REALLY HAS, not the one the walk
+            # arrived by. Two names for one directory are one visit, so a
+            # symlink `venv -> docs` made a published page arrive under the name
+            # `venv`, the skip list dropped it as vendored, and a tree carrying
+            # a live literal exited 0 with the skip printed as a courtesy.
+            parts = _reached_by(p, target)
             if SKIP_DIRS.intersection(parts):
                 if skipped is not None and not VCS_DIRS.intersection(parts):
                     # The TOP-MOST skipped directory, not the file. Naming
@@ -331,7 +376,13 @@ def anchor_sets(notes: Path) -> tuple[frozenset[int], ...]:
     out: list[frozenset[int]] = []
     if not notes.is_dir():
         return ()
-    for p in sorted(notes.rglob("*.md")):
+    # THE NOTES, NOT THE PAGES ABOUT THEM. The walk was recursive, so two thirds
+    # of the sets came from the review pages beside them -- and a review is an
+    # artifact ABOUT the corpus: anything a reader quotes into one becomes a
+    # permanent refusal set, so quoting a published chapter list into a review
+    # makes that published line refusable. A feedback loop with no brake, under
+    # a summary line calling all of it the notes' own pages.
+    for p in sorted(notes.glob("*.md")):
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -358,7 +409,7 @@ def _round_pair(stamps: frozenset[int]) -> bool:
 # underscore, nothing at all, two spaces, a line break, or a zero-width space
 # dropped in the middle of it. Every one of those evaded a `word in line` test
 # while naming exactly the thing the policy refuses.
-RE_INVISIBLE = re.compile(r"[­​-‏⁠﻿]")
+RE_INVISIBLE = re.compile(r"[\x00­​-‏⁠﻿]")
 RE_SEPARATOR = re.compile(r"[\s\-_]")
 
 
@@ -401,22 +452,39 @@ def read_scannable(path: Path) -> str | None:
     encoding is still scanned rather than dropped.
     """
     data = path.read_bytes()          # OSError is the caller's to report
-    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-        try:
-            return data.decode("utf-16")
-        except UnicodeDecodeError:
-            return None
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        pass
-    # A NUL in the first pages is what wide text looks like without a mark.
-    if b"\x00" in data[:4096]:
-        for encoding in ("utf-16-le", "utf-16-be"):
+    # UTF-32's mark BEGINS WITH UTF-16's. `\xff\xfe\x00\x00` matched the
+    # two-byte test first, so a UTF-32 file was decoded as UTF-16 into garbage,
+    # counted toward the scanned total, and matched nothing.
+    for mark, encoding in ((b"\xff\xfe\x00\x00", "utf-32"),
+                           (b"\x00\x00\xfe\xff", "utf-32"),
+                           (b"\xff\xfe", "utf-16"),
+                           (b"\xfe\xff", "utf-16")):
+        if data.startswith(mark):
             try:
                 return data.decode(encoding)
             except UnicodeDecodeError:
-                continue
+                return None
+    try:
+        # A NUL byte is valid UTF-8, so wide text with no mark decodes here into
+        # every letter separated by one, and a NUL typed between two letters
+        # decodes into itself. Both are handed straight back: NUL is one of the
+        # invisible characters the matcher squashes out, so the name is the same
+        # name either way, and RE-DECODING would be worse -- 36 bytes of ASCII
+        # with a NUL in the middle is a valid UTF-16 string of Han characters,
+        # and this reader guessed exactly that.
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    for encoding in ("utf-32-le", "utf-32-be", "utf-16-le", "utf-16-be"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    # Latin-1 cannot fail, which is why it is last and why it needs a guard:
+    # applied to a binary file it returns mojibake that matches nothing and
+    # counts as scanned. Bytes that no text encoding accepted AND that carry a
+    # NUL are not text, and are reported rather than counted.
+    if b"\x00" in data:
         return None
     return data.decode("latin-1")
 
@@ -439,7 +507,14 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
     """
     out: list[str] = []
     # This module's own fixtures, and nobody else's. See FIXTURE.
-    mine = os.path.basename(rel) == PROG
+    #
+    # THE NAME IS A NAMESPACE, NOT AN IDENTITY. Keyed on the basename alone, a
+    # published page called `docs/wq_corpus_scan.py` could excuse arbitrary
+    # lines from every rule, one comment at a time -- a bypass token anybody
+    # could spend. The file has to LOOK like this module as well as be named
+    # after it, so a copy at any path still behaves like the original and a page
+    # that merely borrowed the name does not.
+    mine = os.path.basename(rel) == PROG and all(s in text for s in SELF)
     excused = {n for n, line in enumerate(text.splitlines(), 1)
                if mine and FIXTURE in line}
     for n, line in enumerate(text.splitlines(), 1):
@@ -615,11 +690,15 @@ def selftest() -> int:
           True)
     check("and it comes back clean over its own source",
           scan([Path(__file__).resolve()], root, ("acmeprivate",)), [])  # WQ-FIXTURE
-    marked = 'x = "Qm4Zt8Xv2Ly"  ' + FIXTURE + "\n"  # WQ-FIXTURE
-    plain = 'x = "Qm4Zt8Xv2Ly"\n'  # WQ-FIXTURE
+    # Prefixed with this module's own source, because the marker is honoured
+    # only in a file that LOOKS like this module as well as being named after
+    # it -- a name alone is a namespace anybody can enter.
+    me = Path(__file__).read_text(encoding="utf-8")
+    marked = me + 'x = "Qm4Zt8Xv2Ly"  ' + FIXTURE + "\n"  # WQ-FIXTURE
+    plain = me + 'x = "Qm4Zt8Xv2Ly"\n'  # WQ-FIXTURE
     check("a marked fixture line is excused", len(scan_text(marked, PROG)), 0)
-    check("...only in a file with this module's name",
-          len(scan_text(marked, "README.md")), 1)
+    check("...only in a file that is this module",
+          len(scan_text('x = "Qm4Zt8Xv2Ly"  ' + FIXTURE + "\n", PROG)), 1)  # WQ-FIXTURE
     check("...and in a copy of it at any other path",
           len(scan_text(marked, f"/tmp/release/{PROG}")), 0)
     check("an unmarked line in this file is read like any other",

@@ -1700,6 +1700,13 @@ def test_an_edge_naming_the_repository_resolves_after_the_repository_moves(
     # And the strip is not a licence: a file that is under no base at all is
     # still a phantom, whatever it is prefixed with.
     assert rn.applied_target(moved, f"{corpus.name}/docs/absent.md") is None
+    # NOR IS IT A WILDCARD. `README.md` exists under every root, so dropping any
+    # first component made every `<anything>/README.md` resolve -- the guarantee
+    # quietly became "a file with this suffix-path exists somewhere here". What
+    # is dropped has to leave a path INTO a directory of this corpus.
+    (moved / "README.md").write_text("top level\n", encoding="utf-8")
+    assert rn.applied_target(moved, "totally-made-up/README.md") is None
+    assert rn.applied_target(moved, "x/README.md") is None
 
 
 def test_an_edge_starting_with_a_tilde_is_expanded_before_it_is_looked_for(
