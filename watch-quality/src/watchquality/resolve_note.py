@@ -1178,14 +1178,30 @@ def sidecar_paths(root: Path, frontmatter: str) -> set[str]:
 def applied_target(root: Path, value: str) -> Path | None:
     """Resolve an `applied:` value, or None when nothing it could mean exists.
 
-    Three bases, because a corpus tends to grow two conventions and write
-    neither down: an absolute path with a tilde (`~/dev/.../file.md`), and one
-    that starts with the repository's own directory name, which resolves
-    relative to the repo's PARENT because the note names the repo. Repo-root-
-    relative is accepted too, as the form a reader would guess.
+    Four bases, because a corpus tends to grow conventions and write none of
+    them down: an absolute path with a tilde (`~/dev/.../file.md`), one that
+    starts with the repository's own directory name, which resolves relative to
+    the repo's PARENT because the note names the repo, and repo-root-relative as
+    the form a reader would guess.
+
+    THE FOURTH IS THE ONE THAT SURVIVES A MOVE. A value naming the repository
+    resolved only while the checkout's basename was still that word: the base is
+    the parent, and the parent plus that name is the repo again. Copy the corpus
+    to any other directory and the same note becomes a phantom -- two of them
+    did, and every exit-0 line in a long review chain had been measured in the
+    one directory where the coincidence holds. So a leading component is dropped
+    and the rest tried under the root: the note names the repository, which is
+    not the same fact as what the directory is called today.
+
+    Dropping it is not a licence. The remainder still has to exist under the
+    root, so a value under no base at all is a phantom whatever it is prefixed
+    with.
     """
     p = Path(value).expanduser()
-    for cand in (p, root / p, root.parent / p):
+    bases = [p, root / p, root.parent / p]
+    if len(p.parts) > 1 and not p.is_absolute():
+        bases.append(root.joinpath(*p.parts[1:]))
+    for cand in bases:
         if cand.exists():
             return cand
     return None

@@ -757,9 +757,15 @@ def main(argv: list[str]) -> int:
     # line is the artifact a reader pastes as proof of coverage.
     reach = f"; {limited}" if limited else ""
     walked = ", ".join(str(t) for t in targets)
+    # NAMED, not just counted. `N anchor set(s) in force` reads as "the corpus",
+    # and it is the markdown pages under the notes directory: the sidecar tables
+    # beside them hold the same recording's timing in seconds and contribute
+    # nothing, so most caption windows would not be refused if published. A count
+    # whose scope is not written beside it gets quoted as the whole thing.
     print(f"# {len(files)} file(s) scanned under {walked}, {len(refused)} "
-          f"refused literal(s) and {len(anchors)} anchor set(s) in force, "
-          f"{len(hits)} corpus reference(s){reach}", file=sys.stderr)
+          f"refused literal(s) and {len(anchors)} anchor set(s) from the notes' "
+          f"own pages in force, {len(hits)} corpus reference(s){reach}",
+          file=sys.stderr)
     return 1 if hits else 0
 
 

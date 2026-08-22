@@ -218,7 +218,7 @@ code = "E-CORPUS-ANCHOR-SET"
 layer = "gate"
 owner = "wq_corpus_scan.scan_text"
 trigger = "a published text file is read and the caller's corpus is in force"
-refuses = "a line whose timestamps all stand together on one line of one corpus note, which reproduces a private recording without using a single refusable word"
+refuses = "a line whose timestamps all stand together on one line of one corpus note, which reproduces a private recording without using a single refusable word; the sets compared are built from the markdown pages under the notes directory and from nothing else, so timing held only in the sidecar tables beside them is not covered"
 excused_by = []
 exit = 1
 

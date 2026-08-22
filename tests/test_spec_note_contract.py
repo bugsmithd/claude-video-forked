@@ -22,6 +22,7 @@ from __future__ import annotations
 import importlib
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -1667,6 +1668,38 @@ def test_an_edge_resolved_from_the_repositorys_parent_resolves(corpus):
     value = f"{corpus.name}/docs/x.md"
     assert rn.applied_target(corpus, value) is not None
     assert rn.check_status(f"status: applied\napplied: {value}\n", REL, corpus) == []
+
+
+def test_an_edge_naming_the_repository_resolves_after_the_repository_moves(
+        corpus, tmp_path, monkeypatch):
+    """The corpus does not survive being copied to another directory.
+
+    A note names `<repo>/docs/x.md`, which resolved only because the checkout's
+    basename happened to be that word: the base is the repo's PARENT, and the
+    parent plus that name is the repo again. Copy the corpus anywhere else and
+    the same note is a phantom -- two of them are, on the real corpus, and every
+    exit-0 line in the review chain was measured in the one directory where the
+    coincidence holds.
+
+    The leading component is the repository as the NOTE names it, which is not
+    the same fact as what the directory is called today. Dropping the fourth
+    base makes the relocated assertion red and leaves the rest green.
+    """
+    # A DIFFERENT PARENT as well as a different name: with the original still
+    # sitting beside it, the repo's-parent base finds that one and the case
+    # passes for a reason that has nothing to do with the copy.
+    far = tmp_path / "far"
+    far.mkdir()
+    moved = far / "somewhere-else"
+    shutil.copytree(corpus, moved)
+    monkeypatch.chdir(far)
+    value = f"{corpus.name}/docs/x.md"
+
+    assert rn.applied_target(moved, value) is not None
+    assert rn.check_status(f"status: applied\napplied: {value}\n", REL, moved) == []
+    # And the strip is not a licence: a file that is under no base at all is
+    # still a phantom, whatever it is prefixed with.
+    assert rn.applied_target(moved, f"{corpus.name}/docs/absent.md") is None
 
 
 def test_an_edge_starting_with_a_tilde_is_expanded_before_it_is_looked_for(

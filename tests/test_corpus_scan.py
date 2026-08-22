@@ -221,7 +221,7 @@ def test_every_number_in_the_summary_line_is_measured(tmp_path: Path, capsys):
     header = [l for l in capsys.readouterr().err.splitlines()
               if "file(s) scanned under" in l]
     assert header == [f"# 2 file(s) scanned under {tree / 'a'}, {tree / 'b'}, "
-                      f"2 refused literal(s) and 0 anchor set(s) in force, "
+                      f"2 refused literal(s) and 0 anchor set(s) from the notes' own pages in force, "
                       f"2 corpus reference(s)"]
 
 
@@ -400,7 +400,7 @@ def test_the_flag_is_not_mistaken_for_a_path(tmp_path, capsys):
     header = [l for l in capsys.readouterr().err.splitlines()
               if "file(s) scanned under" in l]
     assert header == [f"# 1 file(s) scanned under {tree}, 1 refused literal(s) "
-                      f"and 1 anchor set(s) in force, 0 corpus reference(s)"]
+                      f"and 1 anchor set(s) from the notes' own pages in force, 0 corpus reference(s)"]
 
 
 def test_a_file_with_no_suffix_is_published_text_too(tmp_path: Path):
@@ -862,4 +862,4 @@ def test_the_summary_says_how_many_anchor_sets_were_in_force(tmp_path, capsys):
     assert wcs.main([str(tree)]) == 0
 
     err = capsys.readouterr().err
-    assert "anchor set(s) in force" in err, err
+    assert "anchor set(s) from the notes' own pages in force" in err, err
