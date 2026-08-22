@@ -519,6 +519,110 @@ def test_the_whole_repository_is_clean_of_the_two_rules_it_can_run_here():
     assert not hits, hits[:20]
 
 
+def test_a_refused_word_is_caught_whatever_the_file_is_encoded_in(tmp_path):
+    """Three encodings, one literal, one verdict.
+
+    `scan` fell back to a lossy read only on `UnicodeDecodeError`, and UTF-16
+    does not raise one: it decodes as UTF-8 into every letter separated by a
+    replacement character, so the file counted toward the scanned total, matched
+    nothing, and produced no `# not scanned:` line. That is the silent clean
+    report this module exists to end.
+
+    Reverting the encoding walk to a plain UTF-8 read makes the UTF-16 row miss.
+    """
+    tree = tmp_path / "pub"
+    tree.mkdir()
+    body = "a line naming acmeprivate in prose\n"
+    (tree / "utf8.md").write_bytes(body.encode("utf-8"))
+    (tree / "latin1.md").write_bytes(body.encode("latin-1"))
+    (tree / "utf16.md").write_bytes(body.encode("utf-16"))
+
+    hits = wcs.scan(wcs.collect([tree]), tree, ("acmeprivate",))
+
+    caught = {h.split(":")[0] for h in hits if "E-CORPUS-REFUSED-WORD" in h}
+    assert caught == {"utf8.md", "latin1.md", "utf16.md"}, sorted(caught)
+
+
+def test_a_file_that_decodes_as_nothing_is_reported_rather_than_scanned(tmp_path):
+    """The miss is not the defect; the silence is.
+
+    A file the reader cannot make text of must land in the not-scanned list,
+    where the summary already names what it did not read. Counted as scanned and
+    matched against nothing, it reads exactly like a clean file.
+
+    Dropping the unread report leaves this red while every other case stays
+    green.
+    """
+    tree = tmp_path / "pub"
+    tree.mkdir()
+    (tree / "binary.md").write_bytes(b"\x00\x01\x02\xff\xfe\x00\x00\x80\x81")
+
+    unread: list[Path] = []
+    files = wcs.collect([tree], None, unread)
+    hits = wcs.scan(files, tree, ("acmeprivate",), (), unread)
+
+    assert not hits, hits
+    assert [p.name for p in unread] == ["binary.md"], unread
+
+
+def test_a_refused_word_is_caught_however_its_separators_are_written():
+    """The one multi-word literal walked out through its own space.
+
+    Case folding closed casing, plurals and possessives. It does not close the
+    separator: the literal evades when its space is written as a hyphen, an
+    underscore, nothing at all, or two spaces, and EVERY literal evades when it
+    is broken across a line or has a zero-width space dropped into it. None of
+    those is a different word; they are the same word with different bytes
+    between the letters.
+
+    Reverting to a plain `word in line` test leaves the first row green and
+    every other row red.
+    """
+    for spelling in ("acme private", "acme-private", "acme_private",
+                     "acmeprivate", "acme  private", "acme​private",
+                     "acme­private", "acme\nprivate"):
+        hits = wcs.scan_text(f"a line about {spelling} in prose\n", "f.md",
+                             ("acme private",))
+        found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+        assert len(found) == 1, (repr(spelling), hits)
+
+
+def test_the_separator_walk_does_not_refuse_a_line_that_names_nothing():
+    """The other half, and the half that decides whether the gate survives.
+
+    Squashing separators out of both sides is what catches a two-word name
+    written as one. It is also what would let any two adjacent words match a
+    literal that happens to be their concatenation, and a gate that fires on
+    innocent prose is a gate somebody removes. Both directions are asked here,
+    of the same normalisation.
+
+    A version that reports every line satisfies the case above and fails here.
+    """
+    clean = ("a line about margins and hiring\n"
+             "private acme, reversed and spaced\n"
+             "an acme sold a private company to another\n")
+
+    hits = wcs.scan_text(clean, "f.md", ("acmeprivate", "acme private"))
+
+    assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], hits
+
+
+def test_a_word_broken_across_a_line_is_reported_on_the_line_it_starts():
+    """A finding a reader cannot go and look at is not a finding.
+
+    The squashed text has no lines in it, so the offset has to be carried back.
+    Reporting line 1 for everything passes the catch cases above and sends every
+    reader to the top of the file.
+    """
+    body = "clean first line\nsecond line has acme\nprivate spilling over\n"
+
+    hits = wcs.scan_text(body, "f.md", ("acmeprivate",))
+
+    found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+    assert len(found) == 1, hits
+    assert found[0].startswith("f.md:2 "), found
+
+
 def test_a_line_repeating_one_notes_timestamps_is_refused():
     """The leak class no word list can catch, and the one that got through.
 

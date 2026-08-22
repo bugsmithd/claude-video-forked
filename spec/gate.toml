@@ -181,6 +181,24 @@ test = "tests/test_corpus_scan.py::test_a_line_naming_nothing_refused_is_left_al
 [[rule.neighbour]]
 case = "an empty string in the refused list, which would otherwise match every line of every file"
 test = "tests/test_corpus_scan.py::test_an_empty_string_in_the_refused_list_refuses_nothing"
+# ADDED 2026-08-22. Case folding closed casing and closed nothing else: the
+# separator between two words, and the encoding a file is written in, were both
+# ways to write the same name and have it read as a different string.
+[[rule.neighbour]]
+case = "the name with its space written as a hyphen, an underscore, nothing, two spaces, a zero-width space, or a line break"
+test = "tests/test_corpus_scan.py::test_a_refused_word_is_caught_however_its_separators_are_written"
+[[rule.neighbour]]
+case = "a line naming nothing refused under the same squashing, which must NOT be reported"
+test = "tests/test_corpus_scan.py::test_the_separator_walk_does_not_refuse_a_line_that_names_nothing"
+[[rule.neighbour]]
+case = "the same name in a UTF-8, a latin-1 and a UTF-16 file, which must give one verdict"
+test = "tests/test_corpus_scan.py::test_a_refused_word_is_caught_whatever_the_file_is_encoded_in"
+[[rule.neighbour]]
+case = "bytes that decode as no text at all, reported unread rather than counted clean"
+test = "tests/test_corpus_scan.py::test_a_file_that_decodes_as_nothing_is_reported_rather_than_scanned"
+[[rule.neighbour]]
+case = "a name broken across a line, reported on the line it starts"
+test = "tests/test_corpus_scan.py::test_a_word_broken_across_a_line_is_reported_on_the_line_it_starts"
 
 [[rule]]
 id = "CORPUS-ANCHOR-SET"

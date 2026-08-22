@@ -158,6 +158,15 @@ def published_root(start: Path) -> tuple[Path, str | None]:
                  "package directory only")
 
 
+def _by_suffix(paths: list[Path]) -> dict[str, int]:
+    """How many files of each suffix, for a census line nobody has to count."""
+    out: dict[str, int] = {}
+    for p in paths:
+        key = p.suffix.lower() or "(no suffix)"
+        out[key] = out.get(key, 0) + 1
+    return out
+
+
 def publishable(path: Path) -> bool:
     """Can this file carry a leak in text? Suffix known, or no suffix at all."""
     return path.suffix.lower() in TEXT_SUFFIXES or not path.suffix
@@ -290,6 +299,74 @@ def _round_pair(stamps: frozenset[int]) -> bool:
     return len(stamps) == 2 and all(s % 60 == 0 for s in stamps)
 
 
+# Characters that are between letters without being anything. A refused literal
+# is a NAME, and a name survives having its space written as a hyphen, an
+# underscore, nothing at all, two spaces, a line break, or a zero-width space
+# dropped in the middle of it. Every one of those evaded a `word in line` test
+# while naming exactly the thing the policy refuses.
+RE_INVISIBLE = re.compile(r"[­​-‏⁠﻿]")
+RE_SEPARATOR = re.compile(r"[\s\-_]")
+
+
+def _squash(text: str) -> tuple[str, list[int]]:
+    """The text with separators and casing taken out, and a line per character.
+
+    The line map is the half that makes a finding actionable: the squashed text
+    has no line breaks left in it, so the offset of a match has to be carried
+    back to the line the match STARTS on, or every report points at line 1.
+    """
+    kept: list[str] = []
+    lines: list[int] = []
+    line = 1
+    for ch in text:
+        if ch == "\n":
+            line += 1
+            continue
+        if RE_INVISIBLE.match(ch) or RE_SEPARATOR.match(ch):
+            continue
+        # Folding can change length -- one character in, two out -- so the map
+        # is extended per emitted character rather than per source character.
+        folded = ch.casefold()
+        kept.append(folded)
+        lines.extend([line] * len(folded))
+    return "".join(kept), lines
+
+
+def read_scannable(path: Path) -> str | None:
+    """The file as text, or None when it is not text this reader can make.
+
+    UTF-16 IS THE ONE THAT GOT THROUGH. The old read fell back to a lossy decode
+    only on `UnicodeDecodeError`, and UTF-16 does not raise one: decoded as
+    UTF-8 it comes back as every letter separated by a replacement character, so
+    the file counted toward the scanned total, matched nothing, and produced no
+    `# not scanned:` line. A miss that reports itself is a limit; a miss that
+    reports a clean count is the failure this module keeps being rewritten for.
+
+    None means REPORT IT, and the caller puts it with the files it could not
+    read. Latin-1 is last and cannot fail, so a subtitle file in an eight-bit
+    encoding is still scanned rather than dropped.
+    """
+    data = path.read_bytes()          # OSError is the caller's to report
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return data.decode("utf-16")
+        except UnicodeDecodeError:
+            return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    # A NUL in the first pages is what wide text looks like without a mark.
+    if b"\x00" in data[:4096]:
+        for encoding in ("utf-16-le", "utf-16-be"):
+            try:
+                return data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return None
+    return data.decode("latin-1")
+
+
 def _is_id_shaped(tok: str) -> bool:
     """Mixed case AND a digit. A real id almost always has both; an English
     word, a snake_case name and a CONSTANT almost never do."""
@@ -315,19 +392,6 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
         if RE_DATED_EXEMPTION.search(line):
             out.append(f"{rel}:{n} E-CORPUS-DATED-EXEMPTION dated exemption in "
                        f"source; it belongs in watch-quality.toml")
-        folded = line.casefold()
-        for word in refused:
-            # Case-INSENSITIVE. A refused literal is a name -- a repository, an
-            # employer, a client -- and prose capitalises a name at the start of
-            # a sentence. A match that only saw one casing published the other.
-            if word and word.casefold() in folded:
-                # The refused word is NOT echoed. A defect report that quotes it
-                # ends up in a log, a CI page or a commit message, and the leak
-                # happens there instead.
-                out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD line contains a "
-                           f"refused literal (see refused_literals in "
-                           f"watch-quality.toml)")
-                break
         stamps = stamps_in(line)
         if (len(stamps) >= 2 and not _round_pair(stamps)
                 and any(stamps <= a for a in anchors)):
@@ -337,27 +401,54 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
             out.append(f"{rel}:{n} E-CORPUS-ANCHOR-SET every timestamp on this "
                        f"line stands on one line of one corpus note; invent "
                        f"the anchors or drop them")
+    # THE REFUSED WORDS, ONCE OVER THE WHOLE FILE. Line by line, a literal broken
+    # across a line was two halves of nothing, and a literal whose space was
+    # written as a hyphen or an underscore or not at all was a different string.
+    # Case folding closed casing and closed none of those. Squashed, they are one
+    # word again -- and so is anything else somebody puts between the letters.
+    squashed, line_of = _squash(text)
+    for word in refused:
+        needle, _ = _squash(word)
+        if not needle:
+            # A hole in the list, not a rule. `"" in anything` is True, so one
+            # empty entry would refuse every line of every file.
+            continue
+        at, reported = squashed.find(needle), set()
+        while at >= 0:
+            n = line_of[at]
+            if n not in reported:
+                reported.add(n)
+                # The refused word is NOT echoed. A defect report that quotes it
+                # ends up in a log, a CI page or a commit message, and the leak
+                # happens there instead.
+                out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD line contains a "
+                           f"refused literal (see refused_literals in "
+                           f"watch-quality.toml)")
+            at = squashed.find(needle, at + 1)
     return out
 
 
 def scan(paths: list[Path], root: Path,
          refused: tuple[str, ...] = (),
-         anchors: tuple[frozenset[str], ...] = ()) -> list[str]:
+         anchors: tuple[frozenset[str], ...] = (),
+         unread: list[Path] | None = None) -> list[str]:
     out: list[str] = []
     for p in sorted(paths):
         rel = str(p.relative_to(root) if p.is_relative_to(root) else p)
         try:
-            text = p.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            # A latin-1 subtitle file used to abort the whole run part-way, so
-            # every file sorted after it went unscanned -- and it exited 1, the
-            # code that means "a leak was found", which invites being waved
-            # through as noise. Read it lossily instead: a refused word and a
-            # video id are ASCII, and they still match through the replacement
-            # characters around them.
-            text = p.read_text(encoding="utf-8", errors="replace")
+            text = read_scannable(p)
         except OSError as exc:
+            # A NAMED target that is not there is LOUD. It is the misspelled
+            # path, and reporting it as a file that could not be decoded would
+            # turn an exit 1 into a line in the not-scanned census.
             out.append(f"{rel}:1 E-READ {exc}")
+            continue
+        if text is None:
+            # Handed back rather than swallowed, and rather than reported as a
+            # defect: this file was not read, which is a different sentence from
+            # "this file is clean" and from "this file leaks".
+            if unread is not None:
+                unread.append(p)
             continue
         out.extend(scan_text(text, rel, refused, anchors))
     return out
@@ -515,16 +606,7 @@ def main(argv: list[str]) -> int:
         shown = d.relative_to(root) if d.is_relative_to(root) else d
         print(f"# not scanned: {shown}/ is generated or vendored; a published "
               f"page in there is not read", file=sys.stderr)
-    # And the other half of not-read, by SUFFIX rather than by directory.
-    # Grouped, because a tree of images would otherwise bury the count -- but
-    # named, because an allowlist silently drops every format nobody listed.
-    by_suffix: dict[str, int] = {}
-    for p in unread:
-        by_suffix[p.suffix.lower() or "(no suffix)"] = (
-            by_suffix.get(p.suffix.lower() or "(no suffix)", 0) + 1)
-    for suffix, count in sorted(by_suffix.items()):
-        print(f"# not scanned: {count} {suffix} file(s); that suffix is not on "
-              f"the text list, so a leak in one is not read", file=sys.stderr)
+    by_suffix = _by_suffix(unread)
     # The refused words are the CALLER's, read from their policy. With no policy
     # the video-id and dated-exemption rules still run; only the word list is
     # empty, and the run says so rather than implying a clean bill of health.
@@ -576,7 +658,22 @@ def main(argv: list[str]) -> int:
               f"not travel with this package: run from inside it, or point "
               f"${ENV_VAR} at its policy file.", file=sys.stderr)
         return 2
-    hits = scan(files, root, refused, anchors)
+    # THE THIRD KIND OF NOT-READ, and it is found by reading. A file whose bytes
+    # are not text this reader can make is added here by `scan`, so the census
+    # below counts it -- counted as scanned it would read exactly like a clean
+    # one, which is how a UTF-16 file carrying a refused word passed.
+    undecodable: list[Path] = []
+    hits = scan(files, root, refused, anchors, undecodable)
+    for suffix, count in sorted(_by_suffix(undecodable).items()):
+        print(f"# not scanned: {count} {suffix} file(s); the bytes are not text "
+              f"this reader can make, so a leak in one is not read",
+              file=sys.stderr)
+    # And the other half of not-read, by SUFFIX rather than by directory.
+    # Grouped, because a tree of images would otherwise bury the count -- but
+    # named, because an allowlist silently drops every format nobody listed.
+    for suffix, count in sorted(by_suffix.items()):
+        print(f"# not scanned: {count} {suffix} file(s); that suffix is not on "
+              f"the text list, so a leak in one is not read", file=sys.stderr)
     for h in hits:
         print(h)
     # Named after what was WALKED, not after where this file happens to live.
