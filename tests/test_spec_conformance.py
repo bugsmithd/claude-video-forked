@@ -482,7 +482,14 @@ def test_no_rule_id_is_used_twice():
 # which hashes and stamps like any other and would let a lane quote it back
 # having read nothing. The echo is keyed to a brief actually on disk, never to
 # a date, which is why it cost no exemption table.
-FROZEN_RULE_COUNT = 142
+# 142 -> 145 on 2026-08-23, for the note layer's first writer. The two fields
+# it owns were typed and both are derivable from the run: the dated filename,
+# which `note_date` reads and every dated exemption row is compared against, and
+# the oracle, which six notes in this corpus get wrong badly enough to need a
+# dated row each. The run manifest is the commonest wrong answer -- it carries a
+# segment COUNT and not the segments -- and the writer is the only place in the
+# chain that can open the candidate before the path is committed to.
+FROZEN_RULE_COUNT = 145
 
 
 def test_the_table_is_closed():

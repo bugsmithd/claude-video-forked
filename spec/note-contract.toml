@@ -1570,3 +1570,74 @@ kind = "pytest"
 #    above pins the behaviour as it is; changing it is a source edit and
 #    belongs to whoever owns the module.
 #    [resolve_note.py:977]
+
+# THE THREE ROWS BELOW ARE THE NOTE LAYER'S FIRST WRITER. Every rule above them
+# grades a note already on disk. These refuse to put one there, because both
+# fields they own -- the dated filename and the oracle -- are derivable from
+# the run and were typed, and the corpus already carries dated rows for what
+# typing them cost.
+
+[[rule]]
+id = "NOTE-BLINDORACLE"
+code = "E-NOTE-BLINDORACLE"
+layer = "note-contract"
+owner = "file_note.file_note"
+trigger = "a note is opened from a run"
+refuses = "writing an oracle row naming a rendering no gate can read, which is the debt UNFILLED_ORACLES already carries dated rows for; the writer is the only place in the chain that can open the file before the path is committed to"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a run with no readable rendering beside it, refused before any note is written"
+test = "tests/test_file_note.py::test_a_run_whose_renderings_no_gate_can_read_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the rendering chosen is one load_segments actually reads, and never the run manifest, which carries a segment count rather than the segments"
+test = "tests/test_file_note.py::test_the_oracle_names_a_rendering_a_gate_can_actually_open"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_note::a run with no readable rendering is refused"
+kind = "selftest"
+
+[[rule]]
+id = "NOTE-EXISTS"
+code = "E-NOTE-EXISTS"
+layer = "note-contract"
+owner = "file_note.file_note"
+trigger = "a note is opened for a video"
+refuses = "opening a second note about one video, keyed on the video id rather than on the filename; the notes are frozen, and two notes about one video is the ambiguity the roll-call spent two rounds learning to refuse"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a second run of the same video on a later date, refused with the first note left untouched"
+test = "tests/test_file_note.py::test_a_note_for_this_video_is_never_overwritten"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_note::a second note about one video is refused"
+kind = "selftest"
+
+[[rule]]
+id = "NOTE-UNNAMEABLE"
+code = "E-NOTE-UNNAMEABLE"
+layer = "note-contract"
+owner = "file_note.file_note"
+trigger = "a note is opened and its name is derived from the run's title"
+refuses = "filing under a name the title does not yield, rather than under a machine-chosen placeholder that reads a year later exactly like a title somebody meant"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a title of punctuation only, which folds to nothing"
+test = "tests/test_file_note.py::test_a_title_that_yields_no_slug_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the dated filename the same writer derives, which is what every dated exemption row in this package is compared against"
+test = "tests/test_file_note.py::test_the_filename_is_derived_from_the_run_and_not_typed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_note::a title with no name in it is refused"
+kind = "selftest"

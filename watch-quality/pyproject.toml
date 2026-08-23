@@ -37,6 +37,7 @@ wq-note-coverage = "watchquality.cli:note_coverage"
 watch-audit = "watchquality.cli:audit"
 wq-file-review = "watchquality.cli:file_review"
 wq-file-brief = "watchquality.cli:file_brief"
+wq-file-note = "watchquality.cli:file_note"
 
 [tool.setuptools.packages.find]
 where = ["src"]

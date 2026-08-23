@@ -93,3 +93,8 @@ def file_review() -> int:
 def file_brief() -> int:
     from .file_brief import main
     return _run(main)
+
+
+def file_note() -> int:
+    from .file_note import main
+    return _run(main)
