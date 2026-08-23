@@ -753,6 +753,72 @@ def test_a_refused_word_is_caught_however_its_separators_are_written():
         assert len(found) == 1, (repr(spelling), hits)
 
 
+def test_a_name_written_as_an_encoding_of_itself_is_still_refused():
+    """The class no width of separator list reaches (round 12 F6).
+
+    Six of the eighteen spellings that walked through are not separators at all.
+    They are ENCODINGS of the whole name -- percent-encoding as a URL carries
+    it, HTML entities as a page carries it, base64 as a payload carries it --
+    and a squash that strips harder will never reach any of them, because the
+    letters themselves are gone.
+
+    So these are answered on the NEEDLE, not on the haystack: the literal is
+    rendered the same way and searched for exactly. An exact search adds no
+    false-positive surface at all, which is the whole reason the answer is on
+    this side.
+    """
+    import base64
+    import urllib.parse
+
+    word = "acme private"
+    spellings = {
+        "percent": urllib.parse.quote(word, safe=""),
+        "percent lowercase hex": urllib.parse.quote(word, safe="").lower(),
+        "entity, one letter": "acme private".replace("e", "&#101;"),
+        "entity, the separator": "acme&nbsp;private",
+        "base64": base64.b64encode(word.encode()).decode(),
+        "base64 urlsafe": base64.urlsafe_b64encode(word.encode()).decode(),
+    }
+    for why, spelling in spellings.items():
+        hits = wcs.scan_text(f"a line carrying {spelling} in it\n", "f.md",
+                             (word,))
+        found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+        assert len(found) == 1, (why, spelling, hits)
+
+
+def test_a_name_spelled_with_a_lookalike_letter_is_still_refused():
+    """A homoglyph is one keystroke from a paste, not an exotic attack.
+
+    Cyrillic `е` renders identically to Latin `e` in every font this repository
+    is read in, and `casefold()` leaves the two as different characters. The
+    same is true of full-width letters, which is a compatibility form rather
+    than a different letter -- and `NFKC` is what says so.
+    """
+    for why, spelling in (("cyrillic e", "acmе private"),
+                          ("cyrillic a", "аcme private"),
+                          ("full-width", "ａcme private")):
+        hits = wcs.scan_text(f"a line about {spelling} in prose\n", "f.md",
+                             ("acme private",))
+        found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+        assert len(found) == 1, (why, spelling, hits)
+
+
+def test_the_encodings_do_not_refuse_a_page_that_names_nothing():
+    """The other direction, asked of the new renderings rather than the squash.
+
+    A page full of percent-encoding, entities and base64 that never carries the
+    name must stay clean, or the gate has bought its coverage with the same
+    currency the squash did.
+    """
+    clean = ("a URL with %20 and %2F in it and a private acme\n"
+             "an entity &nbsp; and &#101; on a line about margins\n"
+             "a payload YWNtZSBwdWJsaWM= which decodes to something else\n")
+
+    hits = wcs.scan_text(clean, "f.md", ("acme private", "acmeprivate"))
+
+    assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], hits
+
+
 def test_the_separator_walk_does_not_refuse_a_line_that_names_nothing():
     """The other half, and the half that decides whether the gate survives.
 

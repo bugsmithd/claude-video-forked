@@ -58,9 +58,13 @@ exit code, and a hook reads nothing else. With the flag, no words in force is a 
 
 from __future__ import annotations
 
+import base64
+import html
 import os
 import re
 import sys
+import unicodedata
+import urllib.parse
 from pathlib import Path
 
 PROG = "wq_corpus_scan.py"
@@ -423,6 +427,79 @@ RE_INVISIBLE = re.compile(r"[\x00­​-‏⁠﻿]")
 RE_SEPARATOR = re.compile(r"[\s\-_]")
 
 
+# Letters another script renders identically in the fonts this repository is
+# read in. NOT a general confusables table -- a general one folds distinctions
+# that matter -- but the Latin letters that have a Cyrillic or Greek twin, taken
+# toward Latin so a pasted name is the same name. `casefold()` leaves `е` and
+# `e` as different characters, and no width of separator list closes that,
+# because a homoglyph is not between the letters: it IS one of them.
+CONFUSABLES = str.maketrans({
+    "а": "a", "в": "b", "с": "c", "ԁ": "d", "е": "e", "һ": "h", "і": "i",
+    "ј": "j", "к": "k", "м": "m", "о": "o", "р": "p", "ѕ": "s", "т": "t",
+    "у": "y", "х": "x", "ѵ": "v",
+    "α": "a", "β": "b", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o",
+    "ρ": "p", "τ": "t", "υ": "u", "χ": "x",
+})
+
+
+def _decodings(text: str) -> tuple[tuple[str, str], ...]:
+    """The same text as the tools that carry it would hand it back.
+
+    Percent-encoding and HTML entities are not separators, and squashing will
+    never reach them: a name with one letter written as `%65` or as `&#101;`
+    does not contain that letter at all. Decoding is the only thing that does,
+    and it has to happen BEFORE the squash rather than inside it, because the
+    encoded form is longer than the one character it stands for.
+
+    LINE BY LINE, so the position map survives. Decoding the whole file at once
+    is one character cheaper and loses the only thing that makes a finding
+    actionable: neither decoder emits or eats a newline, so a per-line decode
+    leaves every line where it was.
+
+    A variant identical to the source is dropped rather than searched twice --
+    which is every file that carries no encoding at all, so the common case
+    pays one comparison.
+    """
+    lines = text.split("\n")
+    out = []
+    for label, decode in (("percent-encoding", urllib.parse.unquote),
+                          ("HTML entities", html.unescape)):
+        # `unquote` is lenient by contract and `unescape` cannot raise, so a
+        # malformed `%zz` or a bare `&` comes back as itself. A decoder that
+        # refused would turn a page nobody was attacking into an exit 1.
+        variant = "\n".join(decode(line) for line in lines)
+        if variant != text:
+            out.append((label, variant))
+    return tuple(out)
+
+
+def _renderings(word: str) -> tuple[tuple[str, str], ...]:
+    """The whole name written as something that is not letters any more.
+
+    base64 is the row no amount of decoding reaches from the other side: the
+    haystack cannot be base64-decoded, because most of a source file looks
+    enough like base64 to decode into noise, and noise matches things. So the
+    NEEDLE is rendered instead and searched for exactly.
+
+    An exact search over the raw text adds no false-positive surface at all --
+    that is the whole reason this class lives on this side. It is also why the
+    comparison here is case-SENSITIVE and unsquashed: base64 carries meaning in
+    its casing, and squashing it would compare noise to noise.
+    """
+    raw = word.encode("utf-8")
+    out = [
+        ("base64", base64.b64encode(raw).decode("ascii")),
+        ("base64, url-safe", base64.urlsafe_b64encode(raw).decode("ascii")),
+        ("base64, unpadded", base64.b64encode(raw).decode("ascii").rstrip("=")),
+    ]
+    seen, kept = set(), []
+    for label, rendering in out:
+        if rendering and rendering != word and rendering not in seen:
+            seen.add(rendering)
+            kept.append((label, rendering))
+    return tuple(kept)
+
+
 def _squash(text: str) -> tuple[str, list[int], list[int]]:
     """The text with separators and casing taken out, and a POSITION per character.
 
@@ -440,6 +517,16 @@ def _squash(text: str) -> tuple[str, list[int], list[int]]:
     lines: list[int] = []
     cols: list[int] = []
     line, col = 1, 1
+    # NFKC before anything else, because a full-width letter is a COMPATIBILITY
+    # form of the same letter rather than a different one, and `casefold()` does
+    # not fold compatibility. Then the lookalikes, which no normalisation folds
+    # because they are genuinely different letters that merely draw the same.
+    #
+    # Both act on the whole string rather than per character, so a column below
+    # counts normalised characters. On the lines this matters for -- the ones
+    # carrying a compatibility form -- that is the coordinate the match is
+    # actually at, and every other line is unchanged.
+    text = unicodedata.normalize("NFKC", text).translate(CONFUSABLES)
     for ch in text:
         if ch == "\n":
             line += 1
@@ -564,18 +651,61 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
     # word again -- and so is anything else somebody puts between the letters.
     kept = "\n".join("" if n in excused else line
                      for n, line in enumerate(text.splitlines(), 1))
-    squashed, line_of, col_of = _squash(kept)
+    # ONE report per line per literal, however many ways it was reached. A name
+    # whose first letter alone is percent-encoded is caught by the plain pass
+    # AND by the decoded one, and three findings for one line reads as three
+    # leaks. (No worked example is written out here: this module is scanned by
+    # itself, and an example that decodes into a refusable word IS one. The
+    # first draft of this comment carried one and the gate caught it, at this
+    # line, which is the shortest proof of the class that the class allows.)
+    reported: set[tuple[int, int]] = set()
+
+    # THE NEEDLE'S OWN RENDERINGS, over the raw text, before the squash gets a
+    # word in. These are exact and case-sensitive; see `_renderings`.
+    lines_raw = kept.split("\n")
+    for i, word in enumerate(refused, 1):
+        if not word.strip():
+            continue
+        for label, rendering in _renderings(word):
+            for n, line in enumerate(lines_raw, 1):
+                col = line.find(rendering)
+                if col >= 0 and (n, i) not in reported:
+                    reported.add((n, i))
+                    out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD literal "
+                               f"#{i} of {len(refused)} (squashed length "
+                               f"{len(_squash(word)[0])}) written as {label} "
+                               f"and matched at line {n} column {col + 1} "
+                               f"(see refused_literals in watch-quality.toml)")
+
+    for pass_label, variant in (("", kept), *_decodings(kept)):
+        squashed, line_of, col_of = _squash(variant)
+        _refuse_squashed(out, rel, squashed, line_of, col_of, refused,
+                         reported, pass_label)
+    return out
+
+
+def _refuse_squashed(out: list[str], rel: str, squashed: str,
+                     line_of: list[int], col_of: list[int],
+                     refused: tuple[str, ...],
+                     reported: set[tuple[int, int]], pass_label: str) -> None:
+    """One squashed pass over one rendering of the file.
+
+    Lifted out of `scan_text` when the decoded passes arrived, because the
+    alternative was the same fifteen lines written three times and a bug fixed
+    in one of them.
+    """
+    via = f" via {pass_label}" if pass_label else ""
     for i, word in enumerate(refused, 1):
         needle, _, _ = _squash(word)
         if not needle:
             # A hole in the list, not a rule. `"" in anything` is True, so one
             # empty entry would refuse every line of every file.
             continue
-        at, reported = squashed.find(needle), set()
+        at = squashed.find(needle)
         while at >= 0:
             n = line_of[at]
-            if n not in reported:
-                reported.add(n)
+            if (n, i) not in reported:
+                reported.add((n, i))
                 # The refused word is NOT echoed, and neither is the span that
                 # matched it: an exact match makes that span the literal, so a
                 # refusal quoting it publishes the name into every log, CI page
@@ -590,12 +720,11 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
                 # recognised as a squash surface rather than as a leak.
                 out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD literal "
                            f"#{i} of {len(refused)} (squashed length "
-                           f"{len(needle)}) matched at squashed offsets "
+                           f"{len(needle)}) matched{via} at squashed offsets "
                            f"{at}-{at + len(needle)}, beginning line {n} "
                            f"column {col_of[at]} (see refused_literals in "
                            f"watch-quality.toml)")
             at = squashed.find(needle, at + 1)
-    return out
 
 
 def scan(paths: list[Path], root: Path,
