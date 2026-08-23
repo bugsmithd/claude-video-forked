@@ -433,6 +433,16 @@ RE_SEPARATOR = re.compile(r"[\s\-_]")
 # toward Latin so a pasted name is the same name. `casefold()` leaves `е` and
 # `e` as different characters, and no width of separator list closes that,
 # because a homoglyph is not between the letters: it IS one of them.
+#
+# THIS FOLD IS MANY-TO-ONE AND THEREFORE COSTS SOMETHING. An independent lane
+# built the bill (round 17 C3): ordinary Russian prose folds onto Latin words,
+# a full-width run in CJK typesetting folds onto its ASCII spelling, and NFKC
+# turns a Roman numeral into letters. Each is a page that was clean before this
+# rule and refused after it, IF the refused list happens to hold the word it
+# folds onto. The ten literals in force today are five characters and longer and
+# none of them collides, which bounds the blast radius; it does not remove it.
+# The word-boundary condition that bounds it properly is the next slice, and
+# until it lands this is a measured cost rather than a discovered one.
 CONFUSABLES = str.maketrans({
     "а": "a", "в": "b", "с": "c", "ԁ": "d", "е": "e", "һ": "h", "і": "i",
     "ј": "j", "к": "k", "м": "m", "о": "o", "р": "p", "ѕ": "s", "т": "t",
@@ -440,6 +450,12 @@ CONFUSABLES = str.maketrans({
     "α": "a", "β": "b", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o",
     "ρ": "p", "τ": "t", "υ": "u", "χ": "x",
 })
+
+
+# The shortest rendering worth hunting for. Twelve base64 characters is about
+# nine bytes of literal; below that the rendering is short enough to occur in
+# any blob of base64 by chance, and the search stops being free.
+RENDER_FLOOR = 12
 
 
 def _decodings(text: str) -> tuple[tuple[str, str], ...]:
@@ -453,8 +469,17 @@ def _decodings(text: str) -> tuple[tuple[str, str], ...]:
 
     LINE BY LINE, so the position map survives. Decoding the whole file at once
     is one character cheaper and loses the only thing that makes a finding
-    actionable: neither decoder emits or eats a newline, so a per-line decode
-    leaves every line where it was.
+    actionable.
+
+    A decoded line is put back on ONE line, whatever it decoded into. The first
+    version of this said "neither decoder emits a newline", which is false and
+    was measured false: `%0A` and `&#10;` both decode to one, it became a real
+    break in the variant, and every line after it was renumbered. A three-line
+    file then reported its leak at line 4 -- and reported it twice, because the
+    dedup key is the line and the two passes disagreed about which line that
+    was. A decoded newline is a separator like any other and the squash removes
+    it either way, so replacing it with a space loses nothing and keeps the file
+    the shape the report describes.
 
     A variant identical to the source is dropped rather than searched twice --
     which is every file that carries no encoding at all, so the common case
@@ -467,7 +492,8 @@ def _decodings(text: str) -> tuple[tuple[str, str], ...]:
         # `unquote` is lenient by contract and `unescape` cannot raise, so a
         # malformed `%zz` or a bare `&` comes back as itself. A decoder that
         # refused would turn a page nobody was attacking into an exit 1.
-        variant = "\n".join(decode(line) for line in lines)
+        variant = "\n".join(decode(line).replace("\n", " ").replace("\r", " ")
+                            for line in lines)
         if variant != text:
             out.append((label, variant))
     return tuple(out)
@@ -481,10 +507,23 @@ def _renderings(word: str) -> tuple[tuple[str, str], ...]:
     enough like base64 to decode into noise, and noise matches things. So the
     NEEDLE is rendered instead and searched for exactly.
 
-    An exact search over the raw text adds no false-positive surface at all --
-    that is the whole reason this class lives on this side. It is also why the
-    comparison here is case-SENSITIVE and unsquashed: base64 carries meaning in
-    its casing, and squashing it would compare noise to noise.
+    An exact search adds no false-positive surface WHILE THE STRING IT SEARCHES
+    FOR IS LONG ENOUGH TO BE IMPROBABLE, and the first version of this said
+    "no false-positive surface at all". It is why the comparison here is
+    case-SENSITIVE and unsquashed: base64 carries meaning in its casing, and
+    squashing it would compare noise to noise.
+
+    THE FLOOR IS WHY THAT QUALIFIER IS THERE. A three-letter literal renders
+    unpadded as four characters, and four characters occur in any base64 blob --
+    an image, a key, a data URI. One was built and it refused a file carrying no
+    name at all (round 17 C6). `RENDER_FLOOR` characters is roughly nine bytes
+    of literal, below which a rendering is noise-shaped rather than
+    name-shaped.
+
+    That is a REAL GAP, not a solved problem: a refused literal shorter than
+    about nine characters is not hunted in base64 at all. It is bounded rather
+    than closed, and the bound is written here rather than left for the next
+    reader to measure.
     """
     raw = word.encode("utf-8")
     out = [
@@ -494,7 +533,8 @@ def _renderings(word: str) -> tuple[tuple[str, str], ...]:
     ]
     seen, kept = set(), []
     for label, rendering in out:
-        if rendering and rendering != word and rendering not in seen:
+        if (len(rendering) >= RENDER_FLOOR and rendering != word
+                and rendering not in seen):
             seen.add(rendering)
             kept.append((label, rendering))
     return tuple(kept)

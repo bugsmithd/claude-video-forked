@@ -786,6 +786,54 @@ def test_a_name_written_as_an_encoding_of_itself_is_still_refused():
         assert len(found) == 1, (why, spelling, hits)
 
 
+def test_an_encoded_newline_does_not_move_every_line_after_it():
+    """The decoded passes' whole premise, and it was false (round 17 C5).
+
+    `_decodings` decodes line by line and rejoins on newlines, on the stated
+    grounds that neither decoder emits or eats one. Both do: `%0A` and `&#10;`
+    decode to a newline, which becomes a real line break in the variant and
+    renumbers every line after it. A file of three lines then reports a leak at
+    line 4 -- a line it does not have -- and the same leak twice, once per pass,
+    because the dedup key is the line.
+    """
+    for spelling in ("%0A", "&#10;"):
+        body = f"alpha {spelling} beta\nbravo\nprose acmeprivate prose\n"
+
+        hits = wcs.scan_text(body, "f.md", ("acme private",))
+
+        found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+        assert len(found) == 1, (spelling, hits)
+        assert found[0].startswith("f.md:3 "), (spelling, found)
+
+
+def test_a_short_literals_base64_is_not_hunted_for_in_noise():
+    """The needle renderings were sold as costing nothing. Not at every length.
+
+    `buf` renders unpadded as `YnVm`, four characters, and four characters occur
+    in any base64 blob -- an image, a key, a data URI. Round 17 C6 built one and
+    got a refusal on a file carrying no name at all. An exact search is only
+    free while the string it searches for is long enough to be improbable, so
+    the renderings below the floor are not searched.
+    """
+    import base64
+    import random
+
+    rng = random.Random(11)
+    blob = base64.b64encode(bytes(rng.randrange(256) for _ in range(20000)))
+    body = f"a data URI: {blob.decode('ascii')}\n"
+
+    hits = wcs.scan_text(body, "f.md", ("buf",))
+
+    assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], hits[:2]
+
+    # And the floor is a floor, not a retreat: a literal long enough to be
+    # improbable is still hunted in every rendering.
+    long_word = "acme private"
+    encoded = base64.b64encode(long_word.encode()).decode("ascii")
+    hits = wcs.scan_text(f"a payload {encoded} here\n", "f.md", (long_word,))
+    assert len([h for h in hits if "E-CORPUS-REFUSED-WORD" in h]) == 1, hits
+
+
 def test_a_name_spelled_with_a_lookalike_letter_is_still_refused():
     """A homoglyph is one keystroke from a paste, not an exotic attack.
 
