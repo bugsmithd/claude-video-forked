@@ -789,6 +789,36 @@ def test_a_word_broken_across_a_line_is_reported_on_the_line_it_starts():
     assert found[0].startswith("f.md:2 "), found
 
 
+def test_the_refusal_says_which_literal_and_where_without_naming_it():
+    """A refusal a reader cannot act on is the shape of a gate somebody removes.
+
+    Round 12 measured the cost of saying nothing: a real page was refused on a
+    line holding no refused literal, with no clue which of ten it had hit, and
+    no way to tell a leak from the squash matching two adjacent words. The
+    literal still may not be quoted -- an exact match makes the quoted span the
+    literal, and the refusal then publishes it into every log that keeps it --
+    so the message carries an ORDINAL, a length, and a position instead. The
+    author reads their own line at their own column.
+    """
+    body = "clean line one\nsecond line names acme private here\n"
+
+    hits = wcs.scan_text(body, "f.md", ("nothing", "acme private", "other"))
+
+    found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+    assert len(found) == 1, hits
+    msg = found[0]
+    assert msg.startswith("f.md:2 "), msg
+    # WHICH one, out of how many. The list is ordered by the policy, so an
+    # ordinal is stable enough to look up and says nothing on its own.
+    assert "literal #2 of 3" in msg, msg
+    assert "squashed length 11" in msg, msg
+    # WHERE, in the source the author is looking at -- not in the squashed
+    # string, which has no line breaks and no separators left in it.
+    assert "column 19" in msg, msg
+    # And still not the word itself, in any spelling.
+    assert "acme" not in msg and "private" not in msg, msg
+
+
 def test_a_line_repeating_one_notes_timestamps_is_refused():
     """The leak class no word list can catch, and the one that got through.
 

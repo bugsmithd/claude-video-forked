@@ -423,28 +423,39 @@ RE_INVISIBLE = re.compile(r"[\x00­​-‏⁠﻿]")
 RE_SEPARATOR = re.compile(r"[\s\-_]")
 
 
-def _squash(text: str) -> tuple[str, list[int]]:
-    """The text with separators and casing taken out, and a line per character.
+def _squash(text: str) -> tuple[str, list[int], list[int]]:
+    """The text with separators and casing taken out, and a POSITION per character.
 
-    The line map is the half that makes a finding actionable: the squashed text
-    has no line breaks left in it, so the offset of a match has to be carried
-    back to the line the match STARTS on, or every report points at line 1.
+    The position map is the half that makes a finding actionable: the squashed
+    text has no line breaks and no separators left in it, so the offset of a
+    match has to be carried back to the line the match STARTS on, or every
+    report points at line 1.
+
+    The column is carried for the same reason one notch finer. A line can be
+    four hundred characters of prose and the match a five-character run inside
+    it; "line 91" sends its reader to the line and no further, and the refusal
+    may not quote what it matched.
     """
     kept: list[str] = []
     lines: list[int] = []
-    line = 1
+    cols: list[int] = []
+    line, col = 1, 1
     for ch in text:
         if ch == "\n":
             line += 1
+            col = 1
             continue
         if RE_INVISIBLE.match(ch) or RE_SEPARATOR.match(ch):
+            col += 1
             continue
-        # Folding can change length -- one character in, two out -- so the map
-        # is extended per emitted character rather than per source character.
+        # Folding can change length -- one character in, two out -- so the maps
+        # are extended per emitted character rather than per source character.
         folded = ch.casefold()
         kept.append(folded)
         lines.extend([line] * len(folded))
-    return "".join(kept), lines
+        cols.extend([col] * len(folded))
+        col += 1
+    return "".join(kept), lines, cols
 
 
 def read_scannable(path: Path) -> str | None:
@@ -553,9 +564,9 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
     # word again -- and so is anything else somebody puts between the letters.
     kept = "\n".join("" if n in excused else line
                      for n, line in enumerate(text.splitlines(), 1))
-    squashed, line_of = _squash(kept)
-    for word in refused:
-        needle, _ = _squash(word)
+    squashed, line_of, col_of = _squash(kept)
+    for i, word in enumerate(refused, 1):
+        needle, _, _ = _squash(word)
         if not needle:
             # A hole in the list, not a rule. `"" in anything` is True, so one
             # empty entry would refuse every line of every file.
@@ -565,11 +576,23 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
             n = line_of[at]
             if n not in reported:
                 reported.add(n)
-                # The refused word is NOT echoed. A defect report that quotes it
-                # ends up in a log, a CI page or a commit message, and the leak
-                # happens there instead.
-                out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD line contains a "
-                           f"refused literal (see refused_literals in "
+                # The refused word is NOT echoed, and neither is the span that
+                # matched it: an exact match makes that span the literal, so a
+                # refusal quoting it publishes the name into every log, CI page
+                # and commit message that keeps the refusal.
+                #
+                # An ORDINAL is not a quotation. Which entry, how long it is
+                # once squashed, and where the run begins in the file the author
+                # is looking at -- that is enough to go and look, and it is the
+                # difference between acting on a finding and deleting the gate
+                # that produced it. A false positive now says which of the ten
+                # it was, which is how the 1253-word squash surface gets
+                # recognised as a squash surface rather than as a leak.
+                out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD literal "
+                           f"#{i} of {len(refused)} (squashed length "
+                           f"{len(needle)}) matched at squashed offsets "
+                           f"{at}-{at + len(needle)}, beginning line {n} "
+                           f"column {col_of[at]} (see refused_literals in "
                            f"watch-quality.toml)")
             at = squashed.find(needle, at + 1)
     return out
