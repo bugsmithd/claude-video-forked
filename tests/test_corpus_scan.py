@@ -852,6 +852,59 @@ def test_two_adjacent_words_are_not_a_literal_they_happen_to_spell():
     assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], hits
 
 
+def test_anything_that_is_not_a_letter_can_stand_between_the_words():
+    """Round 18 C5: the miss class nobody had to be attacking to produce.
+
+    The first version listed the punctuation that joins -- full stop, solidus,
+    colon -- and kept everything else, so a character NOT on the list stopped
+    the match dead. A lane enumerated what that costs: a parenthetical, markdown
+    emphasis, a quoted word, a bracket, a plus, a typo'd double stop, an
+    invisible hangul filler. Not one of those is adversarial, and
+    `acme (private)` is exactly how somebody mentions a private repository in a
+    note.
+
+    So the rule is inverted. A letter or a digit is content and everything else
+    is between the words, which is one sentence and cannot fall behind a list.
+    """
+    for why, spelling in (("parenthetical", "acme (private)"),
+                          ("markdown emphasis", "**acme** private"),
+                          ("one word quoted", '"acme" private'),
+                          ("brackets", "[acme] private"),
+                          ("plus", "acme+private"),
+                          ("asterisk", "acme*private"),
+                          ("doubled full stop", "acme..private"),
+                          ("wrapped after a stop", "the acme.\nprivate repo"),
+                          ("invisible hangul filler", "acmeㅤprivate")):
+        hits = wcs.scan_text(f"a line: {spelling} here\n", "f.md",
+                             ("acme private",))
+
+        found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+        assert len(found) == 1, (why, hits)
+
+
+def test_the_boundary_is_asked_at_both_ends():
+    """Round 18 C8: half the mechanism had no case of its own.
+
+    Every case for the bound put the collision at the START of the match --
+    `allover` inside `Recall over` -- so deleting the END test left the whole
+    suite green. A word that merely BEGINS with the literal is the other half
+    and it is the more common shape in code, where a name is a prefix of a
+    longer identifier far more often than a suffix of one.
+    """
+    starts = "a line about acmeprivateer sailing\n"
+    ends = "a line about theacmeprivate thing\n"
+
+    for why, body in (("literal is a prefix", starts),
+                      ("literal is a suffix", ends)):
+        hits = wcs.scan_text(body, "f.md", ("acme private",))
+        assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], why
+
+    # And the boundary is a boundary, not a refusal to match at all.
+    hits = wcs.scan_text("a line about acmeprivate alone\n", "f.md",
+                         ("acme private",))
+    assert len([h for h in hits if "E-CORPUS-REFUSED-WORD" in h]) == 1, hits
+
+
 def test_a_sentence_break_does_not_glue_two_words_into_a_literal():
     """The cost of taking the full stop, and the line that keeps it small.
 

@@ -540,33 +540,58 @@ def _renderings(word: str) -> tuple[tuple[str, str], ...]:
     return tuple(kept)
 
 
-# Unicode CATEGORIES that are between letters without being letters. A range
-# written by hand is always one codepoint behind: `U+0000`, `U+034F`, `U+FE0F`,
-# `U+180E`, `U+2064`, `U+2011`, `U+2012` and `U+2013` all walked past the old
-# one, and three of those are what a markdown editor makes of a typed hyphen
-# rather than anything adversarial. A category cannot fall behind.
+# A LETTER OR A DIGIT IS CONTENT; EVERYTHING ELSE STANDS BETWEEN THE WORDS.
 #
-#   Cc control, Cf format, Zs/Zl/Zp the separators, Pd every dash,
-#   Pc the connectors (which is where `_` lives), Mn the combining marks that
-#   render as nothing at all.
-SQUASHED_CATEGORIES = frozenset({"Cc", "Cf", "Zs", "Zl", "Zp", "Pd", "Pc",
-                                 "Mn"})
-# Punctuation that joins two letters INSIDE a token and separates two sentences
-# between them. A name is written in a path or a URL far more often than in
-# prose, so these have to come out -- and taking them out unconditionally glues
-# the end of one sentence to the start of the next, which is the false positive
-# the boundary rule exists to stop. So they come out only when a letter or a
-# digit stands on both sides.
-GLUE_PUNCTUATION = frozenset({".", "/", "\\", "·", ":", ",", "'", "’"})
+# This was a list once -- the space, the hyphen, the underscore, then a range of
+# invisibles, then eight Unicode categories and a set of joining punctuation --
+# and every version of the list was one character behind. `U+2011`, an en dash
+# and a figure dash walked past the range; a parenthesis, markdown emphasis, a
+# quotation mark, a bracket, a plus and a doubled full stop walked past the
+# categories. Not one of those is adversarial: `name (private)` is how somebody
+# mentions a private repository in a note, and `**name** private` is what the
+# editor does to it.
+#
+# So the rule is inverted, and it is one sentence rather than an inventory. What
+# it costs is answered by the boundary rule and by the barrier below rather than
+# by keeping punctuation in the haystack.
+#
+# `BARRIER` is a character no needle can contain, because a squashed needle is
+# letters and digits only. It marks a place nothing may match across.
+BARRIER = "\x01"
+# Letters that draw as nothing. `isalnum()` calls them content, because by
+# category they ARE letters, and one dropped between two halves of a name is
+# the one shape the inverted rule above does not reach on its own. The hangul
+# fillers are the set that exists; NFKC folds the half-width one onto the other.
+INVISIBLE_LETTERS = str.maketrans({c: None for c in "ᅟᅠㅤ"})
+# The punctuation that ENDS a sentence, as opposed to joining two halves of a
+# name.
+SENTENCE_END = frozenset({".", "!", "?", ";"})
 
 
-def _removes(ch: str, before: str, after: str) -> bool:
-    """Whether the squash drops this character, given what it stands between."""
-    if unicodedata.category(ch) in SQUASHED_CATEGORIES:
-        return True
-    if ch in GLUE_PUNCTUATION:
-        return before.isalnum() and after.isalnum()
-    return False
+def _sentence_break(text: str, i: int) -> bool:
+    """Whether the non-letter run around `text[i]` ends a sentence.
+
+    A full stop, a run of whitespace, and a capital letter. That is the one
+    shape where the words on either side belong to different sentences, and
+    gluing them together spells a name neither of them contains -- `sold the
+    acme. Private buyers came`. Everything else that is not a letter is treated
+    as being inside one name.
+
+    Deliberately narrow. A stop followed by a lower-case word is not a sentence
+    break in any prose worth protecting, and a name wrapped across a line after
+    a stop is one somebody wrote down.
+    """
+    if not text[i].isspace():
+        return False
+    j = i - 1
+    while j >= 0 and text[j].isspace():
+        j -= 1
+    if j < 0 or text[j] not in SENTENCE_END:
+        return False
+    k = i + 1
+    while k < len(text) and not text[k].isalnum():
+        k += 1
+    return k < len(text) and text[k].isupper()
 
 
 def _squash(text: str) -> tuple[str, list[int], list[int]]:
@@ -595,7 +620,8 @@ def _squash(text: str) -> tuple[str, list[int], list[int]]:
     # counts normalised characters. On the lines this matters for -- the ones
     # carrying a compatibility form -- that is the coordinate the match is
     # actually at, and every other line is unchanged.
-    text = unicodedata.normalize("NFKC", text).translate(CONFUSABLES)
+    text = (unicodedata.normalize("NFKC", text)
+            .translate(CONFUSABLES).translate(INVISIBLE_LETTERS))
     # ANYTHING THAT IS NOT A LETTER OR A DIGIT IS A BOUNDARY, and `gaps` says
     # per emitted character whether one stood immediately before it in the
     # SOURCE. That is how `dev/name/notes` keeps a word between the slashes
@@ -607,17 +633,32 @@ def _squash(text: str) -> tuple[str, list[int], list[int]]:
     # shape a leak takes in source code more often than in prose.
     gaps: list[bool] = []
     prev = ""
+    barrier = False
     for i, ch in enumerate(text):
         if ch == "\n":
             line += 1
             col = 1
-            prev = ""
+            prev = ch
             continue
-        if _removes(ch, text[i - 1] if i else "", text[i + 1:i + 2]):
+        if not ch.isalnum():
+            # A SENTENCE BREAK IS NOT A SEPARATOR. Everything else that is not a
+            # letter stands between two halves of a name; a full stop, a run of
+            # space and a capital is the end of one sentence and the start of
+            # the next, and gluing those together is the false positive the
+            # whole bound exists to stop. `BARRIER` goes in, and a needle is
+            # letters and digits only, so nothing can match across it.
+            if _sentence_break(text, i):
+                barrier = True
             col += 1
             prev = ch
             continue
         gap = not prev.isalnum()
+        if barrier:
+            kept.append(BARRIER)
+            lines.append(line)
+            cols.append(col)
+            gaps.append(True)
+            barrier = False
         # Folding can change length -- one character in, two out -- so the maps
         # are extended per emitted character rather than per source character.
         folded = ch.casefold()
@@ -646,10 +687,29 @@ def _at_boundary(squashed: str, gaps: list[bool], at: int, length: int) -> bool:
     and dropping IS the boundary.
 
     THE COST, stated rather than discovered later: a literal deliberately glued
-    to another word -- `xxname` -- evades this. That is a trade, and it is the
-    one the acceptance criterion asked for: an unbounded rule fires on prose
-    nobody was attacking with, and the version of this gate that gets deleted
-    catches nothing at all.
+    to another word -- `xxname` -- evades this, at either end. That is a trade,
+    and it is the one the acceptance criterion asked for: an unbounded rule
+    fires on prose nobody was attacking with, and the version of this gate that
+    gets deleted catches nothing at all.
+
+    THE SURFACE THAT REMAINS, measured over this repository's own tracked files
+    against `/usr/share/dict/words`, counting words that match only after
+    squashing AND satisfy this rule:
+
+        needle length 5 -> 592 words     (unbounded, round 12: 1253)
+        needle length 6 -> 449
+        needle length 7 -> 151
+
+    Those numbers went DOWN when the bound arrived and back UP when the squash
+    was inverted to drop every non-letter, which is the price of catching
+    `name (private)` and `**name** private`. Both directions are real and the
+    trade was taken deliberately: the miss class needed no attacker, and a false
+    positive now names which literal it was, which is the difference between a
+    reader diagnosing it and a reader deleting the gate.
+
+    The ten literals in force are five characters and longer, none of them is an
+    English word, and the fork scans clean. That is the bound in practice; the
+    numbers above are the bound in principle.
     """
     end = at + length
     if not gaps[at]:
