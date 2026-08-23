@@ -2203,9 +2203,12 @@ def is_note(path: Path, root: Path) -> bool:
 def refuses_empty(files: list[Path], paths: list[Path], prog: str) -> bool:
     """True, and says so, when a corpus yielded no notes at all.
 
-    The refusal used to live inside `collect` and moved out so that pointing a
-    gate at a directory of REVIEWS could return nothing instead of raising.
-    That was right and it was applied one caller at a time, which gave the
+    The refusal used to live inside `collect` and moved out so that COLLECTING
+    a directory of REVIEWS could return nothing instead of raising. Only the
+    collector gained that: measured, every gate pointed at a directory of
+    reviews still refuses with exit 2, because a gate asked to grade notes and
+    handed none has nothing to say. The move was right and it was applied one
+    caller at a time, which gave the
     guarantee back to two gates and silently dropped it for the third: on an
     empty corpus `demote_note` printed `# 0 notes would change`, exited 0, and
     `watch-audit` printed `demote_note: ok` over it (verification G1). A rule

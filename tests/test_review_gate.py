@@ -877,6 +877,29 @@ def test_every_gate_refuses_an_empty_corpus_not_just_the_first(corpus):
     assert exit_info.value.code == 2
 
 
+def test_the_run_with_no_paths_reads_the_injected_root(corpus, capsys, monkeypatch):
+    """verification-2 survivor S1 — the parameter its own comment could not earn.
+
+    `main` takes `root` because, said the comment, the case that would have
+    caught G1 could not be written without it. That case names an ABSOLUTE
+    path, and `collect` uses the path it is handed, so the parameter decided
+    nothing: discarding the argument and always asking the policy left the
+    whole fast suite green (1744 passed, measured 2026-08-23).
+
+    What `root` really carries is the DEFAULT corpus — the run with no paths
+    at all, where `root / notes_dir()` is the only thing naming a directory.
+    Asserting the note by NAME rather than the exit code keeps this honest:
+    a wrong root here exits 2 today, but it would read the wrong corpus
+    silently the moment one exists beside the gate.
+    """
+    monkeypatch.delenv(wq_policy.ENV_ROOT, raising=False)
+    name = "2026-01-01--only-note--VID.md"
+    (corpus / "notes" / name).write_text(
+        f"---\n{_fm()}---\n{BODY}", encoding="utf-8")
+    assert dn.main([], root=corpus) == 0
+    assert name in capsys.readouterr().out
+
+
 # --------------------------------------------------------------------------
 # verification G3 — the caller wiring, which only the selftest held
 # --------------------------------------------------------------------------

@@ -148,10 +148,20 @@ TEXT_SUFFIXES = frozenset({
 VCS_DIRS = frozenset({".git", ".hg", ".svn"})
 # Generated, vendored or ephemeral. Skipped and REPORTED, because a human could
 # reasonably have put a published page in one -- `docs/venv/guide.md` is a
-# plausible tutorial -- and `watch-quality/build/` really does hold a tracked,
-# stale copy of this package. Dropping those in silence under a line reading
-# `0 corpus reference(s)` is the rubber stamp this module keeps being rewritten
-# to stop being.
+# plausible tutorial, and a directory named `build/` really can hold prose
+# someone wrote by hand rather than output some tool generated. Dropping those
+# in silence under a line reading `0 corpus reference(s)` is the rubber stamp
+# this module keeps being rewritten to stop being.
+#
+# `watch-quality/build/` used to be the example here, as a TRACKED stale copy of
+# this package. It is neither tracked nor published now -- `git ls-files` on it
+# returns nothing and `.gitignore` names it on its own line -- so the example
+# was retired rather than the rule.
+#
+# It is not a live example of a reported skip either, and saying so was the
+# same defect this slice was repairing. The walk reports a skip when it MEETS
+# the directory, and that one currently holds no files at all, so no run names
+# it. The rule stands on the directories that do hold prose, not on this one.
 SKIP_DIRS = frozenset({
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
     ".venv", "venv", "node_modules", "build", "dist",

@@ -67,7 +67,7 @@ OPENAI_API_KEY=
 # intent, not a guarantee.
 # OPENROUTER_API_KEY=
 # WATCH_OPENROUTER_MODEL=openai/whisper-large-v3
-# WATCH_OPENROUTER_PROVIDER=groq
+# WATCH_OPENROUTER_PROVIDER=deepinfra
 # Seconds of audio per request. The provider behind the router gives up after
 # about 60 seconds of processing, so a long recording is split.
 # WATCH_OPENROUTER_MAX_SECONDS=600

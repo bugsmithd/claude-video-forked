@@ -106,3 +106,47 @@ def test_the_preflight_never_names_a_backend_no_unflagged_run_would_take(tmp_pat
     js = json.loads(_run(["--json"], home=tmp_path).stdout)
     assert js["whisper_backend"] == "groq", js
     assert js["status"] == "ready", js
+
+
+def test_the_scaffold_never_pins_a_provider_the_module_argues_against():
+    """The generated .env is configuration a user is invited to uncomment.
+
+    Every other line in it is inert prose; the provider pin is the one line
+    that changes a request. It was written when the default was `groq` and
+    stayed there after `whisper.OPENROUTER_PROVIDER` moved to the provider the
+    bill was actually measured at, so uncommenting the scaffold restored the
+    configuration the module above it argues against. Asserting against the
+    module rather than against a literal keeps the two from drifting again.
+    """
+    import setup
+    import whisper
+
+    pins = [ln for ln in setup.ENV_TEMPLATE.splitlines()
+            if "WATCH_OPENROUTER_PROVIDER" in ln]
+    assert pins, "the scaffold no longer mentions the provider pin at all"
+    for line in pins:
+        assert line.split("=", 1)[1].strip() == whisper.OPENROUTER_PROVIDER, line
+
+
+def test_the_shipped_doc_names_the_provider_the_module_pins():
+    """The THIRD copy of the same value, and the one nothing was watching.
+
+    Pinning the scaffold to the module closed one pair and read as closing the
+    fact (round-16 F1). It did not: `SKILL.md` states the default in prose,
+    twice, and no case pinned it, so changing the module left the suite green
+    and the shipped documentation wrong. A value written in three places needs
+    three assertions or one place.
+    """
+    import re
+
+    import whisper
+
+    doc = (Path(__file__).resolve().parent.parent
+           / "skills" / "watch" / "SKILL.md").read_text(encoding="utf-8")
+    claims = re.findall(r"default(?:s to)?[ \t]+`([a-z0-9_-]+)`", doc)
+    claims += re.findall(r"The default is `([a-z0-9_-]+)`", doc)
+    named = [c for c in claims if c in ("groq", "deepinfra", "together",
+                                        "openai")]
+    assert named, "SKILL.md no longer names a default provider at all"
+    for value in named:
+        assert value == whisper.OPENROUTER_PROVIDER, (value, named)

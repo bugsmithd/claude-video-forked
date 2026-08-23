@@ -429,8 +429,15 @@ def selftest(root: Path) -> int:
 def main(argv: list[str], root: Path | None = None) -> int:
     # `root` is a parameter for the same reason the other two gates take one:
     # without it this entry point can only be driven against whatever corpus
-    # the policy happens to resolve, so the one case that would have caught
-    # verification G1 could not be written at all.
+    # the policy happens to resolve.
+    #
+    # It used to say the G1 case could not be written without it. That was
+    # wrong, and its own case proved it: G1 names an ABSOLUTE path, `collect`
+    # uses the path it is handed, and discarding this argument entirely left
+    # the whole fast suite green (verification-2 survivor S1). What the
+    # parameter actually decides is the line below -- the DEFAULT corpus, the
+    # run with no paths at all -- which is what `test_the_run_with_no_paths_
+    # reads_the_injected_root` now drives.
     root = root or POLICY.root(fallback=Path(__file__).resolve().parent.parent)
     ap = argparse.ArgumentParser(description="count would-be demotions per note")
     ap.add_argument("paths", nargs="*", type=Path)
