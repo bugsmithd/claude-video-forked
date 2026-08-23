@@ -354,6 +354,67 @@ def collect(targets: list[Path],
 RE_STAMP = re.compile(
     r"(?<![\d:])(\d{1,3}):([0-5]\d)(?::([0-5]\d))?(?![\d:])(?!\.\d)")
 
+# The same moment with letters where the colons were: `1m13s`, `1 min 13 sec`,
+# `PT1M13S` from every ISO 8601 serialiser, and `73s` on its own, which is what a
+# share link and an ffmpeg invocation write. The rule above earned its shape by
+# listing six renderings a bracket-and-colon match missed -- and then matched on
+# the colon, so every one of these walked through the rule whose whole argument
+# is that they should not.
+# NO 00-59 BOUND HERE, unlike the colon form. That bound exists so a version
+# string or a ratio is not read as a time; a unit word has already said this is a
+# time, and `73s` is a legal way to name second 73.
+# A DECIMAL POINT BEFORE THE NUMBER DISQUALIFIES IT, so `13.5s` does not name
+# second 5 and a benchmark table stays readable. Same reason the colon form
+# refuses a trailing `.\d`: a fraction is a duration, not an anchor.
+# A SINGLE LETTER MUST TOUCH ITS NUMBER; a spelled-out unit may stand off it. An
+# independent lane found the space alone opened nine prose shapes -- `| 73 s |`
+# in a markdown table, `name,73 s,161 s` in a CSV, `73<TAB>s`, `(73 s)`,
+# `Section 73 s` -- because a lone `s` after a space is a column heading far more
+# often than it is a unit. `13 sec` keeps the space because nothing else spells
+# `sec`. `73s` and `1m13s` never needed it.
+_HOURS = r"hr|hrs|hour|hours"
+_MINUTES = r"min|mins|minute|minutes"
+_SECONDS = r"sec|secs|second|seconds"
+RE_CLOCK = re.compile(
+    rf"(?<![0-9A-Za-z.])P?T?(?:(\d{{1,2}})(?:h|\s*(?:{_HOURS}))\s*)?"
+    rf"(?:(\d{{1,3}})(?:m|\s*(?:{_MINUTES}))\s*)?"
+    rf"(?:(\d{{1,4}})(?:s|\s*(?:{_SECONDS})))?"
+    r"(?![0-9A-Za-z])", re.IGNORECASE)
+
+# A number introduced by a time parameter is a POSITION, whatever it looks like.
+# `?t=73` is the share link with the unit dropped, and it is the one form that
+# has to outrank the round-duration rule below: `t=30` names second 30 and means
+# it, where a bare `30s` in the same page is a timeout.
+# ONLY `t`. `start`, `end` and `time` were here and are gone: they are ordinary
+# assignment keys in configuration, slicing and pagination code, so `start=100
+# end=300` walked two round numbers straight past the rule that exists to make
+# round numbers inert. `t=` is the one key with a share link behind it.
+RE_TIME_PARAM = re.compile(
+    r"(?<![0-9A-Za-z])t=(\d{1,5})(?:s)?(?![0-9A-Za-z])", re.IGNORECASE)
+
+# Marks that draw as a colon, from the source Unicode publishes for exactly this
+# question: every row of `confusables.txt` whose target is `003A`.
+#
+#     curl -s https://www.unicode.org/Public/security/latest/confusables.txt \
+#       | rg -N '^[0-9A-F]+ ;\s*003A ;'
+#
+# 18 rows, against the file dated 2025-07-22. Re-run it when Unicode ships a
+# release; that command is the whole maintenance story.
+# A NAME-DERIVED FOLD WAS CHECKED AND IS WORSE IN BOTH DIRECTIONS. It misses
+# `U+2236`, whose name is RATIO -- the exact character a lane republished a
+# corpus pair with -- and it swallows `U+20A1 COLON SIGN`, which is the Costa
+# Rican currency mark and which Unicode's own table says draws as a C with an
+# overlay, so `1500 and 2000` in a price list would become two moments.
+COLON_TWINS = {c: ":" for c in "ःઃ：։܃܄᛬"
+                               "︰᠃᠉⁚׃˸꞉"
+                               "∶ːꓽ\U00011dd9"}
+_TWIN_TABLE = str.maketrans(COLON_TWINS)
+
+# Marks that are not there. A right-to-left mark or a soft hyphen inside a stamp
+# leaves it looking exactly like a stamp and reading as something else, which is
+# the same trick the word rule answers with categories rather than a list.
+INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc"})
+
 
 def _seconds(match: re.Match) -> int:
     """A matched stamp as the second it names, so renderings compare equal."""
@@ -363,9 +424,91 @@ def _seconds(match: re.Match) -> int:
     return int(a) * 3600 + int(b) * 60 + int(c)
 
 
+def _clock_seconds(match: re.Match) -> int | None:
+    """A matched `1h02m03s` as the second it names, or None for a duration.
+
+    A ROUND NUMBER OF SECONDS IS A DURATION, NOT A POSITION. An independent lane
+    measured what dropping this costs: EVERY ONE of the stamp pairs the corpus
+    forbids could be spelled by the line `- {a}s timeout, {b}s retry` -- 1423 of
+    1423 -- so a config file, a benchmark table or a changelog could be made to
+    trip the anchor gate anywhere in the corpus, with a report that by design
+    cannot say which two moments it objected to. That is the shape of a gate
+    somebody removes, and this module says so about the neighbouring rule twice.
+    A person writes durations in round numbers: `30s`, `5m`, `2h`, `300s`,
+    `5m 30s`. A moment in a recording is wherever the sentence started, and it
+    is round only by accident. `_round_pair` already excuses two whole minutes on
+    that reasoning; this is the same excuse, one unit finer, and it is asked of
+    the total rather than of the spelling -- counting fields instead would have
+    let `took 5m 30s` name a moment while `30s` did not, which is a distinction
+    no writer is making.
+    A TIME PARAMETER OUTRANKS IT: `t=30` names second 30 and means it.
+    WHAT IS LEFT, COUNTED, because this rule narrows the surface and does not
+    close it. Of the 1423 pairs the corpus forbids, 1423 could be spelled by a
+    duration line before and 894 still can -- the ones whose two moments are
+    both unround. A MEASURED duration is unround -- `took 73s`, `73 sec build`
+    -- and no wording separates it from `at 73s`. What the rule removes is the
+    CONFIGURED duration, which is where the collisions actually cluster: every
+    config file in the world writes 30, 60 and 300, and every one of those is
+    now inert. For an arbitrary pair of unround second-durations the odds of
+    landing on a forbidden pair are about 1 in 23600 (894 of 21108753 pairs
+    under the corpus's 8122-second span), and the fork's own 132 multi-moment
+    lines land on none. One more thing bounds it, and it is `scan_text`'s
+    doing rather than this rule's: EVERY stamp on the line has to sit inside
+    ONE anchor set, and the largest holds 7, so a timing table with eight
+    numbers in it cannot fire at all. What is exposed is a line carrying
+    exactly two measured durations.
+    THE OTHER SIDE OF THE SAME COIN: 529 of the 1423 pairs now have at least one
+    moment the unit form will not read, so those pairs cannot be caught in that
+    rendering. All 1423 keep the colon form and the parameter form.
+    """
+    h, m, s = match.group(1), match.group(2), match.group(3)
+    total = int(h or 0) * 3600 + int(m or 0) * 60 + int(s or 0)
+    if total % 5 == 0:
+        return None
+    return total
+
+
+def _plainly(line: str) -> str:
+    """One line with every way of drawing a digit or a colon written plainly.
+
+    A DIGIT IS THE NUMBER IT NAMES. NFKC folds the full-width digits and leaves
+    the Arabic-Indic ones alone, so `[٠١:١٣]` walked through a rule that reads
+    `[0-5]` as three ASCII characters. `unicodedata.decimal` answers that for
+    every script at once, which is a derivation rather than another table.
+    THE COLON FOLD RUNS BEFORE NFKC, because NFKC gets to some of these marks
+    first and turns them into something that is not a colon either -- `U+FE30`
+    decomposes to a two-dot leader, and folding after normalisation lost it.
+    """
+    kept = []
+    for ch in unicodedata.normalize("NFKC", line.translate(_TWIN_TABLE)):
+        # A TAB IS A CONTROL CHARACTER AND IT IS ALSO A COLUMN. Dropping every
+        # `Cc` glued `73<TAB>s` into `73s`, so a tab-separated table named a
+        # moment it had not written. Whitespace stays; what goes is the mark
+        # that draws as nothing.
+        if unicodedata.category(ch) in INVISIBLE_CATEGORIES and not ch.isspace():
+            continue
+        value = unicodedata.decimal(ch, None)
+        if value is not None:
+            kept.append(str(value))
+        else:
+            kept.append(ch)
+    return "".join(kept)
+
+
 def stamps_in(line: str) -> frozenset[int]:
-    """Every moment named on one line, in seconds."""
-    return frozenset(_seconds(m) for m in RE_STAMP.finditer(line))
+    """Every moment named on one line, in seconds, however it is written."""
+    text = _plainly(line)
+    out = {_seconds(m) for m in RE_STAMP.finditer(text)}
+    # EVERY FIELD OF `RE_CLOCK` IS OPTIONAL, so it also matches the empty string
+    # between two things that are not letters. A match naming no field names no
+    # moment, and one naming a duration returns None.
+    for m in RE_CLOCK.finditer(text):
+        if any(m.groups()):
+            second = _clock_seconds(m)
+            if second is not None:
+                out.add(second)
+    out.update(int(m.group(1)) for m in RE_TIME_PARAM.finditer(text))
+    return frozenset(out)
 
 
 def anchor_sets_from_lines(lines) -> tuple[frozenset[int], ...]:
@@ -386,6 +529,18 @@ def anchor_sets(notes: Path) -> tuple[frozenset[int], ...]:
     suite and the README are full of `[00:00]` -- and a corpus flattened into
     one bag of stamps would refuse any two round numbers. What reproduces a
     recording is stamps that stood together on one line of one note.
+
+    WHAT THIS FORBIDS, COUNTED. Against the corpus as it stands: 1047 sets, the
+    largest holding 7 moments, and 1423 distinct pairs a published page may not
+    name together once the whole-minute excuse is spent. Before the walk stopped
+    reading the review pages beside the notes, the same measurement gave 3133
+    sets and one of size 78 -- two thirds of it came from pages ABOUT the
+    corpus. A lane that re-derived all of it reproduced both of those and could
+    not reproduce the pair count published beside them; under the pre-diff
+    recursive walk it counted 13394, not 8295, so 8295 is recorded here as a
+    figure nobody has been able to stand up rather than repeated as a fact.
+    Where a false positive would come from is measured next to the rule that
+    owns it, in `_clock_seconds`.
     """
     out: list[frozenset[int]] = []
     if not notes.is_dir():
@@ -416,15 +571,6 @@ def _round_pair(stamps: frozenset[int]) -> bool:
     excuse stops at two.
     """
     return len(stamps) == 2 and all(s % 60 == 0 for s in stamps)
-
-
-# Characters that are between letters without being anything. A refused literal
-# is a NAME, and a name survives having its space written as a hyphen, an
-# underscore, nothing at all, two spaces, a line break, or a zero-width space
-# dropped in the middle of it. Every one of those evaded a `word in line` test
-# while naming exactly the thing the policy refuses.
-RE_INVISIBLE = re.compile(r"[\x00­​-‏⁠﻿]")
-RE_SEPARATOR = re.compile(r"[\s\-_]")
 
 
 # Letters another script renders identically in the fonts this repository is

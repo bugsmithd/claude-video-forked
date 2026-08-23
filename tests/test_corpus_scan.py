@@ -1226,6 +1226,183 @@ def test_three_whole_minute_marks_are_still_refused():
     assert len([h for h in hits if "E-CORPUS-ANCHOR-SET" in h]) == 1, hits
 
 
+def test_a_moment_written_with_letters_is_the_same_moment():
+    """The rule that argues against enumerations, enumerating.
+
+    `RE_STAMP` earned its shape by listing six renderings of a moment that a
+    colon-and-bracket match missed, and then matched on the colon. So the pair
+    published as `1m13s` and `2m41s` -- the same two seconds, the form every
+    player's share link uses -- walked through it. A moment is a NUMBER OF
+    SECONDS; the colon is one way to write it, not the thing itself.
+    """
+    anchors = wcs.anchor_sets_from_lines(["- `[01:13]` to `[02:41]` COV"])
+
+    for line in ("- see 1m13s and 2m41s",             # minutes and seconds
+                 "- see 0h1m13s and 0h2m41s",         # an hour field spelled
+                 "- see 73s and 161s",                # seconds, plainly
+                 "- see 1 min 13 sec and 2 min 41 sec",   # units, spelled out
+                 "- see 73 seconds and 161 seconds",      # the same, longhand
+                 "- see PT1M13S and PT2M41S",             # ISO 8601, uppercase
+                 "- see ?t=73 and ?t=161"):               # a share link
+        hits = [h for h in wcs.scan_text(line + "\n", "f.md", (), anchors)
+                if "E-CORPUS-ANCHOR-SET" in h]
+        assert len(hits) == 1, (line, hits)
+
+
+def test_every_mark_that_draws_as_a_colon_is_a_colon():
+    """Each entry in the table is a case, because a table nobody tests rots.
+
+    Five of the seven entries an earlier version carried could be deleted with
+    the whole suite still green -- so nothing in the repository could say
+    whether they were present, correct, or typos. This asks the question once
+    per entry, so the table cannot quietly lose one.
+    """
+    anchors = wcs.anchor_sets_from_lines(["- `[01:13]` to `[02:41]` COV"])
+
+    for twin in wcs.COLON_TWINS:
+        line = f"- see [01{twin}13] and [02{twin}41]\n"
+        hits = [h for h in wcs.scan_text(line, "f.md", (), anchors)
+                if "E-CORPUS-ANCHOR-SET" in h]
+        assert len(hits) == 1, (f"U+{ord(twin):04X}", hits)
+
+
+def test_the_colon_table_is_the_list_unicode_publishes():
+    """WHERE the table comes from, pinned apart from what it does.
+
+    A hand-kept list of lookalikes falls one character behind, which is the
+    lesson the word rule learned four times. This one is every row of Unicode's
+    own `confusables.txt` whose target is `003A`, so the maintenance story is a
+    command rather than a judgement -- and this case says how many rows that
+    was when it was taken.
+    """
+    assert len(wcs.COLON_TWINS) == 18, sorted(wcs.COLON_TWINS)
+    # The four an attacker reaches for first, and the one a name-derived fold
+    # would have missed.
+    for cp in (0x2236, 0xA4FD, 0x205A, 0xFE30, 0x0903):
+        assert chr(cp) in wcs.COLON_TWINS, f"U+{cp:04X}"
+    # And the one a name-derived fold would have WRONGLY swallowed: the Costa
+    # Rican currency mark, which Unicode says draws as a C with an overlay.
+    assert "₡" not in wcs.COLON_TWINS
+
+
+def test_a_digit_in_another_script_is_still_that_digit():
+    """`[0-5]` is three ASCII characters, and a digit is a number.
+
+    NFKC folds the full-width digits and leaves the Arabic-Indic ones alone, so
+    a page in Arabic script republished a corpus pair and exited 0. An
+    invisible mark dropped inside the stamp did the same thing for free.
+    """
+    anchors = wcs.anchor_sets_from_lines(["- `[01:13]` to `[02:41]` COV"])
+
+    for line in ("- see [٠١:١٣] and [٠٢:٤١]",              # Arabic-Indic
+                 "- see [０１：１３] and [０２：４１]",      # full-width
+                 "- see [01‏:13] and [02‏:41]"):  # a right-to-left mark
+        hits = [h for h in wcs.scan_text(line + "\n", "f.md", (), anchors)
+                if "E-CORPUS-ANCHOR-SET" in h]
+        assert len(hits) == 1, (line, hits)
+
+
+def test_a_round_number_of_seconds_is_a_duration():
+    """The false positive that would turn this rule off, priced and refused.
+
+    Reading `30s` as a moment made a config line into a fingerprint: an
+    independent lane measured that EVERY pair the corpus forbids could be
+    spelled by `- {a}s timeout, {b}s retry`, with a report that by design cannot
+    say which two moments it objected to. Durations are written round; a moment
+    in a recording is round only by accident.
+    """
+    anchors = wcs.anchor_sets_from_lines(["- `[00:30]` `[01:00]` `[02:41]` COV"])
+
+    for line in ("- 30s timeout, 60s retry",
+                 "- cache 300s ttl and 60s poll",
+                 "- a 5m walk and a 2h drive",
+                 "- raised $30m then $2m",
+                 "- took 5m 30s"):
+        hits = [h for h in wcs.scan_text(line + "\n", "f.md", (), anchors)
+                if "E-CORPUS-ANCHOR-SET" in h]
+        assert hits == [], (line, hits)
+
+    # And the marker that outranks it: a time parameter names a position.
+    hits = [h for h in wcs.scan_text("- see ?t=30 and ?t=60\n", "f.md",
+                                     (), anchors)
+            if "E-CORPUS-ANCHOR-SET" in h]
+    assert len(hits) == 1, hits
+
+
+def test_only_the_share_links_key_names_a_position():
+    """`start` and `end` are how everybody writes a slice, not a moment.
+
+    The parameter rule switches the round-number defence off, so the keys it
+    accepts have to earn it. `t=` has a share link behind it. `start=100
+    end=300` is a config line, a pagination call or a slice, and it walked two
+    round moments straight past the rule written to make round numbers inert.
+    """
+    anchors = wcs.anchor_sets_from_lines(["- `[01:40]` `[05:00]` `[02:41]` COV"])
+
+    for line in ("- start=100 and end=300",
+                 "- slice start=100 end=300",
+                 "- END=100 START=300",
+                 "- time=100 and time=300"):
+        hits = [h for h in wcs.scan_text(line + "\n", "f.md", (), anchors)
+                if "E-CORPUS-ANCHOR-SET" in h]
+        assert hits == [], (line, hits)
+
+
+def test_a_lone_letter_in_a_column_is_not_a_unit():
+    """What the space between a number and its unit costs, refused.
+
+    Spelling out `13 sec` needs the space, and allowing it everywhere made a
+    lone `s` one column away into a unit: an independent lane found nine prose
+    shapes that named two moments, all of them tables or lists. A single letter
+    has to touch its number; a word may stand off it.
+    """
+    anchors = wcs.anchor_sets_from_lines(["- `[01:13]` to `[02:41]` COV"])
+
+    for line in ("| step | 73 S | 161 S |",
+                 "| 73 s | 161 s |",
+                 "name,73 s,161 s",
+                 "- 73\ts and 161\ts",
+                 "- (73 s) vs (161 s)",
+                 "- Section 73 s Section 161 s"):
+        hits = [h for h in wcs.scan_text(line + "\n", "f.md", (), anchors)
+                if "E-CORPUS-ANCHOR-SET" in h]
+        assert hits == [], (line, hits)
+
+    # The spelled-out unit keeps its space, because nothing else spells `sec`.
+    hits = [h for h in wcs.scan_text("- 73 sec and 161 sec\n", "f.md",
+                                     (), anchors)
+            if "E-CORPUS-ANCHOR-SET" in h]
+    assert len(hits) == 1, hits
+
+
+def test_a_note_that_names_its_moments_in_letters_still_makes_an_anchor_set():
+    """Both sides of the comparison read the same renderings.
+
+    A rule that reads `1m13s` on the published page but not on the note line it
+    came from catches nothing: the anchor set it would compare against was
+    never built. The corpus is machine-written today and writes colons; that is
+    a fact about this month, not a property of the format.
+    """
+    sets = wcs.anchor_sets_from_lines(["- 1m13s to 2m41s COV -- a note line"])
+
+    assert sets == (frozenset({73, 161}),), sets
+
+
+def test_a_version_and_a_duration_are_not_moments():
+    """What the letters cost, stated as the cases that must stay silent.
+
+    A decimal point before the number is a fraction, and `13.5s` naming second
+    5 would refuse a benchmark table. A bare unit with no digits is nothing.
+    And the colon form keeps its old guard: minutes and seconds run 00-59, so a
+    version string is not a time.
+    """
+    for line in ("released 1.13 and 2.41",            # version numbers
+                 "took 13.5s then 16.1s",             # fractional seconds
+                 "v1:73 and v2:161",                  # seconds field over 59
+                 "ms and s columns"):                 # units with no number
+        assert wcs.stamps_in(line) == frozenset(), (line, wcs.stamps_in(line))
+
+
 def test_a_run_with_no_anchor_sets_is_refused_when_the_caller_asked(tmp_path,
                                                                     capsys):
     """The third empty set, and the same hole one field over.
