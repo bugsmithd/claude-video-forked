@@ -1358,6 +1358,37 @@ def brief_sha256(body: str) -> str:
     return hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
 
 
+RE_BRIEF_SHA = re.compile(r"^brief_sha256:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
+
+
+def brief_stamp(text: str | None) -> str | None:
+    """The hash a filed brief says it is, or None when it does not say.
+
+    A brief has to DESCRIBE ITSELF before it can be used to grade anything, and
+    this is the one place that decides whether it does. The first build of the
+    echo check took the brief's body as split, and the empty string when there
+    was no frontmatter to split -- so an unstamped brief made the required echo
+    the sha256 of nothing, which is a published constant any lane can quote
+    without opening the file. The generator this repository already ships emits
+    exactly that shape.
+
+    Four ways a brief fails to describe itself, and all four are one answer:
+    no frontmatter, no `brief_sha256` row, a row that is not a hash, and a row
+    that disagrees with the body under it. An empty body is a fifth: it hashes
+    and stamps like any other and can be quoted back by a lane that read
+    nothing.
+    """
+    if text is None:
+        return None
+    split = split_frontmatter(text)
+    if split is None or not split[1].strip():
+        return None
+    m = RE_BRIEF_SHA.search(split[0])
+    if not m or not RE_SHA256.match(m.group(1)):
+        return None
+    return m.group(1) if m.group(1) == brief_sha256(split[1]) else None
+
+
 def note_body_sha256(body: str) -> str:
     """The hash a lane report pins itself to.
 

@@ -489,7 +489,13 @@ def test_no_rule_id_is_used_twice():
 # dated row each. The run manifest is the commonest wrong answer -- it carries a
 # segment COUNT and not the segments -- and the writer is the only place in the
 # chain that can open the candidate before the path is committed to.
-FROZEN_RULE_COUNT = 145
+# 145 -> 146 on 2026-08-23, for FILE-BADBRIEF, which a refute lane bought.
+# The echo check was keyed to three things — a path, a file and a body — and
+# two of them failed open. The sharp one: an unstamped brief made the required
+# echo the sha256 of the empty string, a published constant, so the one input
+# the mechanism exists to refuse was the input it accepted. A brief now has to
+# describe itself before it can grade anything.
+FROZEN_RULE_COUNT = 146
 
 
 def test_the_table_is_closed():

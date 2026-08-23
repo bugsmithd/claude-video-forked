@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -182,3 +183,139 @@ def test_what_it_wrote_carries_no_structural_defect(corpus):
                                "E-LANE-NOVIDEO"))]
     assert structural == [], structural
     assert stats["seconds"] == 612
+
+
+# --- what round 15 broke -----------------------------------------------------
+# Nine of fifteen attacks landed on the first build. The pattern in almost all
+# of them: the writer was sound on the exact tree its own fixture builds, and
+# unsound one step off it. Every case below is one of those steps.
+
+
+def test_a_date_written_another_way_is_still_written_one_way(corpus):
+    """1a — `date.fromisoformat` accepts more spellings than the filename does.
+
+    It validated the operator's string and then interpolated THAT string, so
+    `20260823` and `2026-08-23T00:00:00` both passed validation and produced a
+    filename `note_date` cannot read -- an undated note, which is the exact
+    thing deriving the date was supposed to make impossible.
+    """
+    run = _run(corpus)
+
+    code, said = _file(corpus, run, "--date", "20260823")
+
+    assert code == 0, said
+    landed = corpus / "notes" / "2026-08-23--how-product-teams-ship--VID.md"
+    assert landed.is_file(), sorted(p.name for p in (corpus / "notes").iterdir())
+
+
+def test_a_relative_subtitle_path_is_read_against_the_run(corpus, monkeypatch):
+    """2a — a bare `Path(said)` resolves against whatever the caller's cwd is.
+
+    Two operators in two directories then get two different oracles from one
+    manifest, and one of them gets whatever file happens to share that name.
+    """
+    run = _run(corpus)
+    manifest = json.loads(run.read_text(encoding="utf-8"))
+    manifest["transcript"]["subtitle_path"] = "captions.vtt"
+    run.write_text(json.dumps(manifest), encoding="utf-8")
+    decoy = corpus / "captions.vtt"
+    decoy.write_text(VTT.replace("hello there", "a decoy"), encoding="utf-8")
+    monkeypatch.chdir(corpus)
+
+    code, said = _file(corpus, run, "--date", "2026-08-23")
+
+    assert code == 0, said
+    landed = corpus / "notes" / "2026-08-23--how-product-teams-ship--VID.md"
+    frontmatter, _ = rn.split_frontmatter(landed.read_text(encoding="utf-8"))
+    oracle = rn.RE_NOTE_ORACLE.search(frontmatter).group(1).strip()
+    assert oracle.startswith("runs/"), oracle
+
+
+def test_a_video_id_the_glob_would_read_as_a_pattern_is_refused(corpus):
+    """4a — `?`, `*` and `[...]` are metacharacters, not literals.
+
+    The existing-note check globbed `*--<video_id>.md`, so a video id holding a
+    wildcard matched a DIFFERENT video's note and refused to open a note that
+    does not exist. Constraining the id closes that, the 300-character
+    filename, and the embedded null byte in one rule.
+    """
+    run = _run(corpus, video_id="A?C")
+
+    code, said = _file(corpus, run, "--date", "2026-08-23")
+
+    assert code == 2, said
+    assert list((corpus / "notes").iterdir()) == [], said
+
+
+def test_a_slug_that_is_a_path_is_refused(corpus):
+    """4b/5 — `--slug` went into the path verbatim.
+
+    `mkdir(parents=True)` then created whatever directories it implied, and the
+    non-recursive glob could no longer see the note the writer had just filed
+    -- so the second call opened a second note about one video, which is the
+    refusal this writer's whole existence rests on.
+    """
+    run = _run(corpus)
+
+    code, said = _file(corpus, run, "--date", "2026-08-23", "--slug", "a/b")
+
+    assert code == 1, said
+    assert "E-NOTE-UNNAMEABLE" in said, said
+    assert not (corpus / "notes" / "a").exists(), said
+
+
+def test_a_run_with_no_readable_duration_is_usage_rather_than_a_traceback(corpus):
+    """6 — bad manifest input left through a crash.
+
+    The contract is three exit codes. A `TypeError` out of `float(None)` is a
+    fourth outcome, and the operator sees a stack trace where the tool was
+    supposed to say what is wrong with their file.
+    """
+    run = _run(corpus)
+    manifest = json.loads(run.read_text(encoding="utf-8"))
+    manifest["duration_seconds"] = None
+    run.write_text(json.dumps(manifest), encoding="utf-8")
+
+    code, said = _file(corpus, run, "--date", "2026-08-23")
+
+    assert code == 2, said
+    assert "duration" in said, said
+
+
+def test_a_title_holding_a_newline_cannot_inject_a_row(corpus):
+    """7b — the frontmatter is built by string concatenation.
+
+    A title carrying a newline writes arbitrary rows into the block, and the
+    rows a note is graded on -- `status`, `oracle`, `video_id` -- are exactly
+    the ones worth injecting.
+    """
+    run = _run(corpus, title="Ship It\nstatus: applied")
+
+    code, said = _file(corpus, run, "--date", "2026-08-23")
+
+    assert code == 0, said
+    landed = next((corpus / "notes").iterdir())
+    frontmatter, _ = rn.split_frontmatter(landed.read_text(encoding="utf-8"))
+    # The words survive, inside the title where they were written. What must
+    # not survive is a second ROW: `RE_STATUS` is anchored per line, so a row
+    # is what a reader would act on.
+    assert re.findall(r"^status:", frontmatter, re.MULTILINE) == ["status:"]
+    assert rn.RE_STATUS.search(frontmatter).group(1) == "capture", frontmatter
+
+
+def test_an_oracle_the_audit_would_call_unrelated_is_refused(corpus):
+    """7a — the green test was the fixture's doing.
+
+    `check_oracle` requires the video id to appear as a component of the
+    resolved oracle path. The fixture put the run under `runs/VID/`, so it did.
+    Nothing made that true, and a run directory named any other way produced a
+    note the audit convicts on the day it is written.
+    """
+    run = _run(corpus)
+    moved = corpus / "runs" / "elsewhere"
+    (corpus / "runs" / "VID" / "run-01").rename(moved)
+
+    code, said = _file(corpus, moved / "run.json", "--date", "2026-08-23")
+
+    assert code == 1, said
+    assert "E-NOTE-BLINDORACLE" in said, said

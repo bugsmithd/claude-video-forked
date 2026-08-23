@@ -892,6 +892,41 @@ test = "file_review::a wrong echo is refused"
 kind = "selftest"
 
 [[rule]]
+id = "FILE-BADBRIEF"
+code = "E-FILE-BADBRIEF"
+layer = "review"
+owner = "file_review.refusals"
+trigger = "a report is filed for a lane and something is on disk where that lane's brief goes"
+refuses = "grading a report against a brief that does not describe itself — no frontmatter, no brief_sha256 row, a row that is not a hash, a row disagreeing with the body, an empty body, a directory, or bytes that are not text; the first build hashed the split body and took the empty string when there was nothing to split, which made the required echo a published constant any lane could quote without opening the file"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "an unstamped brief, of the shape the review generator in this repository already emits, whose required echo would otherwise be the sha256 of nothing"
+test = "tests/test_file_review.py::test_a_brief_that_does_not_describe_itself_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a brief edited after filing, where the stamp and the body disagree and the honest lane must not be the one blamed"
+test = "tests/test_file_review.py::test_a_brief_whose_stamp_disagrees_with_its_body_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a directory at the brief's path, which disarmed the check entirely and which the roll-call cannot see either"
+test = "tests/test_file_review.py::test_a_directory_where_the_brief_goes_does_not_disarm_the_check"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a brief whose bytes are not text, which left through a decode error rather than a refusal"
+test = "tests/test_file_review.py::test_a_brief_that_is_not_text_is_refused_rather_than_raised"
+kind = "pytest"
+[[rule.neighbour]]
+case = "a self-consistent empty brief written straight to the path, past the writer that refuses empty ones"
+test = "tests/test_file_review.py::test_a_hand_stamped_empty_brief_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_review::a brief that does not describe itself is refused"
+kind = "selftest"
+
+[[rule]]
 id = "BRIEF-EMPTY"
 code = "E-BRIEF-EMPTY"
 layer = "review"

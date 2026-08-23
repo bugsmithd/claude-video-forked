@@ -46,8 +46,9 @@ import sys
 from pathlib import Path
 
 from . import resolve_note
-from .resolve_note import (LANE_HEADER_FIELDS, brief_path, brief_sha256,
-                           note_body_sha256, lane_header, split_frontmatter)
+from .resolve_note import (LANE_HEADER_FIELDS, RE_LANE_ID, brief_path,
+                           brief_stamp, note_body_sha256, lane_header,
+                           split_frontmatter)
 
 PROG = "file_review.py"
 
@@ -102,11 +103,25 @@ def refusals(report: Path, note_body: str, lane: str,
     if fields is None:
         return [f"E-FILE-UNPARSED this is not a review: {why}; every report "
                 f"carries {', '.join(LANE_HEADER_FIELDS)}"]
-    if brief is not None and brief.is_file():
-        split = split_frontmatter(brief.read_text(encoding="utf-8"))
-        want = brief_sha256(split[1] if split else "")
+    if brief is not None and brief.exists():
+        # `exists()`, not `is_file()`. A DIRECTORY at the brief's path made the
+        # whole requirement vanish on the first build -- and the roll-call
+        # cannot see it either, because it is named to be skipped. That is the
+        # `mkdir quality.md` mechanism this module's own header says was
+        # closed for reports, still open one filename to the left.
+        #
+        # `safe_read` and `brief_stamp`, not a read and a body hash: a brief
+        # that does not describe itself is refused by NAME rather than turned
+        # into a hash of the empty string, and the message blames the brief
+        # rather than the lane that quoted it honestly.
+        want = brief_stamp(resolve_note.safe_read(brief)[0])
         said = fields.get("brief_sha256", "")
-        if not said:
+        if want is None:
+            out.append(f"E-FILE-BADBRIEF {brief.name} does not describe "
+                       f"itself: a brief carries a brief_sha256 row that is "
+                       f"the hash of the body under it, and until it does "
+                       f"there is nothing here for a report to echo")
+        elif not said:
             out.append(f"E-FILE-UNBRIEFED lane {lane} was given a brief and "
                        f"this report does not echo its hash; without that, "
                        f"whether the lane read {brief.name} at all is a claim "
@@ -131,6 +146,16 @@ def refusals(report: Path, note_body: str, lane: str,
 def file_review(note: Path, lane: str, report: Path,
                 root: Path) -> tuple[int, list[str]]:
     """(exit code, what to print). Writes nothing when it refuses."""
+    # CHECKED HERE, not borrowed. `brief_path` is string joining and
+    # `Path.is_relative_to` is lexical, so a lane id holding `..` builds a path
+    # out of the review directory. Nothing escaped on the first build only
+    # because the report's header has to carry a matching `lane:` and THAT
+    # field's type happens to be this pattern -- protection from a check
+    # written in another module for another purpose, which the next caller
+    # would not inherit.
+    if not RE_LANE_ID.match(lane):
+        return 2, [f"{PROG}: {lane!r} is not a lane id, which is the same "
+                   f"[a-z0-9][a-z0-9-]* a note declares in reviews:"]
     text, why = resolve_note.safe_read(note)
     if text is None:
         return 2, [f"{PROG}: {note}: {why}"]
@@ -288,6 +313,12 @@ def selftest() -> int:
             instructions.read_text(encoding="utf-8"))), encoding="utf-8")
         check("...and the right one files",
               file_review(note, "facts", src, root)[0], 0)
+
+        landed = resolve_note.brief_path(root, "VID", "facts")
+        landed.write_text("Read it, unstamped.\n", encoding="utf-8")
+        code, said = file_review(note, "facts", src, root)
+        check("a brief that does not describe itself is refused", code, 1)
+        check("...by name", "E-FILE-BADBRIEF" in said[0], True)
 
     proof.done()
     print(f"# selftest OK ({cases} cases)")

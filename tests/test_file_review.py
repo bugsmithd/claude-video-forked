@@ -291,3 +291,125 @@ def test_a_brief_hash_that_is_not_a_hash_is_not_read_as_one(corpus):
 
     assert code == 1, said
     assert "E-FILE-UNPARSED" in said, said
+
+
+# --- what round 15 broke -----------------------------------------------------
+# Every case below is an attack a fresh refute lane landed on the first build
+# of this check. The pattern in all of them is the same: the echo was keyed to
+# THREE things -- a path, a file, and a body -- and two of them failed open.
+
+EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+def test_a_brief_that_does_not_describe_itself_is_refused(corpus):
+    """A7 — the skeleton key.
+
+    The first build hashed the brief's BODY as split by `split_frontmatter`,
+    and took the empty string when there was no frontmatter to split. So any
+    brief written by anything other than the brief writer -- and this
+    repository already ships a generator that emits unstamped bodies -- made
+    the required echo the sha256 of nothing, which is a published constant a
+    lane can quote without opening the brief.
+    """
+    note = _note(corpus)
+    rn.brief_path(corpus, "VID", "facts").parent.mkdir(parents=True)
+    rn.brief_path(corpus, "VID", "facts").write_text(
+        "# Review lane: facts\n\nRead it.\n", encoding="utf-8")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", EMPTY_SHA))
+
+    assert code == 1, said
+    assert "E-FILE-BADBRIEF" in said, said
+
+
+def test_a_brief_whose_stamp_disagrees_with_its_body_is_refused(corpus):
+    """A9 — and the honest lane is not the one blamed.
+
+    Comparing the report against a hash re-derived from the body means a brief
+    edited after filing refuses every report written against it, and says the
+    LANE echoed the wrong thing. The brief is what moved.
+    """
+    note = _note(corpus)
+    sha = _brief(corpus, note, "facts")
+    path = rn.brief_path(corpus, "VID", "facts")
+    path.write_text(path.read_text(encoding="utf-8") + "\nEdited later.\n",
+                    encoding="utf-8")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", sha))
+
+    assert code == 1, said
+    assert "E-FILE-BADBRIEF" in said, said
+
+
+def test_a_hand_stamped_empty_brief_is_refused(corpus):
+    """A12 — `E-BRIEF-EMPTY` was a door, not a check.
+
+    Refusing an empty brief only in the writer leaves the requirement satisfied
+    by an empty brief that never went through the writer, which is one `cp`
+    away.
+    """
+    note = _note(corpus)
+    path = rn.brief_path(corpus, "VID", "facts")
+    path.parent.mkdir(parents=True)
+    path.write_text(f"---\nbrief_sha256: {EMPTY_SHA}\nlane: facts\n---\n\n",
+                    encoding="utf-8")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", EMPTY_SHA))
+
+    assert code == 1, said
+    assert "E-FILE-BADBRIEF" in said, said
+
+
+def test_a_directory_where_the_brief_goes_does_not_disarm_the_check(corpus):
+    """A13 — the `mkdir quality.md` mechanism, one filename to the left.
+
+    `is_file()` is False for a directory, so the branch was skipped and the
+    echo requirement vanished; the roll-call cannot see the directory either,
+    because it is named to be skipped.
+    """
+    note = _note(corpus)
+    rn.brief_path(corpus, "VID", "facts").mkdir(parents=True)
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", None))
+
+    assert code == 1, said
+    assert "E-FILE-BADBRIEF" in said, said
+
+
+def test_a_brief_that_is_not_text_is_refused_rather_than_raised(corpus):
+    """A14 — every other reader in this package goes through `safe_read`.
+
+    A writer whose contract is "0 filed, 1 refused, 2 unreadable input" and
+    which leaves through a `UnicodeDecodeError` has a fourth outcome nobody
+    documented.
+    """
+    note = _note(corpus)
+    path = rn.brief_path(corpus, "VID", "facts")
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"---\nbrief_sha256: \xff\xfe\n---\nbody\n")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", None))
+
+    assert code == 1, said
+    assert "E-FILE-BADBRIEF" in said, said
+
+
+def test_the_filer_checks_the_lane_id_itself(corpus):
+    """A4 — the traversal was stopped by a rule in a third module.
+
+    `brief_path` is string joining, and `Path.is_relative_to` is lexical.
+    Nothing escaped only because the report's header had to carry a matching
+    `lane:` and that field's type happens to be the lane-id pattern -- so the
+    protection was borrowed from a check written for another purpose.
+    """
+    note = _note(corpus)
+    src = corpus / "report.md"
+    src.write_text(_report(note, lane="facts"), encoding="utf-8")
+
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = fr.main([str(note), "../../escape/pwned", str(src)], root=corpus)
+    said = out.getvalue() + err.getvalue()
+
+    assert code == 2, said
+    assert not (corpus.parent / "escape").exists(), said
