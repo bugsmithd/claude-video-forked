@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from watchquality import file_brief as fb
 from watchquality import file_review as fr
 from watchquality import resolve_note as rn
 
@@ -189,3 +190,104 @@ def test_what_it_wrote_survives_the_audit_that_reads_it(corpus):
         rn.REQUIRED_LANES[:] = ambient
 
     assert got == [], got
+
+
+def _brief(root: Path, note: Path, lane: str,
+           text: str = "Read it against the oracle.\n") -> str:
+    """File a brief for `lane`, and hand back the hash a report must echo."""
+    src = root / f"{lane}-brief-src.md"
+    src.write_text(text, encoding="utf-8")
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = fb.main([str(note), lane, str(src)], root=root)
+    assert code == 0, out.getvalue() + err.getvalue()
+    return rn.brief_sha256(text)
+
+
+def _echoing(note: Path, lane: str, sha: str | None) -> str:
+    report = _report(note, lane=lane)
+    if sha is None:
+        return report
+    return report.replace("---\nnote_sha256:",
+                          f"---\nbrief_sha256: {sha}\nnote_sha256:", 1)
+
+
+def test_a_report_that_does_not_echo_its_brief_is_refused(corpus):
+    """T5/T6/T7 — "the lane read the brief" stops being unfalsifiable.
+
+    Nothing on disk told a lane that read six hundred words from one handed a
+    one-line prompt. The brief carries a hash; a report that cannot quote it
+    back is a report by somebody who did not have the brief open.
+    """
+    note = _note(corpus)
+    _brief(corpus, note, "facts")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", None))
+
+    assert code == 1, said
+    assert "E-FILE-UNBRIEFED" in said, said
+    assert not (corpus / "notes" / "reviews" / "VID" / "facts.md").exists(), said
+
+
+def test_a_report_echoing_the_wrong_brief_is_refused(corpus):
+    """A hash that is not this brief's is a report about other instructions.
+
+    It is also what a brief edited after dispatch produces, which is the
+    reading that matters: the report answers prose that has been replaced, and
+    nobody reading it later could tell.
+    """
+    note = _note(corpus)
+    _brief(corpus, note, "facts")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", "1" * 64))
+
+    assert code == 1, said
+    assert "E-FILE-WRONGBRIEF" in said, said
+
+
+def test_a_report_that_echoes_its_brief_is_filed(corpus):
+    """The positive case, and the brief survives the filing.
+
+    A writer that consumed the brief would make the check unrepeatable: the
+    audit could never re-derive the hash the report was accepted against.
+    """
+    note = _note(corpus)
+    sha = _brief(corpus, note, "facts")
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", sha))
+
+    assert code == 0, said
+    assert (corpus / "notes" / "reviews" / "VID" / "facts.md").is_file(), said
+    assert rn.brief_path(corpus, "VID", "facts").is_file(), said
+
+
+def test_a_report_files_when_no_brief_was_ever_written(corpus):
+    """The requirement is conditional on the artifact, never on a date.
+
+    The corpus holds reports written before any of this existed. Making the
+    echo unconditional would fail every one of them and buy another dated
+    exemption ledger; keying it to a brief actually on disk needs no table at
+    all, and no row anybody has to remember to shrink.
+    """
+    note = _note(corpus)
+
+    code, said = _file(corpus, note, "facts", _echoing(note, "facts", None))
+
+    assert code == 0, said
+
+
+def test_a_brief_hash_that_is_not_a_hash_is_not_read_as_one(corpus):
+    """A field present and malformed is the one a reader acts on wrongly.
+
+    The header parser is strict about the two fields a reader acts on for the
+    same reason: a value outside the vocabulary is not a smaller claim, it is
+    an unreadable one.
+    """
+    note = _note(corpus)
+    _brief(corpus, note, "facts")
+
+    code, said = _file(corpus, note, "facts",
+                       _echoing(note, "facts", "not-a-hash"))
+
+    assert code == 1, said
+    assert "E-FILE-UNPARSED" in said, said

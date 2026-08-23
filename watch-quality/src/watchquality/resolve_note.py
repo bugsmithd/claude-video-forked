@@ -224,6 +224,13 @@ GATE_FLAGS: tuple[str, ...] = ("--check",)
 RE_GRADED = re.compile(r"^graded_with:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 RE_LANE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REVIEW_DIR = POLICY.reviews_dir()
+# A lane's BRIEF lives beside the report it asks for, so that the check which
+# compares them cannot be pointed at a directory the writer never used. The
+# suffix is what keeps the two apart: `lane_reports` globs `*.md` under the
+# video's directory and convicts every file no declared lane claims, so a brief
+# filed without a name the roll-call knows to skip would manufacture an
+# `E-LANE-UNDECLARED` on every note that got one.
+BRIEF_SUFFIX = ".brief.md"
 # Lanes that really ran and whose report is gone. Same shape and same promise as
 # anchor_manifest.UNRESOLVABLE_RUNS: dated, reasoned, printed, may only shrink.
 # Never add a row for a lane that was never dispatched -- that is the silent
@@ -357,6 +364,15 @@ LANE_HEADER_TYPES: dict[str, tuple[object, str]] = {
                 "one of " + ", ".join(LANE_VERDICTS)),
     "claims_enumerated": (lambda v: v == UNSTATED or RE_COUNT.match(v),
                           f"a count of claims or {UNSTATED!r}"),
+}
+# Checked when present, never required. `LANE_HEADER_FIELDS` is the required
+# header, and the corpus holds reports written before this field existed;
+# requiring it would fail every one of them and buy another dated exemption
+# table. What is NOT optional is the type: a field a reader acts on, present
+# and malformed, is worse than the same field absent -- absent is a question,
+# malformed is an answer nobody can read.
+LANE_HEADER_OPTIONAL: dict[str, tuple[object, str]] = {
+    "brief_sha256": (RE_SHA256.match, "64 lowercase hex characters"),
 }
 
 
@@ -1310,8 +1326,36 @@ def lane_reports(root: Path, video_id: str) -> list[Path]:
     # quality.md` satisfied a lane, and a symlink to /dev/null satisfied one
     # because it is not a regular file either. Both are one `mkdir` and one
     # `ln -s` from any tired agent (mechanism F2, F2b).
+    #
+    # A brief is not a report and is skipped here, which is the ONE place that
+    # decides what the roll-call sees. Skipping it at the two call sites
+    # instead would be the mistake both refutation rounds convicted: a rule
+    # enforced at the layer that happened to be under the cursor rather than at
+    # the layer that reads the rows.
     d = root / REVIEW_DIR / video_id
-    return sorted(p for p in d.rglob("*.md") if p.is_file()) if d.is_dir() else []
+    if not d.is_dir():
+        return []
+    return sorted(p for p in d.rglob("*.md")
+                  if p.is_file() and not p.name.endswith(BRIEF_SUFFIX))
+
+
+def brief_path(root: Path, video_id: str, lane: str) -> Path:
+    """Where this lane's brief goes, and the only place anything looks."""
+    return root / REVIEW_DIR / video_id / f"{lane}{BRIEF_SUFFIX}"
+
+
+def brief_sha256(body: str) -> str:
+    """The hash a lane's report echoes back to prove it had the brief open.
+
+    The BODY, so the hash can be written inside the brief's own header for the
+    lane to read; a hash covering its own header could not be.
+
+    `strip_machine_marks` is deliberately not applied, unlike `note_body_sha256`
+    above. A note is rendered -- demotion marks appear in it that no author
+    wrote -- and a brief is not; nothing writes into a brief after it is filed,
+    so every byte of it is instruction and every byte counts.
+    """
+    return hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
 
 
 def note_body_sha256(body: str) -> str:
@@ -1414,6 +1458,13 @@ def lane_header(path: Path) -> tuple[dict[str, str] | None, str | None]:
             # to quote back.
             return None, (f"header has no {field}" if not value else
                           f"{field} is not {must_be}: {value!r}")
+    for field, (is_a, must_be) in LANE_HEADER_OPTIONAL.items():
+        value = fields.get(field, "")
+        # Absent is legal and blank normalises to absent. Present and wrong is
+        # not: it is a value a reader would act on, and acting on it is exactly
+        # what the required fields are strict about.
+        if value and not is_a(value):
+            return None, f"{field} is not {must_be}: {value!r}"
     return fields, None
 
 

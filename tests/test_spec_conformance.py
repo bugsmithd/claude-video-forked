@@ -473,7 +473,16 @@ def test_no_rule_id_is_used_twice():
 # enforced at audit time, after a human had already chosen the directory and
 # the filename. That is the review layer's state machine growing a machine
 # where it had a sentence, which is the milestone that reopened the table.
-FROZEN_RULE_COUNT = 139
+# 139 -> 142 on 2026-08-23, for the brief-hash echo. The three before it made
+# filing a report mechanical; these make READING the brief checkable. "The lane
+# read its brief" was a sentence in a dispatch log, and nothing on disk told a
+# lane that read six hundred words from one handed a one-line prompt -- a claim
+# nobody who was not in the room could refuse. Two of the three refuse a report
+# that cannot quote its brief's hash back; the third refuses an EMPTY brief,
+# which hashes and stamps like any other and would let a lane quote it back
+# having read nothing. The echo is keyed to a brief actually on disk, never to
+# a date, which is why it cost no exemption table.
+FROZEN_RULE_COUNT = 142
 
 
 def test_the_table_is_closed():

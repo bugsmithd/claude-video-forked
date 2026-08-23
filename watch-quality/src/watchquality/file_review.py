@@ -46,8 +46,8 @@ import sys
 from pathlib import Path
 
 from . import resolve_note
-from .resolve_note import (LANE_HEADER_FIELDS, note_body_sha256, lane_header,
-                           split_frontmatter)
+from .resolve_note import (LANE_HEADER_FIELDS, brief_path, brief_sha256,
+                           note_body_sha256, lane_header, split_frontmatter)
 
 PROG = "file_review.py"
 
@@ -82,18 +82,40 @@ def with_lane(frontmatter: str, lane: str) -> str:
     return frontmatter.rstrip("\n") + "\n" + row
 
 
-def refusals(report: Path, note_body: str, lane: str) -> list[str]:
+def refusals(report: Path, note_body: str, lane: str,
+             brief: Path | None = None) -> list[str]:
     """Why this report may not be filed, or an empty list.
 
-    Three questions, and none of them is about whether the review is any good.
+    Four questions, and none of them is about whether the review is any good.
     `lane_header` is the audit's own reader, called rather than reimplemented,
     so a report this writer accepts is one that reader accepts by construction.
+
+    `brief` is the brief this lane was given, when one was filed. The echo it
+    asks for is keyed to that artifact and to nothing else: no brief on disk,
+    nothing to echo, no finding. That is what lets every report written before
+    any of this existed go on filing without a dated exemption row somebody
+    has to remember to shrink -- the rule turns on the evidence, not on a
+    calendar.
     """
     out: list[str] = []
     fields, why = lane_header(report)
     if fields is None:
         return [f"E-FILE-UNPARSED this is not a review: {why}; every report "
                 f"carries {', '.join(LANE_HEADER_FIELDS)}"]
+    if brief is not None and brief.is_file():
+        split = split_frontmatter(brief.read_text(encoding="utf-8"))
+        want = brief_sha256(split[1] if split else "")
+        said = fields.get("brief_sha256", "")
+        if not said:
+            out.append(f"E-FILE-UNBRIEFED lane {lane} was given a brief and "
+                       f"this report does not echo its hash; without that, "
+                       f"whether the lane read {brief.name} at all is a claim "
+                       f"nobody downstream can refuse")
+        elif said != want:
+            out.append(f"E-FILE-WRONGBRIEF the report echoes brief "
+                       f"{said[:12]}, the brief on disk is {want[:12]}; either "
+                       f"the lane read other instructions or the brief was "
+                       f"rewritten after it was dispatched")
     if fields["lane"] != lane:
         out.append(f"E-FILE-MISLABELLED the header answers for lane "
                    f"{fields['lane']}, and it is being filed as {lane}")
@@ -124,7 +146,8 @@ def file_review(note: Path, lane: str, report: Path,
     if said is None:
         return 2, [f"{PROG}: {report}: {why}"]
 
-    refused = refusals(report, body, lane)
+    refused = refusals(report, body, lane,
+                       brief_path(root, vid.group(1), lane))
     if refused:
         return 1, [f"{report}:1 {line}" for line in refused]
 
@@ -237,6 +260,34 @@ def selftest() -> int:
         code, said = file_review(note, "facts", src, root)
         check("a mislabelled report is refused", code, 1)
         check("...by name", "E-FILE-MISLABELLED" in said[0], True)
+
+        # Imported here rather than at module scope: the brief writer imports
+        # this module, and a cycle at import time would cost both of them.
+        from watchquality.file_brief import file_brief as _file_brief
+        instructions = root / "brief.md"
+        instructions.write_text("Read it against the oracle.\n",
+                                encoding="utf-8")
+        _file_brief(note, "facts", instructions, root)
+
+        def echoing(sha):
+            return report().replace(
+                "---\nnote_sha256:",
+                f"---\nbrief_sha256: {sha}\nnote_sha256:", 1)
+
+        src.write_text(report(), encoding="utf-8")
+        code, said = file_review(note, "facts", src, root)
+        check("a report that does not echo its brief is refused", code, 1)
+        check("...by name", "E-FILE-UNBRIEFED" in said[0], True)
+
+        src.write_text(echoing("1" * 64), encoding="utf-8")
+        code, said = file_review(note, "facts", src, root)
+        check("a wrong echo is refused", code, 1)
+        check("...by name", "E-FILE-WRONGBRIEF" in said[0], True)
+
+        src.write_text(echoing(resolve_note.brief_sha256(
+            instructions.read_text(encoding="utf-8"))), encoding="utf-8")
+        check("...and the right one files",
+              file_review(note, "facts", src, root)[0], 0)
 
     proof.done()
     print(f"# selftest OK ({cases} cases)")

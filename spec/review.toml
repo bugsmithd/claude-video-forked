@@ -844,3 +844,68 @@ kind = "pytest"
 case = "the same refusal in the module's own selftest"
 test = "file_review::a mislabelled report is refused"
 kind = "selftest"
+
+[[rule]]
+id = "FILE-UNBRIEFED"
+code = "E-FILE-UNBRIEFED"
+layer = "review"
+owner = "file_review.refusals"
+trigger = "a report is filed for a lane that was given a brief"
+refuses = "filing a report that cannot quote back the hash of the brief it was dispatched with, which is what makes 'the lane read its brief' a claim somebody who was not there can refuse"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a brief on disk and a report carrying no brief_sha256 at all"
+test = "tests/test_file_review.py::test_a_report_that_does_not_echo_its_brief_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "no brief was ever filed, so there is nothing to echo and the report files"
+test = "tests/test_file_review.py::test_a_report_files_when_no_brief_was_ever_written"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_review::a report that does not echo its brief is refused"
+kind = "selftest"
+
+[[rule]]
+id = "FILE-WRONGBRIEF"
+code = "E-FILE-WRONGBRIEF"
+layer = "review"
+owner = "file_review.refusals"
+trigger = "a report is filed echoing a brief hash"
+refuses = "a report answering instructions that are not the ones on disk, which is also what a brief rewritten after dispatch produces"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a report echoing a hash that is not this brief's"
+test = "tests/test_file_review.py::test_a_report_echoing_the_wrong_brief_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the matching echo, which files and leaves the brief on disk to be re-derived"
+test = "tests/test_file_review.py::test_a_report_that_echoes_its_brief_is_filed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_review::a wrong echo is refused"
+kind = "selftest"
+
+[[rule]]
+id = "BRIEF-EMPTY"
+code = "E-BRIEF-EMPTY"
+layer = "review"
+owner = "file_brief.refusals"
+trigger = "a brief is handed to the brief writer"
+refuses = "filing a brief with nothing in it, which hashes and stamps like any other and lets a lane quote the hash back having read nothing"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a whitespace-only brief, refused before any directory is created"
+test = "tests/test_file_brief.py::test_an_empty_brief_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_brief::an empty brief is refused at the door"
+kind = "selftest"

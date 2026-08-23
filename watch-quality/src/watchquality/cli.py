@@ -80,3 +80,16 @@ def note_coverage() -> int:
 def audit() -> int:
     from .audit import main
     return _run(main)
+
+
+# The two WRITERS. Every name above grades something already on disk; these put
+# it there. A writer with no console name is a writer nobody runs, and the rule
+# it owns goes back to being carried by whoever remembered it.
+def file_review() -> int:
+    from .file_review import main
+    return _run(main)
+
+
+def file_brief() -> int:
+    from .file_brief import main
+    return _run(main)
