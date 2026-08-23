@@ -466,7 +466,14 @@ def test_no_rule_id_is_used_twice():
 # thirteen holds a refusable word, and a word list can only refuse what somebody
 # thought to write down. No existing row could see it, because every corpus row
 # compares against a list.
-FROZEN_RULE_COUNT = 136
+# 136 -> 139 on 2026-08-23, for the three filing refusals. This is the first
+# time the table has grown for a WRITER rather than for a reader. Every rule
+# before them grades a report already on disk; these three refuse one at the
+# door, because the naming rule that decides whether a report counts was
+# enforced at audit time, after a human had already chosen the directory and
+# the filename. That is the review layer's state machine growing a machine
+# where it had a sentence, which is the milestone that reopened the table.
+FROZEN_RULE_COUNT = 139
 
 
 def test_the_table_is_closed():

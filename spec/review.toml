@@ -779,3 +779,68 @@ kind = "pytest"
 #       CORPUS-DATED-EXEMPTION had no pytest at all before today. They now do,
 #       but every case on them lives in one file, so a mistake in this file's
 #       fixtures is a mistake in the only pytest coverage those rules have.
+
+# --- filing a report, which used to be a human choosing a directory ---------
+#
+# Every rule above grades a report that is already on disk. These three refuse
+# it at the door instead, on the argument the state-machine review made: the
+# naming rule that decides whether a report counts is enforced at audit time,
+# after the filing choice was made by hand, which is the trap the corpus's own
+# disposition records falling into.
+
+[[rule]]
+id = "FILE-UNPARSED"
+code = "E-FILE-UNPARSED"
+layer = "review"
+owner = "file_review.refusals"
+trigger = "a report is handed to the filer"
+refuses = "filing something that is not a review, so that no lane directory is ever created for one"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a file with no header at all, which never reaches the directory the audit reads"
+test = "tests/test_file_review.py::test_a_report_that_is_not_a_review_is_refused_before_it_is_filed"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest, where the note is left undeclared"
+test = "file_review::an unreadable report is refused"
+kind = "selftest"
+
+[[rule]]
+id = "FILE-STALE"
+code = "E-FILE-STALE"
+layer = "review"
+owner = "file_review.refusals"
+trigger = "a report is handed to the filer and its header names a note body"
+refuses = "filing a report about a version of the note nobody can see any more"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a header naming a body hash the note on disk does not have"
+test = "tests/test_file_review.py::test_a_report_about_another_version_of_the_note_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_review::a stale report is refused"
+kind = "selftest"
+
+[[rule]]
+id = "FILE-MISLABELLED"
+code = "E-FILE-MISLABELLED"
+layer = "review"
+owner = "file_review.refusals"
+trigger = "a report is filed under a lane"
+refuses = "a report whose header answers for one lane being filed as another"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "a header for one lane filed as another, refused before the note declares either"
+test = "tests/test_file_review.py::test_a_report_answering_for_a_different_lane_is_refused"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the same refusal in the module's own selftest"
+test = "file_review::a mislabelled report is refused"
+kind = "selftest"
