@@ -540,6 +540,35 @@ def _renderings(word: str) -> tuple[tuple[str, str], ...]:
     return tuple(kept)
 
 
+# Unicode CATEGORIES that are between letters without being letters. A range
+# written by hand is always one codepoint behind: `U+0000`, `U+034F`, `U+FE0F`,
+# `U+180E`, `U+2064`, `U+2011`, `U+2012` and `U+2013` all walked past the old
+# one, and three of those are what a markdown editor makes of a typed hyphen
+# rather than anything adversarial. A category cannot fall behind.
+#
+#   Cc control, Cf format, Zs/Zl/Zp the separators, Pd every dash,
+#   Pc the connectors (which is where `_` lives), Mn the combining marks that
+#   render as nothing at all.
+SQUASHED_CATEGORIES = frozenset({"Cc", "Cf", "Zs", "Zl", "Zp", "Pd", "Pc",
+                                 "Mn"})
+# Punctuation that joins two letters INSIDE a token and separates two sentences
+# between them. A name is written in a path or a URL far more often than in
+# prose, so these have to come out -- and taking them out unconditionally glues
+# the end of one sentence to the start of the next, which is the false positive
+# the boundary rule exists to stop. So they come out only when a letter or a
+# digit stands on both sides.
+GLUE_PUNCTUATION = frozenset({".", "/", "\\", "·", ":", ",", "'", "’"})
+
+
+def _removes(ch: str, before: str, after: str) -> bool:
+    """Whether the squash drops this character, given what it stands between."""
+    if unicodedata.category(ch) in SQUASHED_CATEGORIES:
+        return True
+    if ch in GLUE_PUNCTUATION:
+        return before.isalnum() and after.isalnum()
+    return False
+
+
 def _squash(text: str) -> tuple[str, list[int], list[int]]:
     """The text with separators and casing taken out, and a POSITION per character.
 
@@ -567,22 +596,71 @@ def _squash(text: str) -> tuple[str, list[int], list[int]]:
     # carrying a compatibility form -- that is the coordinate the match is
     # actually at, and every other line is unchanged.
     text = unicodedata.normalize("NFKC", text).translate(CONFUSABLES)
-    for ch in text:
+    # ANYTHING THAT IS NOT A LETTER OR A DIGIT IS A BOUNDARY, and `gaps` says
+    # per emitted character whether one stood immediately before it in the
+    # SOURCE. That is how `dev/name/notes` keeps a word between the slashes
+    # while `Recall over` stops spelling a word that begins inside `Recall`.
+    #
+    # Not "a character the squash removed": a quotation mark, a bracket or an
+    # equals sign is kept and is still a boundary, and the first version of this
+    # tested removal instead -- which quietly stopped catching `x = "name"`, the
+    # shape a leak takes in source code more often than in prose.
+    gaps: list[bool] = []
+    prev = ""
+    for i, ch in enumerate(text):
         if ch == "\n":
             line += 1
             col = 1
+            prev = ""
             continue
-        if RE_INVISIBLE.match(ch) or RE_SEPARATOR.match(ch):
+        if _removes(ch, text[i - 1] if i else "", text[i + 1:i + 2]):
             col += 1
+            prev = ch
             continue
+        gap = not prev.isalnum()
         # Folding can change length -- one character in, two out -- so the maps
         # are extended per emitted character rather than per source character.
         folded = ch.casefold()
         kept.append(folded)
         lines.extend([line] * len(folded))
         cols.extend([col] * len(folded))
+        gaps.extend([gap] + [False] * (len(folded) - 1))
+        prev = ch
         col += 1
-    return "".join(kept), lines, cols
+    return "".join(kept), lines, cols, gaps
+
+
+def _at_boundary(squashed: str, gaps: list[bool], at: int, length: int) -> bool:
+    """Whether a match begins and ends where the source had a boundary.
+
+    THE 1253-WORD SURFACE, bounded. Squashing removes every boundary in the
+    file, so any two adjacent words match a literal that is their
+    concatenation: `Recall over those` becomes `recallover` and matches
+    `allover`, which is nowhere in the file. That was confirmed end to end
+    against three real pages, and a gate that fires on innocent prose is a gate
+    somebody deletes.
+
+    A match has to START where something was dropped and END where something
+    was dropped. `allover` starts inside `Recall`, so it is not a match. The
+    name between two slashes of a path still is, because the slash was dropped
+    and dropping IS the boundary.
+
+    THE COST, stated rather than discovered later: a literal deliberately glued
+    to another word -- `xxname` -- evades this. That is a trade, and it is the
+    one the acceptance criterion asked for: an unbounded rule fires on prose
+    nobody was attacking with, and the version of this gate that gets deleted
+    catches nothing at all.
+    """
+    end = at + length
+    if not gaps[at]:
+        return False
+    if end >= len(gaps):
+        return True
+    # Two ways for the end to be a boundary, and the first version had only
+    # one. Either something was dropped after the match -- `name/notes` -- or
+    # the character sitting there is not a letter, which is `"name"` in source
+    # code, the shape a leak takes far more often than a sentence does.
+    return gaps[end] or not squashed[end].isalnum()
 
 
 def read_scannable(path: Path) -> str | None:
@@ -713,19 +791,20 @@ def scan_text(text: str, rel: str, refused: tuple[str, ...] = (),
                     reported.add((n, i))
                     out.append(f"{rel}:{n} E-CORPUS-REFUSED-WORD literal "
                                f"#{i} of {len(refused)} (squashed length "
-                               f"{len(_squash(word)[0])}) written as {label} "
+                               f"{len(_squash(word)[0])}) written as "
+                               f"{label} "
                                f"and matched at line {n} column {col + 1} "
                                f"(see refused_literals in watch-quality.toml)")
 
     for pass_label, variant in (("", kept), *_decodings(kept)):
-        squashed, line_of, col_of = _squash(variant)
-        _refuse_squashed(out, rel, squashed, line_of, col_of, refused,
+        squashed, line_of, col_of, gaps = _squash(variant)
+        _refuse_squashed(out, rel, squashed, line_of, col_of, gaps, refused,
                          reported, pass_label)
     return out
 
 
 def _refuse_squashed(out: list[str], rel: str, squashed: str,
-                     line_of: list[int], col_of: list[int],
+                     line_of: list[int], col_of: list[int], gaps: list[bool],
                      refused: tuple[str, ...],
                      reported: set[tuple[int, int]], pass_label: str) -> None:
     """One squashed pass over one rendering of the file.
@@ -736,7 +815,7 @@ def _refuse_squashed(out: list[str], rel: str, squashed: str,
     """
     via = f" via {pass_label}" if pass_label else ""
     for i, word in enumerate(refused, 1):
-        needle, _, _ = _squash(word)
+        needle, _, _, _ = _squash(word)
         if not needle:
             # A hole in the list, not a rule. `"" in anything` is True, so one
             # empty entry would refuse every line of every file.
@@ -744,7 +823,8 @@ def _refuse_squashed(out: list[str], rel: str, squashed: str,
         at = squashed.find(needle)
         while at >= 0:
             n = line_of[at]
-            if (n, i) not in reported:
+            if ((n, i) not in reported
+                    and _at_boundary(squashed, gaps, at, len(needle))):
                 reported.add((n, i))
                 # The refused word is NOT echoed, and neither is the span that
                 # matched it: an exact match makes that span the literal, so a

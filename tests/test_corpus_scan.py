@@ -786,6 +786,86 @@ def test_a_name_written_as_an_encoding_of_itself_is_still_refused():
         assert len(found) == 1, (why, spelling, hits)
 
 
+def test_the_ten_separators_a_hand_kept_range_missed():
+    """Round 12 F6's other half: what a codepoint list is always one behind.
+
+    Three of these are not adversarial at all. An en dash and a non-breaking
+    hyphen are what typographic tooling makes of a typed hyphen. A full stop or
+    a solidus is how a name appears in a path or a URL, which is the single most
+    likely place a private repository's name gets written down.
+
+    A category answers all ten and cannot fall a character behind: control,
+    format, the space separators, every dash, the connectors, and the invisible
+    combining marks.
+    """
+    for why, glue in (("NUL", "\x00"),
+                      ("combining grapheme joiner", "͏"),
+                      ("variation selector-16", "️"),
+                      ("Mongolian vowel separator", "᠎"),
+                      ("invisible plus", "⁤"),
+                      ("non-breaking hyphen", "‑"),
+                      ("figure dash", "‒"),
+                      ("en dash", "–"),
+                      ("full stop in a path", "."),
+                      ("solidus in a path", "/"),
+                      ("middle dot", "·")):
+        body = f"a line about acme{glue}private in prose\n"
+
+        hits = wcs.scan_text(body, "f.md", ("acme private",))
+
+        found = [h for h in hits if "E-CORPUS-REFUSED-WORD" in h]
+        assert len(found) == 1, (why, hits)
+
+
+def test_a_name_inside_a_path_is_still_a_name():
+    """The reason the solidus had to join the list, kept honest by a case.
+
+    A private repository's name is written down in a path far more often than
+    in prose, and the boundary rule below could easily have thrown that away by
+    treating the whole path as one long word. A removed character is a boundary,
+    so the run between two slashes is a word like any other.
+    """
+    hits = wcs.scan_text("see dev/acme_private/notes for it\n", "f.md",
+                         ("acme private",))
+
+    assert len([h for h in hits if "E-CORPUS-REFUSED-WORD" in h]) == 1, hits
+
+
+def test_two_adjacent_words_are_not_a_literal_they_happen_to_spell():
+    """The 1253-word surface, measured by round 12 F7 and bounded here.
+
+    Squashing removes every boundary in the file, so any two adjacent words can
+    match a literal that is their concatenation. `Recall over those` becomes
+    `recallover` and matches `allover`, which is not in the file -- confirmed
+    end to end against three real pages. A gate that fires on innocent prose is
+    a gate somebody deletes.
+
+    The bound is that a match has to BEGIN and END where the source had a
+    boundary, and a character the squash removed counts as one. `allover`
+    begins inside `Recall`, so it is not a match; the path case above still is.
+    """
+    body = ("Recall over those three sets does not move\n"
+            "printing a six-gate pass with an empty body\n")
+
+    hits = wcs.scan_text(body, "f.md", ("allover", "adjust"))
+
+    assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], hits
+
+
+def test_a_sentence_break_does_not_glue_two_words_into_a_literal():
+    """The cost of taking the full stop, and the line that keeps it small.
+
+    A `.` between two letters is a path. A `.` before a space is the end of a
+    sentence, and gluing those two words together is exactly the false positive
+    the bound above exists to stop. So the punctuation joins only when both of
+    its neighbours are letters.
+    """
+    hits = wcs.scan_text("we sold the acme. Private buyers came\n", "f.md",
+                         ("acme private",))
+
+    assert [h for h in hits if "E-CORPUS-REFUSED-WORD" in h] == [], hits
+
+
 def test_an_encoded_newline_does_not_move_every_line_after_it():
     """The decoded passes' whole premise, and it was false (round 17 C5).
 
