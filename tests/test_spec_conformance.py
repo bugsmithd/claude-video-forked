@@ -28,7 +28,43 @@ from watchquality import wq_policy
 
 
 PACKAGE = Path(watchquality.__file__).parent
-REPO = PACKAGE.resolve().parents[2]
+
+
+def _repo_of(package: Path) -> Path:
+    """The checkout the package was imported from, or a loud failure.
+
+    COUNTING PARENTS IS NOT FINDING A CHECKOUT, and on 2026-08-24 that cost a
+    926G volume every byte it had. `parents[2]` assumes the package sits at
+    `<repo>/watch-quality/src/watchquality`; a lane running the suite against a
+    package copied to `/tmp/mut` made it `/private`, which is a real directory
+    with `var`, `etc` and `tmp` in it. The mutation sandbox then copied
+    `/private` into a temporary directory that lives under `/private/var` --
+    so the copy contained its own destination and recursed until the disk was
+    full, 341G later, with root-owned files in it that a plain remove could not
+    delete.
+
+    So the shape is CHECKED rather than assumed: the answer has to be a
+    directory that holds this package under `watch-quality/src` and the `spec`
+    and `tests` directories the callers go on to read. Nothing else is a
+    checkout, and a wrong answer here is not a skipped test, it is a full disk.
+    """
+    resolved = package.resolve()
+    if len(resolved.parents) < 3:
+        raise RuntimeError(
+            f"{resolved} is too shallow to sit inside a checkout; the suite "
+            f"cannot tell what to copy")
+    root = resolved.parents[2]
+    expected = root / "watch-quality" / "src" / "watchquality"
+    if expected.resolve() != resolved or not (root / "tests").is_dir():
+        raise RuntimeError(
+            f"the package at {resolved} was not imported from a checkout: "
+            f"{root} does not hold it at watch-quality/src/watchquality beside "
+            f"a tests directory. Run the suite against the checkout, or set "
+            f"PYTHONPATH to one -- do NOT let this fall back to a guess.")
+    return root
+
+
+REPO = _repo_of(PACKAGE)
 SPEC_DIR = REPO / "spec"
 TESTS_DIR = REPO / "tests"
 

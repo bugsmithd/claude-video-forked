@@ -123,6 +123,17 @@ def plan(segments: list[dict], window_seconds: float,
     costs a whole agent and returns almost nothing. Absorbing extends its
     predecessor, which can therefore run up to window + overlap long.
     """
+    # ASKED OF THE GEOMETRY BEFORE IT IS COMPARED, because every comparison
+    # against `nan` is False and the guard below is three comparisons. A plan
+    # measured in nothing passed all three and came back as one window over the
+    # whole recording -- the single overloaded context these windows exist to
+    # prevent, reported as a plan. `total` is already asked this question below;
+    # the numbers the caller chose were not asked it at all.
+    if not (math.isfinite(window_seconds) and math.isfinite(overlap_seconds)):
+        raise ValueError(
+            f"a window of {window_seconds} seconds overlapping by "
+            f"{overlap_seconds} is not a geometry; both have to be numbers "
+            f"of seconds")
     if window_seconds <= 0 or overlap_seconds < 0 or window_seconds - overlap_seconds <= 0:
         raise ValueError(
             f"an overlap of {overlap_seconds}s in a {window_seconds}s window "
@@ -510,6 +521,14 @@ def main(argv: list[str] | None = None) -> int:
     # Uniquely-owned segments answer the question the threshold's own comment
     # describes -- one window holding the whole recording -- and the answer does
     # not move with the window count or with the overlap.
+    # WHY ONE WINDOW IS EXCUSED, since the row that asked called it "the most
+    # overloaded context there is". With finite geometry a one-window plan
+    # cannot be a plan that failed to split: the nominal windows tile the whole
+    # recording at `stride`, so a recording longer than one window always yields
+    # more than one, and absorption merges only the tail -- 4000 random
+    # geometries produced no one-window plan covering more than window+overlap.
+    # What DID reach one window over an hour was `nan`, refused in `plan` now.
+    # Against one window the share test would also be arithmetic on 100%.
     biggest = max((w["segments"] for w in windows), default=0)
     if len(windows) > 1 and biggest > len(segments) * overfull_share(
             len(windows), args.window, args.overlap):

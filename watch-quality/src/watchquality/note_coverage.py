@@ -146,7 +146,13 @@ RE_ROW = re.compile(
     rf"\s*(?:\([^)]*\)\s*)?[—–-]+\s*(.*)$")
 # A line that was trying to be a row. Reported rather than dropped, so the next
 # unforeseen shape is loud instead of silent.
-RE_ROWISH = re.compile(rf"^\s*[-*]\s+`?\[{_STAMP}\]`?\s+`?[A-Z-]{{4,}}`?")
+# A SIGN IS PART OF WHAT THE LINE WAS TRYING TO SAY, so this pattern reads one
+# and the row pattern does not. `- `[-00:10]` `SPOKEN` — …` is a row to every
+# reader who is not this parser: it was not a row, and it was not row-shaped
+# either, so it fell through as prose and the whole claim vanished with no row,
+# no refusal and no count. A stamp before the recording started is a finding,
+# and a finding has to be said out loud.
+RE_ROWISH = re.compile(rf"^\s*[-*]\s+`?\[[-+]?{_STAMP}\]`?\s+`?[A-Z-]{{4,}}`?")
 RE_ANCHOR = re.compile(rf"`?\[({_STAMP})\]`?")
 # An HTML comment is not the note. It renders as nothing, and an adversarial
 # lane used one to hide an anchor for every minute of a two-hour recording.
@@ -155,6 +161,9 @@ RE_COMMENT = re.compile(r"<!--.*?-->", re.S)
 # let a note improve its own score by describing itself.
 RE_RUN_NOTES = re.compile(r"^##\s+Run notes\s*$", re.MULTILINE)
 RE_KEY = re.compile(r"^[A-Za-z_][\w-]*\s*:")
+# A code fence, in markdown's own vocabulary rather than this file's guess at
+# it: three or more backticks, or three or more tildes.
+RE_FENCE = re.compile(r"^(`{3,}|~{3,})")
 
 
 def seconds_of(stamp: str) -> float:
@@ -244,7 +253,20 @@ def _row_of(line: str) -> tuple[str, object]:
             return (IMPOSSIBLE, end)
         if until < at:
             return (MISSHAPEN, line)
-    return (ROW, (at, match.group(2), match.group(4).strip()))
+    else:
+        until = at
+    # A ROW WITH NOTHING AFTER THE DASH IS THE PADDING THESE GUARDS EXIST TO
+    # CATCH. It entered the row list and the `carried_per_row` denominator while
+    # carrying no words at all, so a note could improve the look of its own
+    # density by adding rows that say nothing.
+    body = match.group(4).strip()
+    if not body:
+        return (MISSHAPEN, line)
+    # THE ROW KEEPS ITS END. Where it names one, that is where the claim closed;
+    # where it does not, a claim occupies the instant it is anchored at. A
+    # window asks which rows TOUCH it, and it could not ask that while the end
+    # was parsed, validated and then dropped.
+    return (ROW, (at, match.group(2), body, until))
 
 
 def _in_span(stamp: str, span: tuple[float, float]) -> bool:
@@ -256,7 +278,7 @@ def _in_span(stamp: str, span: tuple[float, float]) -> bool:
     return span[0] <= at <= span[1]
 
 
-def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
+def read_note(path: Path) -> tuple[str, list[tuple[float, str, str, float]],
                                    list[str], list[str]]:
     """The note's carried text, its claim rows, unsayable stamps, and misshapen lines.
 
@@ -279,10 +301,16 @@ def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
     if cuts:
         text = text[: cuts[-1].start()]
 
-    rows: list[tuple[float, str, str]] = []
+    rows: list[tuple[float, str, str, float]] = []
     impossible: list[str] = []
     misshapen: list[str] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    inside, unclosed = fenced_lines(lines)
+    if unclosed is not None:
+        misshapen.append(lines[unclosed].strip()[:60])
+    for n, line in enumerate(lines):
+        if n in inside:
+            continue
         kind, value = _row_of(line)
         if kind == ROW:
             rows.append(value)
@@ -291,6 +319,64 @@ def read_note(path: Path) -> tuple[str, list[tuple[float, str, str]],
         elif kind in (MISSHAPEN, UNREAD):
             misshapen.append(value.strip()[:60])
     return text, rows, impossible, misshapen
+
+
+def fenced_lines(lines: list[str]) -> tuple[frozenset[int], int | None]:
+    """Which lines sit inside a code fence, and where an unclosed one opened.
+
+    A FENCE IS HOW A NOTE SAYS "THIS IS A SHAPE, NOT A CLAIM". Writing the row
+    format into a note charged that note with the minute in its own example --
+    an anchor it never claimed, in a row nobody wrote.
+
+    AN UNCLOSED FENCE IS NOT A FENCE, AND QUOTES NOTHING. A toggle read the rest
+    of the file as quoted text, so a note that opened a block and forgot to
+    close it measured as a note that made one claim -- every row after that line
+    gone, and gone SILENTLY. Reporting the stray line fixed the silence and left
+    the loss: measured again, an unclosed opener still cost two real anchors and
+    moved a note's unwritten minutes from five to seven. So an opener with no
+    closer quotes NOTHING; its lines stay claims, and the line that opened is
+    reported like any other misshapen one. Losing a claim a person wrote is the
+    worse of the two errors, and this reader is not rendering the page.
+
+    THE MARKER IS MARKDOWN'S, not this file's guess at it: three or more
+    backticks or three or more tildes, and a closer that is the same character,
+    at least as long, and carries nothing else. `~~~` was a fence to every
+    renderer and not to an earlier version of this reader, and four backticks
+    closed a three-backtick block that should have swallowed it.
+
+    THE INDENT IS NOT. Markdown allows three spaces at the margin and measures
+    from the content column inside a list item; this reader has no list context,
+    so an example written under a nested bullet indents four spaces, no fence
+    was seen, and the example counted as a claim -- the rule's own subject,
+    reached by a different number of spaces. A marker is a marker at any indent
+    here. The cost is the other side of that trade: a closer indented four
+    spaces closes rather than reading as code, and a marker inside an indented
+    code block opens. Both mistakes end a fence EARLY, which keeps a person's
+    rows as claims, and that is the direction this reader is willing to be wrong
+    in.
+    """
+    inside: set[int] = set()
+    opener: tuple[int, str, int] | None = None
+    # Held rather than added, because whether these are quoted is not known
+    # until a closer arrives -- and if none does, they were never quoted at all.
+    pending: set[int] = set()
+    for n, line in enumerate(lines):
+        stripped = line.lstrip(" \t")
+        mark = RE_FENCE.match(stripped)
+        if opener is None:
+            if mark:
+                opener = (n, mark.group(1)[0], len(mark.group(1)))
+                pending = set()
+            continue
+        at, char, width = opener
+        if (mark and mark.group(1)[0] == char and len(mark.group(1)) >= width
+                and not stripped[len(mark.group(1)):].strip()):
+            inside |= pending
+            opener = None
+            pending = set()
+            continue
+        pending.add(n)
+    return frozenset(inside), opener[0] if opener else None
 
 
 def strip_frontmatter(text: str) -> str:
@@ -418,7 +504,7 @@ def near_duplicates(rows: list[tuple[float, str, str]], reach: int = 5
     section, which is not the defect being looked for.
     """
     out: list[tuple[float, str]] = []
-    for index, (at, _cls, text) in enumerate(rows):
+    for index, (at, _cls, text, _until) in enumerate(rows):
         key = " ".join(RE_WORD.findall(text.lower()))
         if not key:
             continue
@@ -494,8 +580,24 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     # reuses its own words. So with `--span` the note's text is the lines that
     # anchor INTO that span -- rows and prose sentences alike -- and without one
     # it is the whole note, which is the same rule at full width.
-    in_span = [r for r in rows if span[0] <= r[0] <= span[1]]
-    scope = span_text(body, span) if windowed else body
+    # A ROW TOUCHES A WINDOW, it does not have to start in one. Filtering on the
+    # start alone put a claim that opened at 04:50 and closed at 05:30 in NONE
+    # of this window's row numbers -- not `rows`, not `carried_per_row`, not
+    # `row_words` -- while its words were inside the window's scope text, so
+    # the note carried the claim and every number about that minute said it did
+    # not. A row with no end of its own still ends where it begins.
+    in_span = [r for r in rows if r[3] >= span[0] and r[0] <= span[1]]
+    # AND THE NOTE'S TEXT IS NOT ITS EXAMPLES EITHER. The row parse and the
+    # anchor walk both stopped at a fence and the vocabulary did not, so a note
+    # that documented the row format carried the words of its own illustration
+    # against the transcript and bought recall share for them. Blanked rather
+    # than removed: `span_text` cuts by line, and dropping lines would move
+    # every line after the fence.
+    body_lines = body.splitlines()
+    quoted, _ = fenced_lines(body_lines)
+    spoken = "\n".join("" if n in quoted else line
+                       for n, line in enumerate(body_lines))
+    scope = span_text(spoken, span) if windowed else spoken
     wanted = salient(segments, span)
     body_tokens = carried(scope)
     row_tokens = carried(" ".join(r[2] for r in in_span))
@@ -538,7 +640,14 @@ def measure(note: Path, transcript: Path, span: tuple[float, float] | None
     # tried and failed buys nothing (V5 section 1 gap a).
     anchors: list[float] = []
     lost: set[int] = set()
-    for line in body.splitlines():
+    # THE FENCE IS SKIPPED HERE TOO, and stopping only the row parse at it was
+    # half a fix: the example's anchor still filled a dead-minute bucket, so a
+    # note that documented the row format bought itself a written minute on a
+    # row nobody wrote. An illustration is not a claim in ANY count -- the
+    # vocabulary above is fenced from the same set.
+    for n, line in enumerate(body_lines):
+        if n in quoted:
+            continue
         stamps = RE_ANCHOR.findall(line)
         if not stamps:
             continue
@@ -745,9 +854,9 @@ def selftest() -> int:
     check("a well-spread note has no hole",
           dead_buckets([0.0, 60.0, 120.0], (0.0, 179.0))[0], 0)
 
-    repeated = [(1.0, "SPOKEN", "the price was five hundred dollars"),
-                (2.0, "SPOKEN", "the price was five hundred dollars"),
-                (3.0, "SPOKEN", "an entirely different observation follows")]
+    repeated = [(1.0, "SPOKEN", "the price was five hundred dollars", 1.0),
+                (2.0, "SPOKEN", "the price was five hundred dollars", 2.0),
+                (3.0, "SPOKEN", "an entirely different observation follows", 3.0)]
     check("a row repeating its neighbour is caught",
           len(near_duplicates(repeated)), 1)
 

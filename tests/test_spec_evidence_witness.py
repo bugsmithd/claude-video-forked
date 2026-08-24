@@ -24,6 +24,7 @@ Every fixture is invented. No video id, corpus path or person appears here.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -876,7 +877,7 @@ def test_a_row_written_with_an_en_dash_is_a_row(tmp_path):
         _body, rows, impossible, misshapen = nc.read_note(path)
 
         assert len(rows) == 1, f"{dash!r} did not read as a row"
-        assert rows[0] == (1.0, "SPOKEN", "a claim.")
+        assert rows[0] == (1.0, "SPOKEN", "a claim.", 1.0)
         assert (impossible, misshapen) == ([], [])
 
 
@@ -896,7 +897,8 @@ def test_a_row_spanning_two_stamps_is_a_row(tmp_path):
     _body, rows, impossible, misshapen = nc.read_note(path)
 
     assert len(rows) == 1, "the range form did not read as a row"
-    assert rows[0] == (1 * 60 + 57.0, "SPOKEN", "a claim that ran on.")
+    assert rows[0] == (1 * 60 + 57.0, "SPOKEN", "a claim that ran on.",
+                       4 * 60 + 23.0)
     assert (impossible, misshapen) == ([], [])
 
 
@@ -2260,3 +2262,337 @@ def test_declared_lanes_with_no_video_id_report_every_cited_filename_missing(tmp
     assert missing == ["a-review-one.md", "b-review-two.md",
                        "c-review-three.md", "d-review-four.md",
                        "x-review-facts.md"]
+
+
+def test_a_claim_that_straddles_the_window_is_counted_by_the_window(tmp_path):
+    """A row anchored outside a span still carries words inside it.
+
+    The filter asked where a row STARTED, so a claim opening at 04:50 and
+    closing at 05:30, measured against 05:00-06:00, was in no row-based number
+    for that window -- not `rows`, not `carried_per_row`, not `row_words` --
+    while its words were inside the window's scope text. The note carried the
+    claim and every number about that window said it did not.
+    """
+    segments = cov_spoken(60)
+    note = ("- `[04:50]` `SPOKEN` to `[05:30]` `SPOKEN` — "
+            + COV_SHAPES[0].format(w=f"{coined(30)}zone") + ".\n")
+
+    inside = cov_measure(tmp_path, note, segments, (300.0, 360.0))
+    before = cov_measure(tmp_path, note, segments, (0.0, 120.0))
+
+    assert inside["rows"] == 1, "the row overlaps 05:00-06:00"
+    assert inside["row_words"] > 0
+    assert before["rows"] == 0, "and does not reach a window it never touches"
+
+
+def test_a_row_written_inside_a_code_fence_is_not_a_row(tmp_path):
+    """Documenting the row format cost a note an anchor it never wrote.
+
+    `read_note` strips HTML comments and frontmatter and read straight through
+    a fenced block, so a note explaining its own format claimed the minute in
+    its example. The fence is how a note says "this is a shape, not a claim".
+    """
+    segments = cov_spoken(60)
+    note = (cov_row(2) + "\n```\n" + cov_row(9) + "```\n")
+
+    result = cov_measure(tmp_path, note, segments, None)
+
+    assert result["rows_in_note"] == 1, "the fenced row is an illustration"
+
+
+def test_a_row_with_nothing_after_the_dash_is_not_a_row(tmp_path):
+    """The padding these guards exist to catch, counted as content.
+
+    A row carrying no text entered the row list and the `carried_per_row`
+    denominator, so a note could improve the look of its own density by adding
+    rows that say nothing at all.
+    """
+    segments = cov_spoken(60)
+    note = cov_row(2) + "- `[03:05]` `SPOKEN` —\n"
+
+    result = cov_measure(tmp_path, note, segments, None)
+
+    assert result["rows_in_note"] == 1, "one row said something"
+    assert len(result["misshapen_rows"]) >= 1, "and the empty one is reported"
+
+
+def test_a_row_anchored_before_the_recording_started_is_reported(tmp_path):
+    """A negative stamp made a whole row disappear, silently.
+
+    `[-00:10]` is not a stamp this parser reads, and the line was not row-shaped
+    enough to be reported as one either, so it fell out as prose: no row, no
+    refusal, no count. The note then measured as though the claim had never been
+    written, which is the one outcome a gate may not produce.
+    """
+    segments = cov_spoken(60)
+    note = cov_row(2) + "- `[-00:10]` `SPOKEN` — a claim before the recording.\n"
+
+    result = cov_measure(tmp_path, note, segments, None)
+
+    assert result["rows_in_note"] == 1
+    assert len(result["misshapen_rows"]) >= 1, "the negative stamp is named"
+
+
+def test_a_window_plan_measured_in_nan_is_refused(tmp_path):
+    """Every comparison against nan is False, so every guard passed.
+
+    `plan` refuses a window that does not advance by comparing the geometry --
+    and `nan <= 0` is False, `nan - nan <= 0` is False, so a plan measured in
+    nothing sailed through the guard that exists to stop exactly that and
+    returned one window over the whole recording.
+    """
+    segments = [{"start": 0.0, "end": 30.0, "text": "a"},
+                {"start": 30.0, "end": 60.0, "text": "b"}]
+    nan = float("nan")
+
+    for window, overlap in ((nan, 10.0), (600.0, nan), (nan, nan)):
+        with pytest.raises(ValueError, match="seconds"):
+            nw.plan(segments, window, overlap)
+
+
+def scan_corpus(tmp_path: Path, monkeypatch) -> None:
+    """A policy with one refused literal and one note line carrying two stamps.
+
+    Both are required before `--require-literals` will scan anything at all,
+    and a case that skips them passes on the wordless refusal instead of the
+    one it was written for.
+    """
+    corpus = tmp_path / "corpus"
+    (corpus / "notes").mkdir(parents=True)
+    (corpus / "notes" / "n.md").write_text(
+        "- `[01:13]` to `[02:41]` COV -- a note line\n", encoding="utf-8")
+    (corpus / "watch-quality.toml").write_text(
+        'notes_dir = "notes"\nrefused_literals = ["inventedholdingco"]\n',
+        encoding="utf-8")
+    monkeypatch.setenv("WATCH_QUALITY_POLICY",
+                       str(corpus / "watch-quality.toml"))
+    monkeypatch.setenv("WATCH_QUALITY_ROOT", str(corpus))
+    # `load` caches the first policy the process saw, so setting the variables
+    # alone leaves an earlier test's empty policy in force and this case would
+    # pass on the wordless refusal instead of the one it is about.
+    from watchquality import wq_policy
+    monkeypatch.setattr(wq_policy, "_CACHED", None)
+
+
+def test_a_scan_that_could_not_read_anything_is_refused(tmp_path, monkeypatch):
+    """The fourth incapacity, in the flag that names three.
+
+    `--require-literals` refuses a run with no words, no files and no anchor
+    sets in force, because each is a run that could not have found anything.
+    A tree whose every file is bytes this reader cannot make text of is the
+    same state: it exited 0 with a summary counting the files it WALKED as the
+    files it scanned, and a push hook reads only that exit code.
+    """
+    from watchquality import wq_corpus_scan as wcs
+
+    scan_corpus(tmp_path, monkeypatch)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_bytes(bytes(range(256)) * 4)
+    (tree / "b.md").write_bytes(bytes(range(255, -1, -1)) * 4)
+
+    assert wcs.main(["--require-literals", str(tree)]) == 2
+
+
+def test_an_example_indented_under_a_bullet_is_still_an_example(tmp_path):
+    """A fence measures its indent from the bullet it sits under, not the margin.
+
+    The reader dropped any line indented more than three spaces before it looked
+    for a marker, which is a document-level rule. A note that writes its row
+    format under a nested bullet indents the fence four spaces, no fence was
+    seen, and the example counted as a claim -- the rule's own subject, reached
+    by a different number of spaces.
+    """
+    fence = "`" * 3
+    note = "\n".join([
+        "- how a row is written",
+        f"    {fence}",
+        "    - `[00:30]` `SPOKEN` -- the shape, not something anybody said.",
+        f"    {fence}",
+        "",
+        "- `[00:10]` `SPOKEN` -- a claim the writer actually made.",
+        "",
+    ])
+
+    got = cov_measure(tmp_path, note, cov_transcript())
+
+    assert got["rows_in_note"] == 1
+    assert got["misshapen_rows"] == []
+
+
+def test_a_fence_nobody_closed_does_not_eat_the_rest_of_the_note(tmp_path):
+    """An unclosed fence is not a fence, and the rows after it are still claims.
+
+    Reporting the stray line fixed the silence and left the loss: every row
+    after the opener was still dropped, so a note that opened a block and forgot
+    to close it was charged with minutes it had written from. Losing a person's
+    claims is the worse error of the two, so the opener is reported and nothing
+    is quoted.
+    """
+    fence = "`" * 3
+    note = "\n".join([
+        "- `[00:10]` `SPOKEN` -- a claim before the stray line.",
+        fence,
+        "- `[00:30]` `SPOKEN` -- a claim after it, which the writer did write.",
+        "- `[00:50]` `SPOKEN` -- and one more after that.",
+        "",
+    ])
+
+    got = cov_measure(tmp_path, note, cov_transcript())
+
+    assert got["rows_in_note"] == 3
+    assert got["misshapen_rows"] == [fence]
+
+
+def test_an_illustration_buys_no_recall(tmp_path):
+    """"Not a claim" has to mean every count, and recall is one of them.
+
+    The row parse and the anchor walk both skip a fence; the note's text did
+    not, so a note that documented the row format carried the words in its own
+    example against the transcript and bought itself recall share for them.
+    """
+    segments = cov_transcript()
+    fence = "`" * 3
+    bare = "- `[00:10]` `SPOKEN` -- the speaker opens the topic.\n"
+    with_example = "\n".join([
+        bare.rstrip(),
+        fence,
+        f"- `[01:00]` `SPOKEN` -- {coined(6)}zone and {coined(7)}zone go here.",
+        fence,
+        "",
+    ])
+
+    plain = cov_measure(tmp_path, bare, segments)
+    illustrated = cov_measure(tmp_path, with_example, segments)
+
+    assert illustrated["recall"]["all"] == plain["recall"]["all"]
+
+
+def test_a_path_that_would_not_open_is_named_however_it_fails(tmp_path,
+                                                              monkeypatch,
+                                                              capsys):
+    """The census is only honest if the walk hands it everything it could not read.
+
+    A link pointing at nothing and a directory nobody may list were both dropped
+    before the reader ever saw them, so a whole subtree left the count in
+    silence under a line a reader pastes as proof of coverage.
+    """
+    from watchquality import wq_corpus_scan as wcs
+
+    if os.geteuid() == 0:
+        pytest.skip("root lists a mode-000 directory, so half of this case "
+                    "would not be unlistable")
+
+    scan_corpus(tmp_path, monkeypatch)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_text("# an ordinary page\n", encoding="utf-8")
+    (tree / "b.md").symlink_to(tree / "never-written.md")
+    shut = tree / "locked"
+    shut.mkdir()
+    (shut / "c.md").write_text("# a page inside it\n", encoding="utf-8")
+    shut.chmod(0o000)
+    try:
+        code = wcs.main(["--require-literals", str(tree)])
+    finally:
+        shut.chmod(0o700)
+
+    seen = capsys.readouterr()
+    named = [line for line in seen.out.splitlines() if " E-READ " in line]
+    assert code == 1
+    assert any("b.md" in line for line in named), named
+    assert any("locked" in line for line in named), named
+    summary = [line for line in seen.err.splitlines()
+               if "file(s) scanned" in line]
+    assert summary[0].startswith("# 1 file(s) scanned "), summary[0]
+    assert "2 that would not open" in summary[0], summary[0]
+
+
+def test_a_link_to_nothing_inside_a_vendored_tree_is_still_just_vendored(
+        tmp_path, monkeypatch):
+    """Naming what could not be read must not out-rank the skip list.
+
+    A dependency directory is full of links to things nobody installed, and
+    reporting each one turns a clean tree's exit 0 into exit 1 -- a wrong
+    verdict on a tree with nothing published wrong in it. The census answers for
+    what this gate reads, and it does not read a vendored tree at all.
+    """
+    from watchquality import wq_corpus_scan as wcs
+
+    if os.geteuid() == 0:
+        pytest.skip("root lists a mode-000 directory, so half of this case "
+                    "would not be unlistable")
+
+    scan_corpus(tmp_path, monkeypatch)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_text("# an ordinary page\n", encoding="utf-8")
+    vendored = tree / "node_modules" / ".bin"
+    vendored.mkdir(parents=True)
+    (vendored / "tool").symlink_to(vendored / "never-installed.js")
+    shut = tree / "node_modules" / "locked"
+    shut.mkdir()
+    (shut / "c.md").write_text("# a page inside it\n", encoding="utf-8")
+    shut.chmod(0o000)
+    try:
+        code = wcs.main(["--require-literals", str(tree)])
+    finally:
+        shut.chmod(0o700)
+
+    assert code == 0
+
+
+def test_the_summary_counts_the_files_it_read(tmp_path, monkeypatch, capsys):
+    """"N file(s) scanned" is the artifact a reader pastes as proof of coverage.
+
+    It counted what was WALKED, so a tree half of which never became text read
+    as a tree fully scanned -- and the two files that were not read fail in
+    DIFFERENT ways: one is bytes no encoding accepts, the other never opened.
+    Subtracting one kind and not the other still overstates the number, so both
+    are named here and the count has to answer to both.
+    """
+    from watchquality import wq_corpus_scan as wcs
+
+    if os.geteuid() == 0:
+        pytest.skip("root opens a mode-000 file, so the unopenable half of "
+                    "this case would not be unopenable")
+
+    scan_corpus(tmp_path, monkeypatch)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_text("# an ordinary page\n", encoding="utf-8")
+    (tree / "b.md").write_bytes(bytes(range(256)) * 4)
+    shut = tree / "c.md"
+    shut.write_text("# a page nobody may open\n", encoding="utf-8")
+    shut.chmod(0o000)
+    try:
+        wcs.main(["--require-literals", str(tree)])
+    finally:
+        # Left at 0 it is a directory pytest cannot tidy on some filesystems,
+        # and this case is about a full disk.
+        shut.chmod(0o600)
+
+    summary = [line for line in capsys.readouterr().err.splitlines()
+               if "file(s) scanned" in line]
+    assert len(summary) == 1, summary
+    assert summary[0].startswith("# 1 file(s) scanned "), summary[0]
+    assert "1 not text this reader can make" in summary[0]
+    assert "1 that would not open" in summary[0]
+
+
+def test_a_scan_that_read_something_is_not_refused(tmp_path, monkeypatch):
+    """The control: one readable file among the unreadable ones is enough.
+
+    The flag answers "could this run have found anything", not "was every file
+    perfect", so a tree that is mostly unreadable still scans on the strength
+    of what it could read.
+    """
+    from watchquality import wq_corpus_scan as wcs
+
+    scan_corpus(tmp_path, monkeypatch)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_bytes(bytes(range(256)) * 4)
+    (tree / "b.md").write_text("# an ordinary page\n", encoding="utf-8")
+
+    assert wcs.main(["--require-literals", str(tree)]) == 0

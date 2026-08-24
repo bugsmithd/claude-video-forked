@@ -174,6 +174,22 @@ class _Sandbox:
 
     def __init__(self, root: Path) -> None:
         self.root = root
+        # WHAT IS BEING COPIED IS CHECKED FIRST, and the check is the second of
+        # two. `REPO` is now verified where it is derived, and this asks again
+        # here because THIS is the line that walks a filesystem: on 2026-08-24 a
+        # bad `REPO` sent it over `/private`, which contains the temporary
+        # directory it was copying INTO, and it recursed until a 926G volume had
+        # 116.7M left. A copy that contains its own destination has no end.
+        source = REPO.resolve()
+        destination = root.resolve()
+        if destination.is_relative_to(source):
+            raise RuntimeError(
+                f"the sandbox at {destination} sits inside {source}, so the "
+                f"copy would contain its own destination and never finish")
+        if not (source / "watch-quality" / "src" / "watchquality").is_dir():
+            raise RuntimeError(
+                f"{source} is not this checkout, and copying it is not what "
+                f"this harness does")
         shutil.copytree(
             REPO, root,
             ignore=shutil.ignore_patterns(

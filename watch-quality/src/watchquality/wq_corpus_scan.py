@@ -207,7 +207,7 @@ def publishable(path: Path) -> bool:
     return path.suffix.lower() in TEXT_SUFFIXES or not path.suffix
 
 
-def _walk(target: Path):
+def _walk(target: Path, unlistable: list[Path] | None = None):
     """Every path under `target`, following symlinked directories exactly once.
 
     `rglob` does not follow a symlinked directory, so a tree reachable only
@@ -219,10 +219,16 @@ def _walk(target: Path):
     Keyed on the RESOLVED directory, so two names for one directory are one
     visit. Files are yielded under the name the walk reached them by, because
     that is the name a reader has to go and look at.
+
+    A DIRECTORY THAT WILL NOT LIST IS HANDED BACK, not stepped over. It used to
+    `continue` in silence, so a subtree nobody may read vanished from a summary
+    line that a reader pastes as proof of coverage, and the run still exited 0.
     """
     try:
         top = target.resolve()
     except OSError:
+        if unlistable is not None:
+            unlistable.append(target)
         return
     seen: set[Path] = set()
     stack = [target]
@@ -231,6 +237,8 @@ def _walk(target: Path):
         try:
             here = directory.resolve()
         except OSError:
+            if unlistable is not None:
+                unlistable.append(directory)
             continue
         if here in seen:
             continue
@@ -238,6 +246,8 @@ def _walk(target: Path):
         try:
             entries = sorted(directory.iterdir())
         except OSError:
+            if unlistable is not None:
+                unlistable.append(directory)
             continue
         for entry in entries:
             if not entry.is_dir():
@@ -275,9 +285,31 @@ def _reached_by(p: Path, target: Path) -> tuple[str, ...]:
             return ()
 
 
+def _would_not_open(p: Path) -> bool:
+    """Is this a path the walk found and nothing can read?
+
+    A link pointing at nothing and a link pointing at itself both answer False
+    to `is_file()`, exactly like a directory does, so both were dropped in the
+    same breath as an ordinary skip. `lstat` sees the link itself; `stat`
+    follows it. Something that is there under its own name and gone under the
+    name it points at is a file this run could not read, not a file that was
+    never there.
+    """
+    try:
+        p.lstat()
+    except OSError:
+        return True
+    try:
+        p.stat()
+    except OSError:
+        return True
+    return False
+
+
 def collect(targets: list[Path],
             skipped: list[Path] | None = None,
-            unread: list[Path] | None = None) -> list[Path]:
+            unread: list[Path] | None = None,
+            unopenable: list[Path] | None = None) -> list[Path]:
     """Every publishable text file under `targets`, sorted, deduplicated.
 
     A named directory is walked as named and never widened to its repository:
@@ -300,9 +332,14 @@ def collect(targets: list[Path],
         if not target.is_dir():
             files.append(target)
             continue
-        for p in _walk(target):
-            if not p.is_file():
-                continue
+        # Filled by the walk as it goes, and read after it finishes, because the
+        # skip list is applied HERE and the walk does not know it.
+        shut: list[Path] = []
+        for p in _walk(target, shut):
+            try:
+                readable = p.is_file()
+            except OSError:
+                readable = False
             # DIRECTORY components only. Matching the whole path meant a
             # published file NAMED `build` was dropped, and reported as a
             # directory nobody could go and look at.
@@ -313,6 +350,11 @@ def collect(targets: list[Path],
             # `venv`, the skip list dropped it as vendored, and a tree carrying
             # a live literal exited 0 with the skip printed as a courtesy.
             parts = _reached_by(p, target)
+            # THE SKIP LIST OUT-RANKS THE CENSUS, and putting the census first
+            # was a wrong verdict: a dependency directory is full of links to
+            # things nobody installed, so naming each one turned a clean tree's
+            # exit 0 into exit 1. This gate does not read a vendored tree, so it
+            # owes no account of what it could not read in one.
             if SKIP_DIRS.intersection(parts):
                 if skipped is not None and not VCS_DIRS.intersection(parts):
                     # The TOP-MOST skipped directory, not the file. Naming
@@ -322,11 +364,26 @@ def collect(targets: list[Path],
                                if part in SKIP_DIRS)
                     skipped.append(target.joinpath(*parts[:cut + 1]))
                 continue
+            if not readable:
+                # THREE WAYS TO BE NOT-A-FILE AND ONLY ONE OF THEM IS ORDINARY.
+                # A link to nothing and a link to itself left here in silence,
+                # so a published tree could hold either and the run reported
+                # full coverage of what it had actually skipped.
+                if unopenable is not None and _would_not_open(p):
+                    unopenable.append(p)
+                continue
             if not publishable(p):
                 if unread is not None:
                     unread.append(p)
                 continue
             files.append(p)
+        for d in shut:
+            # `_reached_by` answers about a file, so ask about a child of the
+            # directory to get the directory's own name into the parts.
+            if SKIP_DIRS.intersection(_reached_by(d / "_", target)):
+                continue
+            if unopenable is not None:
+                unopenable.append(d)
     # Deduplicated by RESOLVED path, because two names for one file -- a link
     # and its target, a directory reached twice -- are one file to scan.
     out: dict[Path, Path] = {}
@@ -1056,7 +1113,8 @@ def _refuse_squashed(out: list[str], rel: str, squashed: str,
 def scan(paths: list[Path], root: Path,
          refused: tuple[str, ...] = (),
          anchors: tuple[frozenset[str], ...] = (),
-         unread: list[Path] | None = None) -> list[str]:
+         unread: list[Path] | None = None,
+         unopenable: list[Path] | None = None) -> list[str]:
     out: list[str] = []
     for p in sorted(paths):
         rel = str(p.relative_to(root) if p.is_relative_to(root) else p)
@@ -1066,6 +1124,13 @@ def scan(paths: list[Path], root: Path,
             # A NAMED target that is not there is LOUD. It is the misspelled
             # path, and reporting it as a file that could not be decoded would
             # turn an exit 1 into a line in the not-scanned census.
+            # KEPT APART FROM THE UNDECODABLE ONES, because they are different
+            # sentences: one says the bytes are not text, this one says nobody
+            # opened the file. Both are "not read", and the summary counted
+            # neither -- so a tree holding an unopenable file announced coverage
+            # it did not have, on exactly the run where the number matters.
+            if unopenable is not None:
+                unopenable.append(p)
             out.append(f"{rel}:1 E-READ {exc}")
             continue
         if text is None:
@@ -1237,7 +1302,12 @@ def main(argv: list[str]) -> int:
     targets = [Path(a).resolve() for a in argv] if argv else [root]
     skipped: list[Path] = []
     unread: list[Path] = []
-    files = collect(targets, skipped, unread)
+    # THE NOT-READ THE WALK FOUND, as opposed to the not-read the reader found.
+    # These never reach `files`, so they are never subtracted from the scanned
+    # count -- they are added to the census and to the defect lines, because a
+    # subtree nobody may list is exactly the shape a leak hides in.
+    unwalkable: list[Path] = []
+    files = collect(targets, skipped, unread, unwalkable)
     # Shown relative to the checkout when it is inside one, absolute when it is
     # not. The first version filtered on `is_relative_to(root)` and printed
     # NOTHING for a named target outside this package's own checkout -- so
@@ -1305,7 +1375,26 @@ def main(argv: list[str]) -> int:
     # below counts it -- counted as scanned it would read exactly like a clean
     # one, which is how a UTF-16 file carrying a refused word passed.
     undecodable: list[Path] = []
-    hits = scan(files, root, refused, anchors, undecodable)
+    unopenable: list[Path] = []
+    hits = scan(files, root, refused, anchors, undecodable, unopenable)
+    for p in unwalkable:
+        rel = str(p.relative_to(root) if p.is_relative_to(root) else p)
+        hits.insert(0, f"{rel}:1 E-READ nothing here could be read")
+    # AND THE FOURTH EMPTY SET, which is the one the other three cannot see: a
+    # run that walked files, held words and anchors, and could not READ any of
+    # it. A tree of bytes no encoding accepts reaches it, and the summary called
+    # those files "scanned" because it counted what was WALKED. A push hook
+    # reads the exit code, and this state exited 0 like the other three did
+    # before they were named (round-12 F13).
+    # NOT the unopenable ones: a path that would not open is already an exit 1
+    # with a defect line naming it, and answering it here would replace that
+    # sentence with a vaguer one about encodings.
+    if require and files and len(undecodable) == len(files):
+        print(f"{PROG}: {REQUIRE_FLAG} was asked for and none of the "
+              f"{len(files)} file(s) walked under "
+              f"{', '.join(str(t) for t in targets)} is text this reader can "
+              f"make, so nothing in them was looked at.", file=sys.stderr)
+        return 2
     for suffix, count in sorted(_by_suffix(undecodable).items()):
         print(f"# not scanned: {count} {suffix} file(s); the bytes are not text "
               f"this reader can make, so a leak in one is not read",
@@ -1329,10 +1418,23 @@ def main(argv: list[str]) -> int:
     # beside them hold the same recording's timing in seconds and contribute
     # nothing, so most caption windows would not be refused if published. A count
     # whose scope is not written beside it gets quoted as the whole thing.
-    print(f"# {len(files)} file(s) scanned under {walked}, {len(refused)} "
-          f"refused literal(s) and {len(anchors)} anchor set(s) from the notes' "
-          f"own pages in force, {len(hits)} corpus reference(s){reach}",
-          file=sys.stderr)
+    # READ, not walked. This line is the artifact a reader pastes as proof of
+    # coverage, and it counted the files this run opened rather than the files
+    # it managed to make text of -- so a tree half of which is not text read as
+    # a tree fully scanned. The two numbers are the same on a clean run and the
+    # difference is the whole point on any other.
+    read = len(files) - len(undecodable) - len(unopenable)
+    notes = []
+    if undecodable:
+        notes.append(f"{len(undecodable)} not text this reader can make")
+    shut = len(unopenable) + len(unwalkable)
+    if shut:
+        notes.append(f"{shut} that would not open")
+    unread_note = f" ({', '.join(notes)})" if notes else ""
+    print(f"# {read} file(s) scanned under {walked}{unread_note}, "
+          f"{len(refused)} refused literal(s) and {len(anchors)} anchor set(s) "
+          f"from the notes' own pages in force, {len(hits)} corpus "
+          f"reference(s){reach}", file=sys.stderr)
     return 1 if hits else 0
 
 
