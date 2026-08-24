@@ -2374,6 +2374,60 @@ def scan_corpus(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(wq_policy, "_CACHED", None)
 
 
+def test_a_scan_with_nothing_in_force_cannot_be_quoted_as_clean(
+        tmp_path, monkeypatch, capsys):
+    """A zero that means "nothing was looked for" is not the zero a reader quotes.
+
+    Run the scanner without the corpus and it prints `0 refused literal(s) and
+    0 anchor set(s) ... in force, 0 corpus reference(s)` and exits 0. Pointed at
+    the corpus it loads a thousand anchor sets and prints the same trailing
+    zero, and only that run carries evidence. The line does not tell the two
+    apart, so the shorter command produces a clean-looking artifact from a run
+    that compared nothing.
+    """
+    from watchquality import wq_corpus_scan as wcs
+    from watchquality import wq_policy
+
+    monkeypatch.delenv("WATCH_QUALITY_POLICY", raising=False)
+    monkeypatch.delenv("WATCH_QUALITY_ROOT", raising=False)
+    monkeypatch.setenv("WATCH_QUALITY_NO_POLICY", "1")
+    monkeypatch.setattr(wq_policy, "_CACHED", None)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_text("# an ordinary page\n", encoding="utf-8")
+
+    code = wcs.main([str(tree)])
+
+    summary = [line for line in capsys.readouterr().err.splitlines()
+               if "corpus reference(s)" in line]
+    assert code == 0
+    assert len(summary) == 1, summary
+    assert "COULD NOT HAVE FOUND that class" in summary[0], summary[0]
+
+
+def test_a_scan_with_words_in_force_is_not_marked_as_blind(tmp_path,
+                                                           monkeypatch,
+                                                           capsys):
+    """The control: a run that really compared must read as a result.
+
+    A warning printed on every run is a warning nobody reads, and it would make
+    the honest artifact unquotable along with the empty one.
+    """
+    from watchquality import wq_corpus_scan as wcs
+
+    scan_corpus(tmp_path, monkeypatch)
+    tree = tmp_path / "published"
+    tree.mkdir()
+    (tree / "a.md").write_text("# an ordinary page\n", encoding="utf-8")
+
+    code = wcs.main(["--require-literals", str(tree)])
+
+    summary = [line for line in capsys.readouterr().err.splitlines()
+               if "corpus reference(s)" in line]
+    assert code == 0
+    assert "COULD NOT HAVE FOUND" not in summary[0], summary[0]
+
+
 def test_a_scan_that_could_not_read_anything_is_refused(tmp_path, monkeypatch):
     """The fourth incapacity, in the flag that names three.
 

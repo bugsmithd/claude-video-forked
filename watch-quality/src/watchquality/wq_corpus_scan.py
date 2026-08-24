@@ -1431,10 +1431,25 @@ def main(argv: list[str]) -> int:
     if shut:
         notes.append(f"{shut} that would not open")
     unread_note = f" ({', '.join(notes)})" if notes else ""
+    # A ZERO THAT MEANS "NOTHING WAS LOOKED FOR" IS NOT THE ZERO A READER
+    # QUOTES. Run without the corpus and the trailing `0 corpus reference(s)`
+    # is a floor: no words and no anchor sets were in force, so that class
+    # could not have been found. Pointed at the corpus the same line reads the
+    # same and only THAT run carries evidence. `--require-literals` refuses the
+    # empty state outright; a bare run is a legitimate thing to ask for, so it
+    # exits 0 and says in the artifact itself which zero this is.
+    # NAMED BY CLASS, not by the trailing number: a run can hold words and no
+    # anchor sets, find two references on the words, and still be blind to the
+    # class the anchor sets exist for. Saying "that zero" would be false on
+    # exactly that run.
+    blind = [name for name, held in (("words", refused), ("anchor sets", anchors))
+             if not held]
+    looked = (f" -- no {' and no '.join(blind)} were in force, so this run "
+              f"COULD NOT HAVE FOUND that class" if blind else "")
     print(f"# {read} file(s) scanned under {walked}{unread_note}, "
           f"{len(refused)} refused literal(s) and {len(anchors)} anchor set(s) "
           f"from the notes' own pages in force, {len(hits)} corpus "
-          f"reference(s){reach}", file=sys.stderr)
+          f"reference(s){reach}{looked}", file=sys.stderr)
     return 1 if hits else 0
 
 

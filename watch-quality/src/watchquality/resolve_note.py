@@ -865,7 +865,9 @@ def check_sidecar(root: Path, frontmatter: str, rel) -> list[str]:
 
 
 def refresh_sidecar(root: Path, note: Path,
-                    only: set[str] | None = None) -> tuple[list[str], int]:
+                    only: set[str] | None = None,
+                    moves: list[tuple[str, int | None, int]] | None = None
+                    ) -> tuple[list[str], int]:
     """Re-resolve a sidecar's recorded quotes and rewrite line and sha256.
 
     E-CITE-STALE conflates two very different states: the cited file changed
@@ -878,6 +880,14 @@ def refresh_sidecar(root: Path, note: Path,
     `only` restricts the refresh to rows citing those paths. `--stamp` uses it
     to repair the rows its own writes invalidated, without also papering over
     staleness that has nothing to do with this run.
+
+    `moves` collects `(cited, old line, new line)` for every row rewritten. A
+    COUNT OF REFRESHED ROWS IS NOT A DESCRIPTION OF WHAT MOVED: one refresh was
+    reported as compensating a three-line move, and the anchor had in fact gone
+    eighty-five lines, eighty-two of which predated the change being reviewed.
+    The corpus was already red and the report attributed all of it to the work
+    in front of it. Both line numbers travel with the count so that cannot be
+    said again without contradicting the output.
     """
     rel = note.relative_to(root) if note.is_relative_to(root) else note
     text, why = safe_read(note)
@@ -941,6 +951,16 @@ def refresh_sidecar(root: Path, note: Path,
             continue
         rows.append(f"{cited}\t{linemap[at]}\t{current}\t{quote}")
         refreshed += 1
+        if moves is not None:
+            # None, not a sentinel number. `check_sidecar` never parses this
+            # column, so nothing else reports it, and a number here would be
+            # subtracted like a real one -- printing a distance that was never
+            # measured, which is the defect this report exists to stop.
+            try:
+                was: int | None = int(_line)
+            except ValueError:
+                was = None
+            moves.append((cited, was, linemap[at]))
     if refreshed and not defects:
         side.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return defects, refreshed
@@ -3354,14 +3374,34 @@ def main(argv: list[str], root: Path | None = None) -> int:
 
     if args.refresh_sidecar:
         defects, refreshed = [], 0
+        # NAMED, NOT COUNTED. `--stamp` refreshes only the rows its own writes
+        # invalidated; this path refreshes anything that has gone stale, and the
+        # two used to print the same sentence. A repair of drift that predates
+        # the change being reviewed then read exactly like the bookkeeping the
+        # change really did owe, and one review said so in as many words.
+        moves: list[tuple[str, int | None, int]] = []
         for f in files:
-            d, n = refresh_sidecar(root, f)
+            d, n = refresh_sidecar(root, f, moves=moves)
             defects.extend(d)
             refreshed += n
         for line in defects:
             print(line)
+        for cited, was, now in moves:
+            span = (f"({abs(now - was)} line(s))" if was is not None else
+                    "(distance unknown: the row's recorded line was not a "
+                    "number)")
+            print(f"# moved: {cited} {was if was is not None else '?'} -> "
+                  f"{now} {span}", file=sys.stderr)
+        # NOT a claim that the drift is undeclared -- this path cannot tell.
+        # `--stamp` names the rows it invalidated and its moves are its own;
+        # nothing scopes this one, so the caller is the only one who can say
+        # whether a move above belongs to the change in front of them. Saying
+        # "drift this run did not cause" here was false the first time it ran:
+        # the move was nineteen lines and the edit above it was nineteen lines.
+        drift = (" -- nothing scoped this refresh, so a move above may predate "
+                 "the change being reviewed" if moves else "")
         print(f"# {len(files)} notes, {refreshed} sidecar row(s) refreshed, "
-              f"{len(defects)} defects", file=sys.stderr)
+              f"{len(defects)} defects{drift}", file=sys.stderr)
         return 1 if defects else 0
 
     if args.write:

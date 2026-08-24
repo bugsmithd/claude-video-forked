@@ -220,9 +220,13 @@ def test_every_number_in_the_summary_line_is_measured(tmp_path: Path, capsys):
         wq_policy.load(refresh=True)
     header = [l for l in capsys.readouterr().err.splitlines()
               if "file(s) scanned under" in l]
+    # The blindness clause is part of the line and belongs in the comparison:
+    # this fixture holds words and no anchor sets, so the run really could not
+    # have found the class the anchor sets exist for, whatever its two hits say.
     assert header == [f"# 2 file(s) scanned under {tree / 'a'}, {tree / 'b'}, "
                       f"2 refused literal(s) and 0 anchor set(s) from the notes' own pages in force, "
-                      f"2 corpus reference(s)"]
+                      f"2 corpus reference(s) -- no anchor sets were in force, "
+                      f"so this run COULD NOT HAVE FOUND that class"]
 
 
 def test_a_refused_word_is_refused_in_any_case():

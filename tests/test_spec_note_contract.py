@@ -947,6 +947,71 @@ def test_an_edit_above_the_quote_is_repaired_by_a_refresh(corpus):
     assert side.read_text(encoding="utf-8").split("\t")[1] == "2"
 
 
+def test_a_refresh_says_how_far_the_anchor_moved(corpus):
+    """A refresh reported as bookkeeping was repairing an undeclared defect.
+
+    One refresh was described as compensating a three-line move; measured, the
+    anchor went eighty-five lines, and eighty-two of those predated the change
+    being reviewed. The corpus was already red and the report attributed all of
+    it to the work in front of it. A move nobody can see is a move nobody can
+    argue with, so the old and the new line both travel with the count.
+    """
+    note = write_note(corpus, "video_id: VID\n", "body\n")
+    cited = corpus / "docs" / "x.md"
+    sidecar(corpus, f"docs/x.md\t1\t{rn.sha256(cited)}\tThe first pillar\n")
+    cited.write_text("one.\ntwo.\nthree.\n" + DOC, encoding="utf-8")
+    moves: list[tuple[str, int, int]] = []
+
+    defects, refreshed = rn.refresh_sidecar(corpus, note, moves=moves)
+
+    assert (defects, refreshed) == ([], 1)
+    assert moves == [("docs/x.md", 1, 4)]
+
+
+def test_a_move_from_a_line_nobody_recorded_is_not_given_a_distance(corpus,
+                                                                    capsys):
+    """The whole point of this report is that a printed distance is the real one.
+
+    A row whose recorded line is not a number has no distance to print. Putting
+    a sentinel in the subtraction produces a number that looks exactly like a
+    measurement and is not one -- which is the defect the report exists to stop,
+    reached by a different input.
+    """
+    note = write_note(corpus, "video_id: VID\n", "body\n")
+    cited = corpus / "docs" / "x.md"
+    sidecar(corpus, f"docs/x.md\tone\t{rn.sha256(cited)}\tThe first pillar\n")
+    cited.write_text("one.\ntwo.\nthree.\n" + DOC, encoding="utf-8")
+
+    code = rn.main(["--refresh-sidecar", str(note)], root=corpus)
+
+    said = capsys.readouterr().err
+    assert code == 0
+    assert "line(s)" not in said, said
+    assert "docs/x.md ? -> 4" in said, said
+    assert "recorded line was not a number" in said, said
+
+
+def test_a_refresh_nobody_scoped_says_a_move_may_predate_the_change(corpus,
+                                                                    capsys):
+    """`--stamp` repairs the rows IT invalidated; a bare refresh repairs anything.
+
+    The two are different claims and the run printed one number for both, so a
+    repair of staleness that predates the change reads exactly like the
+    bookkeeping the change really did owe.
+    """
+    note = write_note(corpus, "video_id: VID\n", "body\n")
+    cited = corpus / "docs" / "x.md"
+    sidecar(corpus, f"docs/x.md\t1\t{rn.sha256(cited)}\tThe first pillar\n")
+    cited.write_text("one.\ntwo.\nthree.\n" + DOC, encoding="utf-8")
+
+    code = rn.main(["--refresh-sidecar", str(note)], root=corpus)
+
+    said = capsys.readouterr().err
+    assert code == 0
+    assert "docs/x.md 1 -> 4" in said, said
+    assert "may predate the change being reviewed" in said, said
+
+
 def test_an_edit_that_leaves_the_length_unchanged_is_caught_by_the_hash(corpus):
     """Only the sha can notice this one; a size or a line count cannot."""
     cited = corpus / "docs" / "x.md"
