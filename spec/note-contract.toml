@@ -821,6 +821,37 @@ case = "a file in the audit directory that is not a tab-separated file, which th
 test = "tests/test_spec_note_contract.py::test_a_file_in_the_audit_directory_that_is_not_a_tsv_is_never_looked_at"
 kind = "pytest"
 
+[[rule]]
+id = "VIDEO-TWICE"
+code = "E-VIDEO-TWICE"
+layer = "note-contract"
+owner = "resolve_note.duplicate_videos"
+trigger = "a whole run has finished checking notes and the corpus is swept for the video ids it declares"
+refuses = "two notes naming one video, because reviews and the audit are addressed by video id alone: one directory of reports answers for both notes, the roll-call cannot tell which note a report read, and the header pinning the note body reds whichever note it did not read"
+excused_by = []
+exit = 1
+
+[[rule.neighbour]]
+case = "two notes carrying one video id, where both filenames must be named"
+test = "tests/test_spec_note_contract.py::test_two_notes_naming_one_video_are_reported"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one note per video, the state the shipped corpus is in, which must NOT be refused"
+test = "tests/test_spec_note_contract.py::test_one_note_per_video_is_not_reported"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two notes that declare no video id at all, which share nothing and must NOT read as a pair"
+test = "tests/test_spec_note_contract.py::test_a_note_with_no_video_id_is_not_a_duplicate_of_another"
+kind = "pytest"
+[[rule.neighbour]]
+case = "the exit code this row declares, reached through the command rather than through the sweep called directly"
+test = "tests/test_spec_note_contract.py::test_a_corpus_with_two_notes_on_one_video_exits_one"
+kind = "pytest"
+[[rule.neighbour]]
+case = "two notes sharing a filename in two subdirectories, where a basename would name neither"
+test = "tests/test_spec_note_contract.py::test_two_notes_with_one_filename_are_named_apart"
+kind = "pytest"
+
 # --- enumerations: the count is derived, never typed -------------------------
 
 [[rule]]

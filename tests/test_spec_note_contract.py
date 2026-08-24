@@ -1215,6 +1215,112 @@ def test_an_empty_audit_file_reads_fine(corpus):
 
 
 # ---------------------------------------------------------------------------
+# TWO NOTES, ONE VIDEO
+# ---------------------------------------------------------------------------
+
+def test_two_notes_naming_one_video_are_reported(corpus):
+    """One note per video is the shape everything else here already assumes.
+
+    Reviews are addressed by video id alone, so two notes about one video share
+    one directory of reports and one set answers for both. The roll-call cannot
+    tell which note a report read, and the header pinning the note body reds
+    whichever note it did not read -- a note goes red for a report that was
+    never about it. The sidecar is addressed the same way and would be shared
+    too. The note filer refuses to create the second note, so this says the
+    same thing about a corpus that reached the state some other way.
+
+    Would fail if: the sweep stops reading membership from the corpus, or
+    starts keying by anything but the video id.
+    """
+    write_note(corpus, "video_id: SAME\n", "body\n", name="2026-08-20--a--SAME.md")
+    write_note(corpus, "video_id: SAME\n", "body\n", name="2026-08-21--b--SAME.md")
+
+    defects = rn.duplicate_videos(corpus)
+
+    assert len(defects) == 1, defects
+    assert "E-VIDEO-TWICE" in defects[0], defects
+    # Both notes are named. A defect that names one of them tells its reader to
+    # look at the file that is not necessarily the newer or the wrong one.
+    assert "2026-08-20--a--SAME.md" in defects[0], defects
+    assert "2026-08-21--b--SAME.md" in defects[0], defects
+
+
+def test_two_notes_with_one_filename_are_named_apart(corpus):
+    """A basename names neither file when two directories hold the same name.
+
+    The sweep walks subdirectories, so two notes can share a filename and a
+    video id at once. Printed by basename the line reads `x.md, x.md` and
+    anchors at a path holding neither -- the defect this repository already
+    convicted one layer over, where a report name left every case green while
+    the message named nothing a reader could open.
+    """
+    (corpus / "notes" / "x").mkdir(parents=True, exist_ok=True)
+    (corpus / "notes" / "y").mkdir(parents=True, exist_ok=True)
+    for where in ("x", "y"):
+        write_note(corpus, "video_id: SAME\n", "body\n",
+                   name=f"{where}/2026-08-20--a--SAME.md")
+
+    defects = rn.duplicate_videos(corpus)
+
+    assert len(defects) == 1, defects
+    assert "notes/x/2026-08-20--a--SAME.md" in defects[0], defects
+    assert "notes/y/2026-08-20--a--SAME.md" in defects[0], defects
+    # And the anchor opens. A line anchored on a bare basename points at a
+    # path that holds neither of the two files it is about.
+    assert defects[0].startswith("notes/x/2026-08-20--a--SAME.md:1 "), defects
+
+
+def test_the_sweep_anchors_under_the_notes_directory_the_policy_names(corpus,
+                                                                      monkeypatch):
+    """`notes/` is this corpus's setting, not a constant to paste into a line."""
+    monkeypatch.setattr(rn.POLICY, "notes_dir", lambda: "notes")
+    write_note(corpus, "video_id: SAME\n", "body\n", name="2026-08-20--a--SAME.md")
+    write_note(corpus, "video_id: SAME\n", "body\n", name="2026-08-21--b--SAME.md")
+
+    defects = rn.duplicate_videos(corpus)
+
+    assert defects[0].startswith(f"{rn.POLICY.notes_dir()}/"), defects
+
+
+def test_one_note_per_video_is_not_reported(corpus):
+    """The shipped corpus is in this state, so the sweep has to stay quiet."""
+    write_note(corpus, "video_id: AAA\n", "body\n", name="2026-08-20--a--AAA.md")
+    write_note(corpus, "video_id: BBB\n", "body\n", name="2026-08-21--b--BBB.md")
+    assert rn.duplicate_videos(corpus) == []
+
+
+def test_a_corpus_with_two_notes_on_one_video_exits_one(corpus, capsys):
+    """The row declares exit 1, and nothing reached the code that returns it.
+
+    Every other case here calls the sweep directly, so the one line that puts
+    it on the check path was asserted by no test: deleting that line left the
+    whole suite's failures identical. A declared exit code pinned by nothing is
+    the defect the note layer already convicted, where every cited case ran a
+    substituted function and never the command.
+    """
+    write_note(corpus, "video_id: SAME\n", "body\n", name="2026-08-20--a--SAME.md")
+    write_note(corpus, "video_id: SAME\n", "body\n", name="2026-08-21--b--SAME.md")
+
+    code = rn.main(["--check", str(corpus / "notes")], root=corpus)
+
+    said = capsys.readouterr()
+    assert code == 1, said
+    assert "E-VIDEO-TWICE" in said.out, said
+
+
+def test_a_note_with_no_video_id_is_not_a_duplicate_of_another(corpus):
+    """Absence is not a shared id. Two notes declaring nothing share nothing.
+
+    A dict keyed on the match would key them both under the same empty value
+    and report a pair that does not exist -- and a note with no video id is
+    already answered by its own defect.
+    """
+    write_note(corpus, "title: a\n", "body\n", name="2026-08-20--a--AAA.md")
+    write_note(corpus, "title: b\n", "body\n", name="2026-08-21--b--BBB.md")
+    assert rn.duplicate_videos(corpus) == []
+
+
+# ---------------------------------------------------------------------------
 # SIDECAR-ORPHAN
 # ---------------------------------------------------------------------------
 

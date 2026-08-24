@@ -531,7 +531,13 @@ def test_no_rule_id_is_used_twice():
 # echo the sha256 of the empty string, a published constant, so the one input
 # the mechanism exists to refuse was the input it accepted. A brief now has to
 # describe itself before it can grade anything.
-FROZEN_RULE_COUNT = 146
+# 146 -> 147 on 2026-08-24, for VIDEO-TWICE, on an explicit decision about the
+# published surface: one note per video, enforced, rather than reports learning
+# to name the note they read. The invariant was already load-bearing and
+# unwritten -- reviews and the audit are addressed by video id alone, and the
+# note filer refuses the second note in its own words -- so the rule writes
+# down a shape three other mechanisms already assume.
+FROZEN_RULE_COUNT = 147
 
 
 def test_the_table_is_closed():

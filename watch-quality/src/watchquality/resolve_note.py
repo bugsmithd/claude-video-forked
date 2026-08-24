@@ -2064,7 +2064,12 @@ def corpus_notes(root: Path) -> list[Path]:
 
 
 def declared_by_corpus(root: Path) -> dict[str, list[str]]:
-    """{video_id: the lanes that note declares}, over the whole corpus."""
+    """{video_id: the lanes that note declares}, over the whole corpus.
+
+    ONE NOTE PER VIDEO, which is why keying on the id is safe here. Two notes
+    naming one video would leave only the later one's lanes in this map, in
+    silence; `duplicate_videos` is what refuses that corpus, and it says why.
+    """
     out: dict[str, list[str]] = {}
     for f in corpus_notes(root):
         text, _ = safe_read(f)
@@ -2081,6 +2086,51 @@ def declared_by_corpus(root: Path) -> dict[str, list[str]]:
 def corpus_video_ids(root: Path) -> set[str]:
     """Every video_id the corpus declares, whatever this run was pointed at."""
     return set(declared_by_corpus(root))
+
+
+def duplicate_videos(root: Path) -> list[str]:
+    """Notes that share a video id, which everything downstream assumes cannot.
+
+    ONE NOTE PER VIDEO IS AN INVARIANT AND NOTHING CHECKED IT. Reviews are
+    addressed by video id alone, so two notes about one video share a single
+    directory of reports and one set of reports answers for both: the roll-call
+    cannot tell which note a report read, and the header that pins the note
+    body reds whichever note it did not read. A note goes red for a report that
+    was never about it, and the repair it asks for is impossible. The sidecar
+    is addressed the same way and would be shared too, and
+    `declared_by_corpus` keys on the id, so the second note's lanes replace the
+    first's in the corpus view without a word.
+
+    The note filer refuses to create the second note, which closes the path by
+    which the state is normally reached and closes nothing about a corpus that
+    got there another way -- a note written by hand, a video id edited after
+    the fact, a merge. Membership is read from the corpus for the same reason
+    `orphan_sidecars` reads it there: the answer is about the corpus and not
+    about the files this run was handed.
+    """
+    seen: dict[str, list[str]] = {}
+    for f in corpus_notes(root):
+        text, _ = safe_read(f)
+        split = split_frontmatter(text) if text else None
+        if not split:
+            continue
+        m = RE_VIDEO_ID.search(split[0])
+        # No id is not a shared id. Two notes declaring nothing would key
+        # together under an absent value and read as a pair that is not one,
+        # and a note with no video id already has its own defect.
+        if m:
+            # NAMED BY PATH, not by basename. The walk descends, so two notes
+            # can share a filename and a video id at once, and a basename then
+            # prints `x.md, x.md` and anchors at a path holding neither -- the
+            # defect this package already convicted for report names, where
+            # every case stayed green while the line named nothing a reader
+            # could open.
+            where = f.relative_to(root) if f.is_relative_to(root) else f
+            seen.setdefault(m.group(1), []).append(where.as_posix())
+    return [f"{names[0]}:1 E-VIDEO-TWICE {len(names)} notes name video "
+            f"{vid}: {', '.join(names)}; reviews and the audit are addressed "
+            f"by video id, so one note's reports answer for the other"
+            for vid, names in sorted(seen.items()) if len(names) > 1]
 
 
 def stale_exemptions(root: Path) -> list[str]:
@@ -3424,6 +3474,7 @@ def main(argv: list[str], root: Path | None = None) -> int:
         if stats:
             rows.append(stats)
     defects += orphan_sidecars(root, files)
+    defects += duplicate_videos(root)
 
     # The peer band is a property of the corpus, so it can only be checked once
     # every note has been counted.
