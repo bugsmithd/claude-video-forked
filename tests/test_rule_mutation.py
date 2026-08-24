@@ -75,11 +75,26 @@ def _rows_naming_no_rule(ledger: dict[str, str], rules: list[dict]) -> list[str]
     """
     return sorted(set(ledger) - {r["id"] for r in rules})
 
+
+def _rows_now_payable(ledger: dict[str, str],
+                      survivors: dict[str, list[str]]) -> list[str]:
+    """Ledger ids the latest measurement found pinned after all.
+
+    A row is a dated finding, not a permanent exemption, and every other
+    ledger in this project ages. This one could not: the pin test skipped a
+    ledgered rule outright, so a rule somebody has since written a case for
+    keeps its row until a person remembers to try it by hand. `survivors`
+    carries what the mutation run just measured for each id -- an empty list
+    is a rule nothing survives, which is the definition of pinned, which is
+    the debt paid.
+    """
+    return sorted(i for i in ledger if i in survivors and not survivors[i])
+
 # The size of the ledger, committed. `spec/unpinned.toml` says it may only
 # shrink, and nothing enforced that: adding a row turns the pin test into a skip
 # for that rule, silently, with the suite green. Lower this in the same commit
 # as the row you delete. Raising it is the edit the sentence forbids.
-LEDGER_CAP = 2
+LEDGER_CAP = 1
 
 
 class _Mutator(ast.NodeTransformer):
@@ -958,6 +973,30 @@ def test_a_ledger_row_naming_no_rule_is_reported_rather_than_silent():
     assert _rows_naming_no_rule(rotten, RULES) == ["no-such-rule-id"]
 
 
+def test_a_ledger_row_whose_rule_now_pins_is_named_payable():
+    """The ledger could only shrink by somebody remembering to try.
+
+    A row records that a rule failed the measurement on a date. Nothing
+    re-measured it: the pin test skipped a ledgered rule, so the row outlived
+    the finding, and a rule that has since earned a case keeps its exemption
+    for ever. Every other ledger here ages -- a row cannot reach a note filed
+    after its own date -- and this one did not.
+
+    Would fail if: a paid row stops being told apart from an owed one.
+    """
+    ledger = {"OWED": "2026-01-01 ten mutants survived", "PAID": "2026-01-01"}
+
+    # An owed row: its rule still survives something, so the row stands.
+    assert _rows_now_payable(ledger, {"OWED": ["flip the guard"]}) == []
+
+    # A paid row: nothing survives its rule any more, so the row is named.
+    assert _rows_now_payable(ledger, {"PAID": []}) == ["PAID"]
+
+    # A row the run did not reach is neither. Silence is not a measurement,
+    # and calling it one would retire a row nobody measured.
+    assert _rows_now_payable(ledger, {}) == []
+
+
 def test_the_constructed_wrecking_ball_is_refused_over_the_real_roll_call():
     """The attack that produced this fix, rebuilt from the shipped source.
 
@@ -1015,9 +1054,36 @@ def test_every_rule_is_pinned_by_a_case_it_names(rule, sandbox):
     by nothing -- and no reviewer had to form an opinion for that to be true.
     """
     if rule["id"] in UNPINNED:
-        pytest.skip(f"ledgered: {UNPINNED[rule['id']]}")
+        pytest.skip(f"ledgered: {UNPINNED[rule['id']]} -- re-measured by "
+                    f"test_a_ledgered_rule_is_re_measured_every_run")
     survived = _mutants_that_survive(rule, sandbox)
     assert not survived, (
         f"{rule['id']}: owner {rule['owner']} survives "
         f"{len(survived)} mutation(s) with every cited case green: "
         f"{survived[:3]}")
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("rule_id", sorted(UNPINNED))
+def test_a_ledgered_rule_is_re_measured_every_run(rule_id, sandbox):
+    """The row is a claim, and this is where the claim is put to the question.
+
+    A dated finding that nothing re-runs is an exemption with a date printed
+    on it. The cadence is every run of this file: the same measurement the
+    row was written from, made again, against the rule as it stands today.
+
+    The assertion is inverted on purpose. A ledgered rule is claimed to
+    survive its mutations; when it stops surviving them the row has been paid
+    and this goes red asking for it to be deleted. Red for a debt paid is the
+    one direction of failure worth having, because the alternative is the row
+    outliving the finding in silence.
+
+    Would fail if: a rule on the ledger becomes pinned and the row stays.
+    """
+    rule = next(r for r in RULES if r["id"] == rule_id)
+    survived = _mutants_that_survive(rule, sandbox)
+    assert _rows_now_payable(UNPINNED, {rule_id: survived}) == [], (
+        f"{rule_id}: PAYABLE -- no mutation of {rule['owner']} survives its "
+        f"cited cases any more, so the ledger row is paid. Delete it from "
+        f"spec/unpinned.toml and lower `rows` and LEDGER_CAP in the same "
+        f"commit. The row was written {UNPINNED[rule_id].split()[0]}.")

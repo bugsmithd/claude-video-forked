@@ -26,6 +26,35 @@ INERT IS NOT THE SAME AS WRONG. An expectation can be the only witness for a
 behaviour no mutant in the sample reaches, and this harness cannot tell that
 from an expectation that tests nothing. Every count it prints is therefore
 "against the mutants tried", never "against the module".
+
+AND TWO THINGS BOUND WHAT "THE MUTANTS TRIED" COULD EVER REACH, both measured
+rather than argued, both from 2026-08-24.
+
+The first was the sample. Mutants arrive in syntax order and the sample was a
+prefix, so a module of 195 mutants was measured by its first 12 -- six percent
+of the file, none of it past the opening functions. The census reported the
+leak scanner as "1 of 41 expectations witnessed", which reads as a fact about
+those 41 lines and was a fact about where the sample stopped. Drawn across the
+whole list instead, at the same cost, the policy loader went from 0 witnesses
+to 3 and from 1 caught mutant to 5.
+
+IT IS A TRADE, NOT A FREE GAIN, and the first draft of this paragraph named
+only the gains. Across all thirteen modules the sweep went from 47 witnessed
+expectations to 53 and from 102 caught mutants to 92: a prefix concentrates on
+code that mutates loudly, so reaching further finds more distinct witnesses and
+fewer catches. Two modules came out with FEWER witnesses than before,
+`file_review` 8 to 5 and `say_captions` 6 to 4. Nothing here flips a gate --
+the one assertion over the sweep still has 92 catches and 53 witnesses under it
+-- but a reader comparing a module against a census taken before this change is
+comparing two different samples.
+
+The second is fail-fast, and no sampling fixes it. A selftest stops at its
+first failing check, so an expectation is witnessable only by a mutant that
+leaves every earlier expectation passing. `caught_first_at` in the report is
+that tally: on the leak scanner, 10 of the 11 caught mutants are caught first
+by expectation 25, so the 15 after it were never reachable in this run. They
+are unmeasured, not inert, and the difference is the whole reason this file
+refuses to print a verdict on an expectation the sample never got to.
 """
 from __future__ import annotations
 
@@ -89,6 +118,30 @@ def expectations_in(selftest: ast.FunctionDef) -> list[ast.Call]:
                 and not node.keywords):
             out.append(node)
     return sorted(out, key=lambda c: (c.lineno, c.col_offset))
+
+
+def spread(items: list, cap: int) -> list:
+    """At most `cap` items, drawn across the whole list rather than off the top.
+
+    `mutants_for` returns a module's mutants in syntax order, so the first
+    twelve of them are the first twelve statements of the file. On a module of
+    195 mutants that sample never leaves the opening functions, every mutant
+    dies at whichever expectation the selftest reaches first, and the census
+    reports one witness out of forty-one -- a number about the sampling, read
+    as a number about the expectations.
+
+    Same cost, same determinism, later code reached. Ends are kept because the
+    last mutant in the file is the one a prefix can never reach.
+    """
+    if cap <= 0 or not items:
+        return []
+    if len(items) <= cap:
+        return list(items)
+    if cap == 1:
+        return [items[0]]
+    last = len(items) - 1
+    picked = sorted({round(i * last / (cap - 1)) for i in range(cap)})
+    return [items[i] for i in picked]
 
 
 class _Weaken(ast.NodeTransformer):
@@ -224,10 +277,17 @@ def test_which_selftest_expectations_a_mutant_sample_witnesses(module, tree):
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             labels.setdefault(first.value, index)
 
-    mutants = mutants_for(source)[:MUTANT_CAP]
+    available = mutants_for(source)
+    mutants = spread(available, MUTANT_CAP)
     path = tree.package / f"{module}.py"
     original = path.read_text(encoding="utf-8")
     witnessed: dict[int, str] = {}
+    # How many caught mutants each witness caught FIRST. A selftest stops at
+    # its first failing check, so an expectation can only be witnessed by a
+    # mutant that leaves every earlier one passing. Where one expectation
+    # catches the whole sample, the ones after it are unreachable by this
+    # harness rather than inert -- and only this tally tells those apart.
+    caught_at: dict[int, int] = {}
     survived = 0
     unnamed = 0
     timed_out = 0
@@ -253,6 +313,7 @@ def test_which_selftest_expectations_a_mutant_sample_witnesses(module, tree):
                 unnamed += 1
             else:
                 witnessed.setdefault(hit, label)
+                caught_at[hit] = caught_at.get(hit, 0) + 1
     finally:
         path.write_text(original, encoding="utf-8")
 
@@ -260,6 +321,10 @@ def test_which_selftest_expectations_a_mutant_sample_witnesses(module, tree):
     REPORT["modules"][module] = {
         "expectations": len(expectations),
         "labelled": len(labels),
+        # NAMED, NOT IMPLIED. A census read as "n of m expectations witnessed"
+        # is only about the expectations to the extent the sample reached them,
+        # and a reader cannot tell 12 of 12 from 12 of 195 without this line.
+        "mutants_available": len(available),
         "mutants_tried": len(mutants),
         "mutants_caught": caught,
         "mutants_survived": survived,
@@ -267,6 +332,7 @@ def test_which_selftest_expectations_a_mutant_sample_witnesses(module, tree):
         "caught_by_something_unlabelled": unnamed,
         "expectations_witnessed": sorted(witnessed),
         "witnessed": len(witnessed),
+        "caught_first_at": {str(k): v for k, v in sorted(caught_at.items())},
     }
 
     # NOTHING IS ASSERTED PER MODULE, on purpose. A mutant can be caught by an
@@ -275,6 +341,37 @@ def test_which_selftest_expectations_a_mutant_sample_witnesses(module, tree):
     # catches are all of that kind is a finding about where its evidence lives
     # rather than a defect in any one line. The sweep asserts the harness once,
     # below, and everything else is a census.
+
+
+def test_the_mutant_sample_is_drawn_across_the_module_not_off_the_top():
+    """The census said one expectation of forty-one, and meant one of the top.
+
+    `mutants_for` yields in syntax order and the sample was a prefix, so a
+    module of 195 mutants was measured by its first 12 -- six percent of the
+    file, all of it before the code most expectations are about. Reported as
+    "1 of 41 witnessed", which reads as a fact about the expectations and was
+    a fact about the sampling.
+
+    Would fail if: the sample goes back to being a prefix, or stops reaching
+    the last mutant in the file.
+    """
+    items = list(range(100))
+
+    # Off the top is exactly what this refuses.
+    assert spread(items, 12) != items[:12]
+
+    # Both ends are in, so the end of the file is reachable at all.
+    drawn = spread(items, 12)
+    assert len(drawn) == 12
+    assert drawn[0] == 0 and drawn[-1] == 99
+    assert drawn == sorted(drawn), drawn
+
+    # A sample no larger than the list is the list, unchanged and in order.
+    assert spread(items[:5], 12) == items[:5]
+    assert spread([], 12) == [] and spread(items, 0) == []
+
+    # Deterministic: the census is compared across runs and across commits.
+    assert spread(items, 12) == spread(items, 12)
 
 
 @pytest.mark.slow

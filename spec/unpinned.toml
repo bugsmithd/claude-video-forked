@@ -37,10 +37,41 @@
 # the comments, so nothing could notice. A key a test can read is the smallest
 # thing that makes the count checkable, and it moves in the same commit as a
 # row (V4 item 6, V3 Q0).
-rows = 2
+rows = 1
 
 # Rows are written from a measured run, never from memory. An empty table means
 # the run has not been read yet, not that every rule is pinned.
+#
+# AND THE ROWS ARE RE-MEASURED. Until 2026-08-24 a ledgered rule was skipped by
+# the pin test, so a row outlived the finding it recorded: a rule somebody had
+# since written a case for kept its exemption until a person remembered to try
+# it by hand, and the table could only shrink by an act of memory. Every other
+# ledger in this project ages -- a row cannot reach a note filed after its own
+# date -- and this one could not. Each row below is now measured on every run
+# of `tests/test_rule_mutation.py`, with the assertion INVERTED: a ledgered
+# rule is claimed to survive its mutations, and the day it stops surviving them
+# the run goes red and names the row payable.
+#
+# The mechanism found one on its first run. LANE-UNPARSED was written
+# 2026-08-21 from seven mutations of `check_lanes` surviving six cited cases;
+# measured again 2026-08-24 against the same six cases, mutant #8 of twelve --
+# `branch never taken`, landing in the `if unheadered:` that carries the excuse
+# path this rule declares -- reddens one case the rule itself cites:
+#   test_the_header_bypass_stops_at_a_note_filed_after_the_row
+# while four control cases stay green and the module still imports, which is
+# what tells a kill from a wrecking ball. The row is deleted, and `rows` and
+# LEDGER_CAP move in this commit with it. Deleting a row is the edit that needs
+# no argument; what needed one was the years a paid row could have sat here
+# unread.
+#
+# The aim came from the CONTROL, not from the branch. A first draft of the
+# paragraph above said the mutation was killed in the statement printing this
+# rule's own code, "an aimed kill by construction", and independent
+# verification refuted it in the only way that settles such a sentence: the
+# enclosing statement prints THREE rules' codes, `own_branch` is false for all
+# twelve mutants, and this file's own harness refuses that shape as any one
+# rule's branch. The deletion stands on the control route, which is a weaker
+# witness than the branch route and is named here rather than rounded up.
 #
 # FIRST MEASURED RUN, 2026-08-21: 129 of 134 rules pinned, 5 unpinned, six
 # minutes wall clock, no timeouts. An earlier run of the same harness reported
@@ -50,8 +81,8 @@ rows = 2
 # imports AND a case pinning a different function in the same module stays
 # green.
 #
-# SECOND RUN, same day: 132 of 134 rules measured and 132 pinned, leaving the
-# two rows below, in five minutes. Three rows left this table, and only one of
+# SECOND RUN, same day: 132 of 134 rules measured and 132 pinned, leaving two
+# rows, in five minutes. Three rows left this table, and only one of
 # them left because somebody wrote a case. (An earlier draft of this paragraph
 # said "130 of 134 pinned, 4 unpinned" and then, one sentence later, that three
 # rows had left a table of five -- wrong against the run report, against the row
@@ -130,7 +161,7 @@ rows = 2
 # table did not move and no verdict changed. CORPUS-ANCHOR-SET is the new row
 # and it arrived pinned, in its own branch, which is what this file requires of
 # a rule written after 2026-08-21 -- a new rule arrives pinned or it does not
-# arrive. The two rows below are the same two.
+# arrive. The two rows it left were the same two it found.
 #
 # SIXTH RUN, 2026-08-22, twice, after a second round of independent
 # verification took the aim test apart again: 134 of 136 measured, 134 pinned,
@@ -178,17 +209,6 @@ rows = 2
 # function control and does not take a sibling rule as one. Deciding which of
 # the two rows goes is a decision about the published surface, not a harness
 # change, and it is open.
-
-[[rule]]
-id = "LANE-UNPARSED"
-found = "2026-08-21"
-why = """
-Seven mutations of `check_lanes` survived six cited cases, three by dropping a
-return value. This row cites more cases than any other unpinned rule here,
-which is the point worth reading twice: case COUNT is not coverage. Re-measured
-after the aim test was sharpened, on a run where two other rows were retired,
-and it survived the same seven.
-"""
 
 [[rule]]
 id = "SET-MALFORMED"
