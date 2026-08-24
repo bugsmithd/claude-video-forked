@@ -44,8 +44,9 @@ from pathlib import Path
 
 from .resolve_note import (DEMOTED_MARK, INTEGRITY_PREFIX,  # noqa: E402
                           LOST_REVIEWS, ORPHAN_MARK, RE_VIDEO_ID,
-                          SPECULATION_HEADING, collect, lane_ids, lane_matches,
-                          lane_reports, refuses_empty, split_frontmatter)
+                          SPECULATION_HEADING, atomic_write, collect, lane_ids,
+                          lane_matches, lane_reports, refuses_empty,
+                          split_frontmatter)
 from .wq_policy import load as load_policy  # noqa: E402
 
 POLICY = load_policy()
@@ -481,7 +482,11 @@ def main(argv: list[str], root: Path | None = None) -> int:
                 continue
             changed += 1
             if args.apply:
-                f.write_text(after, encoding="utf-8")
+                # TEMP-AND-RENAME, like every other writer of a note. This one
+                # rewrites the whole collected corpus in a loop, so a plain
+                # write interrupted here leaves one frozen note empty or half
+                # written among notes already rewritten.
+                atomic_write(f, after)
             else:
                 sys.stdout.writelines(difflib.unified_diff(
                     before.splitlines(True), after.splitlines(True),

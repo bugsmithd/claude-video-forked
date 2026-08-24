@@ -231,9 +231,9 @@ def file_note(run: Path, root: Path, when: str | None = None,
     when = when or datetime.fromtimestamp(run.stat().st_mtime).date().isoformat()
     landing = root / resolve_note.POLICY.notes_dir() / f"{when}--{stem}--{video_id}.md"
     landing.parent.mkdir(parents=True, exist_ok=True)
-    landing.write_text(
-        "---\n" + frontmatter(manifest, when, oracle, root) + "\n---\n\n",
-        encoding="utf-8")
+    resolve_note.atomic_write(
+        landing,
+        "---\n" + frontmatter(manifest, when, oracle, root) + "\n---\n\n")
     where = landing.relative_to(root) if landing.is_relative_to(root) else landing
     return 0, [f"# opened {where}, against {oracle.name}"]
 

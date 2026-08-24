@@ -229,6 +229,106 @@ def test_every_number_in_the_summary_line_is_measured(tmp_path: Path, capsys):
                       f"so this run COULD NOT HAVE FOUND that class"]
 
 
+def test_a_word_too_short_to_render_is_counted_on_the_summary_line(tmp_path,
+                                                                   capsys):
+    """A literal below the floor is not hunted in base64, and nothing said so.
+
+    The rendering search skips a needle short enough to occur in any blob of
+    base64 by chance -- one was built and it refused a page carrying no name at
+    all. The skip is right; the silence is not: without the clause a clean line
+    reads as coverage of every word, including the ones no rendering search
+    ever touched.
+
+    Would fail if: the count stops moving with the words actually skipped.
+    """
+    tree = tmp_path / "t"
+    tree.mkdir()
+    (tree / "a.md").write_text("nothing here\n", encoding="utf-8")
+    policy = tmp_path / "watch-quality.toml"
+    policy.write_text('refused_literals = ["abc", "de", "acmeprivate"]\n',
+                      encoding="utf-8")
+    os.environ[wq_policy.ENV_VAR] = str(policy)
+    wq_policy.load(refresh=True)
+    try:
+        assert wcs.main([str(tree)]) == 0
+    finally:
+        os.environ.pop(wq_policy.ENV_VAR, None)
+        wq_policy.load(refresh=True)
+
+    said = capsys.readouterr().err
+    header = [l for l in said.splitlines() if "file(s) scanned under" in l]
+    assert len(header) == 1, said
+    # Two of the three are too short to render; the third is not. A count that
+    # said 3 or 0 would be a constant, and this fixture is what tells them apart.
+    assert ("2 refused literal(s) have a base64 rendering too short to hunt"
+            in header[0]), header
+    # And the refused words themselves never reach the line.
+    assert "abc" not in header[0] and "acmeprivate" not in header[0], header
+
+
+def test_a_run_whose_words_all_render_says_nothing_about_the_floor(tmp_path,
+                                                                   capsys):
+    """A clause that never turns off is decoration, not a measurement.
+
+    Every rendering of both words here clears the floor, so the line has to say
+    nothing about it. This is the case that stops the count being a constant
+    the reader learns to skip past.
+    """
+    tree = tmp_path / "t"
+    tree.mkdir()
+    (tree / "a.md").write_text("nothing here\n", encoding="utf-8")
+    policy = tmp_path / "watch-quality.toml"
+    policy.write_text('refused_literals = ["acmeprivate", "othercorp"]\n',
+                      encoding="utf-8")
+    os.environ[wq_policy.ENV_VAR] = str(policy)
+    wq_policy.load(refresh=True)
+    try:
+        assert wcs.main([str(tree)]) == 0
+    finally:
+        os.environ.pop(wq_policy.ENV_VAR, None)
+        wq_policy.load(refresh=True)
+
+    header = [l for l in capsys.readouterr().err.splitlines()
+              if "file(s) scanned under" in l]
+    assert "too short to hunt" not in header[0], header
+
+
+def test_a_word_hunted_in_one_rendering_and_not_another_is_counted(tmp_path,
+                                                                   capsys):
+    """A word can be searched for padded and never searched for unpadded.
+
+    `_renderings` drops PER RENDERING, so a seven-character literal -- twelve
+    characters padded, ten unpadded -- is hunted in one form and skipped in the
+    other. A count that names a word only when ALL THREE forms are dropped
+    reports that word as fully covered, and on the list in force today it
+    under-reports the words with an unsearched rendering by a factor of three.
+
+    Would fail if: the count goes back to naming only the words dropped in
+    every rendering.
+    """
+    tree = tmp_path / "t"
+    tree.mkdir()
+    (tree / "a.md").write_text("nothing here\n", encoding="utf-8")
+    policy = tmp_path / "watch-quality.toml"
+    # Eleven characters: sixteen padded, fifteen unpadded, hunted in all three.
+    # Seven: twelve padded, ten unpadded, hunted in one form and not the other.
+    policy.write_text('refused_literals = ["acmeprivate", "acmeltd"]\n',
+                      encoding="utf-8")
+    os.environ[wq_policy.ENV_VAR] = str(policy)
+    wq_policy.load(refresh=True)
+    try:
+        assert wcs.main([str(tree)]) == 0
+    finally:
+        os.environ.pop(wq_policy.ENV_VAR, None)
+        wq_policy.load(refresh=True)
+
+    header = [l for l in capsys.readouterr().err.splitlines()
+              if "file(s) scanned under" in l]
+    assert ("1 refused literal(s) have a base64 rendering too short to hunt"
+            in header[0]), header
+    assert "acmeltd" not in header[0], header
+
+
 def test_a_refused_word_is_refused_in_any_case():
     """The rule that found the only live leak in five rounds, and had no case.
 

@@ -100,7 +100,7 @@ def file_brief(note: Path, lane: str, brief: Path,
     # exactly like a lane whose report was lost.
     landing = brief_path(root, vid.group(1), lane)
     landing.parent.mkdir(parents=True, exist_ok=True)
-    landing.write_text(brief_text(lane, body), encoding="utf-8")
+    resolve_note.atomic_write(landing, brief_text(lane, body))
     where = landing.relative_to(root) if landing.is_relative_to(root) else landing
     return 0, [f"# filed {where}", brief_sha256(body)]
 

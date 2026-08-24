@@ -900,6 +900,39 @@ def test_the_run_with_no_paths_reads_the_injected_root(corpus, capsys, monkeypat
     assert name in capsys.readouterr().out
 
 
+def test_the_renderer_replaces_a_note_rather_than_truncating_it(corpus,
+                                                                monkeypatch):
+    """The one command whose whole job is rewriting notes.
+
+    Six writers were routed through temp-and-rename and this one was missed:
+    it rewrites every collected note in a loop, in place, with a write that
+    opens for truncate first. Interrupted, it leaves one frozen note empty or
+    half written in the middle of a run that has already rewritten the notes
+    before it -- exactly the loss the routing exists to prevent, in the loop
+    most likely to be interrupted.
+
+    Would fail if: the renderer goes back to writing the note directly.
+    """
+    name = "2026-01-01--only-note--VID.md"
+    note = corpus / "notes" / name
+    note.write_text(f"---\n{_fm()}---\n\n# t\n\n## Claims\n\n"
+                    f"- A claim nobody tagged.\n", encoding="utf-8")
+    before = note.read_text(encoding="utf-8")
+
+    renamed: list[str] = []
+    real = rn.os.replace
+
+    def watch(src, dst):
+        renamed.append(str(dst))
+        return real(src, dst)
+
+    monkeypatch.setattr(rn.os, "replace", watch)
+    assert dn.main(["--apply", str(note)], root=corpus) == 0
+
+    assert note.read_text(encoding="utf-8") != before
+    assert renamed == [str(note)], renamed
+
+
 # --------------------------------------------------------------------------
 # verification G3 — the caller wiring, which only the selftest held
 # --------------------------------------------------------------------------

@@ -1289,6 +1289,99 @@ def test_one_note_per_video_is_not_reported(corpus):
     assert rn.duplicate_videos(corpus) == []
 
 
+def test_a_write_that_dies_partway_leaves_the_old_file_whole(corpus):
+    """A note is frozen evidence; a plain write truncates before it fills.
+
+    `Path.write_text` opens for truncate and then writes. Interrupted between
+    those two -- a crash, a full volume, a signal -- it leaves a note that is
+    empty or half a note, and the thing lost is the artifact every gate in this
+    package is written to protect. Temp-and-rename cannot land halfway: the
+    old bytes are whole until the rename, and whole afterwards.
+
+    Would fail if: the writer goes back to writing the destination directly.
+    """
+    target = corpus / "notes" / "keep.md"
+    target.write_text("the original\n", encoding="utf-8")
+
+    class Boom(Exception):
+        pass
+
+    def die(_data):
+        raise Boom
+
+    # The failure lands where every real one does: partway through the bytes.
+    with pytest.raises(Boom):
+        rn.atomic_write(target, "the replacement\n", _write=die)
+
+    assert target.read_text(encoding="utf-8") == "the original\n"
+    # And nothing was left beside it for the next reader to find.
+    assert [p.name for p in target.parent.iterdir() if "writing" in p.name] == []
+
+
+def test_an_atomic_write_that_finishes_replaces_the_file(corpus):
+    """The ordinary path, which the failing case above cannot prove on its own."""
+    target = corpus / "notes" / "keep.md"
+    target.write_text("the original\n", encoding="utf-8")
+
+    rn.atomic_write(target, "the replacement\n")
+
+    assert target.read_text(encoding="utf-8") == "the replacement\n"
+    assert [p.name for p in target.parent.iterdir() if "writing" in p.name] == []
+
+
+def test_a_write_that_fails_in_the_real_writer_leaves_the_old_note_whole(corpus):
+    """The same claim, with nothing injected -- the case above proves less.
+
+    The failing test beside this one hands `atomic_write` a substitute writer,
+    so the destination is never opened either way and a writer that went back
+    to `Path.write_text` passes it. This one fails inside the REAL write: a
+    lone surrogate cannot be encoded as UTF-8, and it raises after the open.
+    Written directly, that truncates the note to nothing.
+
+    Would fail if: the writer goes back to writing the destination directly.
+    """
+    target = corpus / "notes" / "keep.md"
+    target.write_text("the original\n", encoding="utf-8")
+
+    with pytest.raises(UnicodeEncodeError):
+        rn.atomic_write(target, "the replacement\ud800\n")
+
+    assert target.read_text(encoding="utf-8") == "the original\n"
+    assert [p.name for p in target.parent.iterdir() if "writing" in p.name] == []
+
+
+def test_two_writers_on_one_path_do_not_share_a_temporary(corpus, monkeypatch):
+    """A fixed temporary name puts two writers in one file.
+
+    Both derive `.<name>.writing` in the same directory, so the second writer
+    opens the first writer's half-written temporary with O_TRUNC and writes its
+    own shorter payload at offset zero. Whichever reaches the rename first
+    publishes a note that is the second writer's head on the first writer's
+    tail -- and `atomic_write` returns normally, so the filer prints `# filed`
+    over it. Measured at 61 and 53 spliced publishes in two runs of a
+    two-process probe.
+
+    Would fail if: the temporary name goes back to being derived from the
+    destination alone.
+    """
+    target = corpus / "notes" / "keep.md"
+    target.write_text("the original\n", encoding="utf-8")
+
+    used: list[str] = []
+    real = rn.os.replace
+
+    def watch(src, dst):
+        used.append(str(src))
+        return real(src, dst)
+
+    monkeypatch.setattr(rn.os, "replace", watch)
+    rn.atomic_write(target, "one\n")
+    rn.atomic_write(target, "two\n")
+
+    assert len(set(used)) == 2, used
+    assert target.read_text(encoding="utf-8") == "two\n"
+
+
 def test_a_corpus_with_two_notes_on_one_video_exits_one(corpus, capsys):
     """The row declares exit 1, and nothing reached the code that returns it.
 

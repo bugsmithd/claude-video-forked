@@ -182,14 +182,14 @@ def file_review(note: Path, lane: str, report: Path,
     # like a lane whose report was lost.
     landing = root / resolve_note.REVIEW_DIR / vid.group(1) / f"{lane}.md"
     landing.parent.mkdir(parents=True, exist_ok=True)
-    landing.write_text(said, encoding="utf-8")
+    resolve_note.atomic_write(landing, said)
     # REBUILT WITH BOTH DELIMITERS. `split_frontmatter` hands back the block
     # between them and the body after them, so a writer that joins those two
     # and forgets the opening `---` produces a note with no frontmatter at all
     # -- which every reader in this package treats as a note it cannot grade.
-    note.write_text(
-        "---\n" + with_lane(frontmatter, lane).rstrip("\n") + "\n---\n" + body,
-        encoding="utf-8")
+    resolve_note.atomic_write(
+        note,
+        "---\n" + with_lane(frontmatter, lane).rstrip("\n") + "\n---\n" + body)
     where = landing.relative_to(root) if landing.is_relative_to(root) else landing
     return 0, [f"# filed {where}, and {note.name} now declares {lane}"]
 

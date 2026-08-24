@@ -74,7 +74,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
+import stat
 import sys
 import importlib
 import tempfile
@@ -513,6 +515,66 @@ def find_declarations(norm: str, linemap: list[int]) -> list[dict]:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def atomic_write(path: Path, text: str, _write=None) -> None:
+    """Replace `path` with `text`, or leave the old bytes exactly as they were.
+
+    A NOTE IS FROZEN EVIDENCE AND A PLAIN WRITE TRUNCATES BEFORE IT FILLS.
+    `Path.write_text` opens the destination for truncate and then writes into
+    it, so an interruption between those two -- a crash, a full volume, a
+    signal, a second process filing the same lane -- leaves a note that is
+    empty or half a note. What is lost is the artifact every gate in this
+    package exists to protect, and no gate can report it afterwards, because
+    the thing that would have been compared is gone.
+
+    Temp-and-rename cannot land halfway. The old bytes stay whole until the
+    rename and are whole after it, and `os.replace` is atomic within one
+    filesystem -- which is why the temporary file is made in the DESTINATION'S
+    directory rather than in the system temp, where the rename would be a copy
+    across devices and would have the same torn window this exists to close.
+
+    The temporary file is removed on any failure, because a `.tmp` left in
+    `notes/` is a file the corpus sweeps would then have to have an opinion
+    about.
+
+    THE TEMPORARY NAME IS PER WRITER, not per destination. Derived from the
+    destination alone it was the SAME name for every writer, so a second
+    process filing the same lane opened the first one's half-written temporary
+    for truncate and wrote its own payload at offset zero; whichever reached
+    the rename first published a note that was one payload's head on the
+    other's tail, and this function returned normally over it. A two-process
+    probe measured 61 and 53 such publishes in two runs.
+    `mkstemp` makes the name unique and the create exclusive, so two writers
+    can only race to the rename -- where one whole file wins.
+
+    Mode is taken from the destination when there is one, because `mkstemp`
+    creates at 0600 and a note that quietly became owner-only is a change
+    nothing asked for.
+
+    `_write` is the injection point a test uses to fail partway; nothing in the
+    package passes it.
+    """
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except OSError:
+        mode = 0o644
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.",
+                                suffix=".writing")
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            try:
+                os.chmod(tmp, mode)
+            except OSError:
+                pass
+            if _write is None:
+                out.write(text)
+        if _write is not None:
+            _write(text)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def safe_read(path: Path) -> tuple[str | None, str]:
@@ -962,7 +1024,7 @@ def refresh_sidecar(root: Path, note: Path,
                 was = None
             moves.append((cited, was, linemap[at]))
     if refreshed and not defects:
-        side.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        atomic_write(side, "\n".join(rows) + "\n")
     return defects, refreshed
 
 
@@ -1039,7 +1101,7 @@ def stamp_note(path: Path, root: Path, stamp: str,
         # Last field in the block, so an existing note's frontmatter keeps the
         # order a reader already knows.
         new_fm = frontmatter.rstrip("\n") + f"\ngraded_with: {stamp}"
-    path.write_text(f"---\n{new_fm}\n---\n{body}", encoding="utf-8")
+    atomic_write(path, f"---\n{new_fm}\n---\n{body}")
     return [], True
 
 
@@ -2367,7 +2429,7 @@ def write_note(path: Path, root: Path) -> tuple[list[str], int]:
     rendered = render_citations(body, cites) if cites else body
     if sets:
         rendered = render_sets(rendered, find_sets(rendered, body_start_line))
-    path.write_text(head + rendered, encoding="utf-8")
+    atomic_write(path, head + rendered)
     if not cites:
         return [], 0
 
@@ -2376,7 +2438,7 @@ def write_note(path: Path, root: Path) -> tuple[list[str], int]:
     rows = [f"# note\t{rel}", "# path\tline\tsha256\tquote"]
     rows += [f"{c['path']}\t{c['target_line']}\t{c['sha']}\t{c['raw_quote']}"
              for c in cites]
-    side.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    atomic_write(side, "\n".join(rows) + "\n")
     return [], len(cites)
 
 

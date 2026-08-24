@@ -702,6 +702,22 @@ def _decodings(text: str) -> tuple[tuple[str, str], ...]:
     return tuple(out)
 
 
+def _forms(word: str) -> list[tuple[str, str]]:
+    """Every base64 shape of `word`, before the floor has an opinion.
+
+    Split out from `_renderings` so the summary line can count what the floor
+    dropped without re-deriving the shapes beside it -- two lists of forms that
+    have to be kept in step is the shape of the bug where a measurement stops
+    matching the thing it measures.
+    """
+    raw = word.encode("utf-8")
+    return [
+        ("base64", base64.b64encode(raw).decode("ascii")),
+        ("base64, url-safe", base64.urlsafe_b64encode(raw).decode("ascii")),
+        ("base64, unpadded", base64.b64encode(raw).decode("ascii").rstrip("=")),
+    ]
+
+
 def _renderings(word: str) -> tuple[tuple[str, str], ...]:
     """The whole name written as something that is not letters any more.
 
@@ -728,12 +744,7 @@ def _renderings(word: str) -> tuple[tuple[str, str], ...]:
     than closed, and the bound is written here rather than left for the next
     reader to measure.
     """
-    raw = word.encode("utf-8")
-    out = [
-        ("base64", base64.b64encode(raw).decode("ascii")),
-        ("base64, url-safe", base64.urlsafe_b64encode(raw).decode("ascii")),
-        ("base64, unpadded", base64.b64encode(raw).decode("ascii").rstrip("=")),
-    ]
+    out = _forms(word)
     seen, kept = set(), []
     for label, rendering in out:
         if (len(rendering) >= RENDER_FLOOR and rendering != word
@@ -741,6 +752,21 @@ def _renderings(word: str) -> tuple[tuple[str, str], ...]:
             seen.add(rendering)
             kept.append((label, rendering))
     return tuple(kept)
+
+
+def _unhunted_rendering(word: str) -> bool:
+    """True when the floor dropped a rendering of `word` that no other form
+    covers.
+
+    THE SUMMARY LINE COUNTS WORDS, AND THE SKIP IS PER RENDERING. A word whose
+    padded form clears the floor and whose unpadded form does not is hunted in
+    one shape and not in the other, so a count that waits for every form to be
+    dropped calls that word covered. Distinct forms only: padded and unpadded
+    are the same string for a word whose length is a multiple of three, and a
+    form the search already runs is not a gap.
+    """
+    forms = {r for _, r in _forms(word)}
+    return any(len(f) < RENDER_FLOOR for f in forms)
 
 
 # A LETTER OR A DIGIT IS CONTENT; EVERYTHING ELSE STANDS BETWEEN THE WORDS.
@@ -1446,10 +1472,29 @@ def main(argv: list[str]) -> int:
              if not held]
     looked = (f" -- no {' and no '.join(blind)} were in force, so this run "
               f"COULD NOT HAVE FOUND that class" if blind else "")
+    # AND A WORD CAN BE IN FORCE AND STILL NOT HUNTED IN EVERY CLASS. A literal
+    # short enough that its rendering occurs in any blob of base64 by chance is
+    # skipped by `_renderings`, correctly -- one built below the floor refused a
+    # page carrying no name at all. What was wrong was the silence: without
+    # this clause a clean line reads as coverage of every word, including the
+    # ones no rendering search ever touched.
+    #
+    # PER RENDERING, which is how `_renderings` drops them. Counting only the
+    # words whose renderings were ALL dropped read as a fact about coverage and
+    # was a fact about the shortest of three forms: a seven-character literal
+    # is twelve characters padded and ten unpadded, hunted in one and skipped
+    # in the other, and that word was reported as fully covered. On the list in
+    # force it under-reported by a factor of three. COUNTED,
+    # never named: printing the word would publish the thing this scan exists
+    # to keep unpublished.
+    short = sum(1 for w in refused if _unhunted_rendering(w))
+    floor = (f" -- {short} refused literal(s) have a base64 rendering too "
+             f"short to hunt, so that rendering was not searched for them"
+             if short else "")
     print(f"# {read} file(s) scanned under {walked}{unread_note}, "
           f"{len(refused)} refused literal(s) and {len(anchors)} anchor set(s) "
           f"from the notes' own pages in force, {len(hits)} corpus "
-          f"reference(s){reach}{looked}", file=sys.stderr)
+          f"reference(s){reach}{looked}{floor}", file=sys.stderr)
     return 1 if hits else 0
 
 
