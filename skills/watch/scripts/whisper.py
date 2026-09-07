@@ -704,6 +704,12 @@ def _post_openrouter(api_key: str, model: str, audio_path: Path,
             "format": audio_path.suffix.lstrip(".").lower() or "mp3",
         },
         "response_format": "verbose_json",
+        # ASK FOR WORDS AS WELL AS SEGMENTS. Measured 2026-09-07: without this
+        # key the response carries zero words, so `_segments_from_response` has
+        # nothing to fall back to when the provider that served the request
+        # returns 30-second segments. With it, every response measured carried
+        # one word array at a 0.20s median, regardless of provider.
+        "timestamp_granularities": ["segment", "word"],
         "temperature": 0,
         "provider": {"only": [provider], "order": [provider],
                      "allow_fallbacks": False},
@@ -824,6 +830,29 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             "end": round(float(seg.get("end") or 0.0), 2),
             "text": text,
         })
+
+    # A COARSE RENDERING AND A MISSING ONE ARE THE SAME PROBLEM HERE, and the
+    # words answer both. `check_granularity` refuses a coarse rendering a few
+    # frames up the stack, and on the chunked path that refusal drops the whole
+    # chunk: one real run kept five chunks of six and wrote a transcript with
+    # 9:28-14:12 missing from it while reporting a segment total as if nothing
+    # had gone. Rebuilding from the words keeps the audio.
+    #
+    # The condition is the granularity guard's own, so a rendering that would
+    # PASS that guard is never regrouped -- a provider's own sentence
+    # boundaries are better than any rule here, and 31 segments at a 6.76s
+    # median need no help.
+    median, _longest, covered = segment_shape(out)
+    if (data.get("words")
+            and (not out or (covered > COARSE_MIN_SECONDS
+                             and median > COARSE_MEDIAN_SECONDS))):
+        regrouped = segments_from_words(data["words"])
+        if regrouped:
+            print(f"[watch] the response carried {len(out)} segment(s) at a "
+                  f"typical {median:.0f}s, which cannot be anchored — "
+                  f"rebuilding {len(regrouped)} segments from "
+                  f"{len(data['words'])} word timestamps", file=sys.stderr)
+            return regrouped
 
     if not out:
         full = (data.get("text") or "").strip()
