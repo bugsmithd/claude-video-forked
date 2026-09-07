@@ -918,11 +918,22 @@ def transcribe_chunks(
     transcribe_one,
     keeps: list[tuple[float, float]] | None = None,
     retry_window=None,
+    dropped: list[tuple[float, float | None, str]] | None = None,
 ) -> list[dict]:
     """Transcribe each chunk, shift its segments by the chunk offset, concatenate.
 
     A chunk that fails after its own retries is logged and skipped so one bad
     slice doesn't discard the whole transcript. Raises only if every chunk fails.
+
+    `dropped` is an out-parameter. A chunk that contributes no segments appends
+    `(start, end, reason)` in seconds, with `end` None for the last chunk whose
+    end this function cannot know, and `reason` either "failed" (the chunk
+    raised) or "empty" (it came back with nothing). Losing a chunk quietly is
+    how a run wrote a transcript with five minutes missing and reported a
+    segment total as though nothing had happened. This function only records;
+    `transcribe_video` decides, and it treats the two reasons differently
+    because silence is a legitimate reason for an empty chunk and a refusal is
+    not a legitimate answer to silence.
 
     `keeps` is the per-chunk (keep_from, keep_to) from `plan_windows`. With it,
     each chunk contributes only the segments inside its own span and the
@@ -943,11 +954,26 @@ def transcribe_chunks(
             chunk_segments = transcribe_one(path)
         except SystemExit as exc:
             failures += 1
+            following = chunks[index + 1][1] if index + 1 < len(chunks) else None
+            if dropped is not None:
+                dropped.append((offset, following, "failed"))
             print(
-                f"[watch] chunk {index + 1}/{len(chunks)} failed — skipping ({exc})",
+                f"[watch] chunk {index + 1}/{len(chunks)} failed — skipping "
+                f"({exc}); {_format_span(offset, following)} of audio is now "
+                f"ABSENT from the transcript",
                 file=sys.stderr,
             )
             continue
+
+        if not chunk_segments:
+            # THE SECOND WAY A CHUNK CONTRIBUTES NOTHING, and it takes the
+            # success path: no exception, no failure count, nothing in the log
+            # but a zero. Recorded as `empty` rather than `failed` because the
+            # audio may simply hold no speech, and the caller must be able to
+            # tell "we lost this" from "there was nothing here".
+            following = chunks[index + 1][1] if index + 1 < len(chunks) else None
+            if dropped is not None:
+                dropped.append((offset, following, "empty"))
 
         run = longest_identical_run(chunk_segments)
         if retry_window and run >= LOOP_RUN:
@@ -1151,6 +1177,21 @@ def segment_shape(segments: list[dict]) -> tuple[float, float, float]:
     spans = sorted(s["end"] - s["start"] for s in segments)
     return (statistics.median(spans), spans[-1],
             segments[-1]["end"] - segments[0]["start"])
+
+
+def _format_span(start: float, end: float | None) -> str:
+    """`9:28–14:12`, or `10:00 to the end` when the span runs off the last chunk.
+
+    A missing stretch of audio is reported the way a reader would cite it. The
+    seconds are what the code has; minutes and seconds are what a person can
+    check against the video.
+    """
+    def clock(seconds: float) -> str:
+        return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
+
+    if end is None:
+        return f"{clock(start)} to the end"
+    return f"{clock(start)}–{clock(end)}"
 
 
 def check_granularity(segments: list[dict], model: str | None,
@@ -1376,7 +1417,9 @@ def transcribe_video(
     audio_path = extract_audio(video_path, audio_out)
     audio_bytes = audio_path.stat().st_size
 
-    def decode(model_override: str | None, work_name: str) -> list[dict]:
+    def decode(model_override: str | None, work_name: str,
+               dropped: list[tuple[float, float | None, str]] | None = None
+               ) -> list[dict]:
         def transcribe_one(path: Path) -> list[dict]:
             return _transcribe_file(backend, api_key, path, model_override)
 
@@ -1430,7 +1473,7 @@ def transcribe_video(
             return transcribe_chunks(
                 chunks, transcribe_one,
                 keeps=[(keep_from, keep_to) for _, _, keep_from, keep_to in windows],
-                retry_window=retry_window)
+                retry_window=retry_window, dropped=dropped)
 
         # SPLIT BY TIME, not only by size, on the routed cloud path. The
         # provider behind OpenRouter times out after 60 seconds of processing,
@@ -1456,7 +1499,7 @@ def transcribe_video(
             )
             return transcribe_chunks(
                 split_audio(audio_path, audio_out.parent / work_name, plan),
-                transcribe_one)
+                transcribe_one, dropped=dropped)
 
         if audio_bytes <= MAX_UPLOAD_BYTES:
             verb = "transcribing locally with" if backend == "local" else "uploading to"
@@ -1474,9 +1517,34 @@ def transcribe_video(
             file=sys.stderr,
         )
         chunks = split_audio(audio_path, audio_out.parent / work_name, plan)
-        return transcribe_chunks(chunks, transcribe_one)
+        return transcribe_chunks(chunks, transcribe_one, dropped=dropped)
 
-    segments = decode(None, "chunks")
+    # ONLY THE FIRST DECODE'S GAPS DECIDE THE RUN. The second decode is a
+    # cross-check whose own timestamps are never used for a stamp, and it is
+    # already allowed to fail outright a few lines below.
+    gaps: list[tuple[float, float | None, str]] = []
+    segments = decode(None, "chunks", dropped=gaps)
+
+    # SILENCE IS NOT A HOLE. A chunk that came back empty is named so a reader
+    # can check it against the video, and then the run continues; refusing here
+    # would fail a healthy recording over a musical intro.
+    for start, end, reason in gaps:
+        if reason == "empty":
+            print(f"[watch] {_format_span(start, end)} decoded to no speech — "
+                  f"kept as silence, not counted as lost audio", file=sys.stderr)
+
+    lost = [(start, end) for start, end, reason in gaps if reason == "failed"]
+    allowed = (_read_config_value("WATCH_ALLOW_TRANSCRIPT_GAPS") or "").lower()
+    if lost and allowed not in ("1", "true", "yes", "on"):
+        spans = ", ".join(_format_span(start, end) for start, end in lost)
+        raise SystemExit(
+            f"{len(lost)} chunk(s) failed and their audio is missing from the "
+            f"transcript: {spans}. A note built on this file would cite "
+            f"evidence with a hole in it, and nothing downstream can see the "
+            f"hole — the report counts the segments that arrived. So the run "
+            f"is refused rather than written. Set "
+            f"WATCH_ALLOW_TRANSCRIPT_GAPS=1 to keep the partial transcript "
+            f"anyway.")
 
     if not segments:
         raise SystemExit("Whisper returned no transcript segments")
