@@ -114,6 +114,38 @@ OPENROUTER_MAX_SECONDS = 600.0
 COARSE_MEDIAN_SECONDS = 10.0
 COARSE_MIN_SECONDS = 30.0
 
+# HOW WORD TIMESTAMPS ARE GROUPED BACK INTO SEGMENTS, and why these three
+# numbers rather than any others.
+#
+# MEASURED 2026-09-07, one chunk of one video, ten direct probes and two real
+# runs: the SEGMENTS came back at a 6.76-9.02s median on the probes and a 30s
+# median inside the runs, same payload and same headers both times, because the
+# `provider` block is ignored and the request goes wherever is cheapest that
+# second. The WORDS came back on every single request, 883-1,086 of them at a
+# 0.20-0.24s median. One of those two arrays can be relied on.
+#
+# Grouped at the numbers below, the two captured fixtures in
+# `tests/fixtures/openrouter/` come back as 80 segments each, median 3.76s and
+# 3.65s, longest 4.00s. That is the shape whisper-large-v3 produces when the
+# router happens to route well -- 2.26s and 3.06s, measured 2026-08-19 and
+# recorded beside COARSE_MEDIAN_SECONDS -- and it leaves 6.3s of margin under
+# the 10.0s guard.
+#
+# THE CAP IS THE RULE THAT ACTUALLY FIRES: of the 79 splits in the first
+# fixture, 62 came from the cap, 17 from a silence and none from punctuation,
+# because a redacted fixture carries no punctuation. On real text the sentence
+# rule fires too, and it can only ever split a group the cap would have split
+# later. A cap of 8.0s also passes the guard, at a 7.8s median -- 2.2s of
+# margin under a threshold that one rounding change would move across.
+WORD_SEGMENT_MAX_SECONDS = 4.0
+# A silence at least this long ends a segment. The typical word on this route
+# spans 0.20s, so half a second of nothing is a clause boundary rather than a
+# pause inside a phrase.
+WORD_SEGMENT_GAP_SECONDS = 0.5
+# A sentence end does not split a segment shorter than this. Without it "Yes."
+# becomes its own segment and puts a citable anchor on an interjection.
+WORD_SEGMENT_MIN_SECONDS = 1.0
+
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
@@ -808,6 +840,48 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             out.append({"start": 0.0, "end": 0.0, "text": full})
 
     return out
+
+
+def segments_from_words(words: list[dict]) -> list[dict]:
+    """Group word-level timestamps into segments this pipeline can anchor.
+
+    A group ends when adding the next word would carry it past
+    WORD_SEGMENT_MAX_SECONDS, when the silence before that word reaches
+    WORD_SEGMENT_GAP_SECONDS, or when the previous word ended a sentence and
+    the group is already WORD_SEGMENT_MIN_SECONDS long. Order is preserved and
+    no word is dropped except one carrying no text or no usable times -- a
+    single malformed word must not cost the chunk it sits in.
+    """
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    for word in words:
+        text = (word.get("word") or word.get("text") or "").strip()
+        if not text:
+            continue
+        try:
+            start = float(word["start"])
+            end = float(word["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if current:
+            opened = current[0]["start"]
+            previous = current[-1]
+            if (end - opened > WORD_SEGMENT_MAX_SECONDS
+                    or start - previous["end"] >= WORD_SEGMENT_GAP_SECONDS
+                    or (previous["text"].endswith((".", "?", "!"))
+                        and previous["end"] - opened >= WORD_SEGMENT_MIN_SECONDS)):
+                groups.append(current)
+                current = []
+        current.append({"start": start, "end": end, "text": text})
+    if current:
+        groups.append(current)
+
+    return [
+        {"start": round(group[0]["start"], 2),
+         "end": round(group[-1]["end"], 2),
+         "text": " ".join(word["text"] for word in group)}
+        for group in groups
+    ]
 
 
 def transcribe_chunks(
