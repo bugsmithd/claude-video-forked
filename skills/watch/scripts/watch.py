@@ -330,6 +330,13 @@ def main() -> int:
         except Exception as exc:
             print(f"[watch] subtitle parse failed: {exc}", file=sys.stderr)
 
+    # WHAT WHISPER PRODUCED, which is not what survived the focus window. These
+    # were one variable in the first draft of this change and that was the bug:
+    # `transcript_segments` is reassigned to `filter_range(...)` a few lines
+    # below, so a `--start/--end` run over a silent intro read as "Whisper
+    # returned nothing" on a transcript that was complete.
+    whisper_attempted = False
+    whisper_returned_segments = False
     if not transcript_segments and not args.no_whisper and video_path and meta.get("has_audio"):
         backend, api_key = load_api_key(args.whisper)
         if backend and api_key:
@@ -341,6 +348,7 @@ def main() -> int:
                 if local_backend and local_bin:
                     attempts.append((local_backend, local_bin))
             for attempt_backend, attempt_key in attempts:
+                whisper_attempted = True
                 try:
                     all_segments, used_backend = transcribe_video(
                         video_path,
@@ -348,6 +356,7 @@ def main() -> int:
                         backend=attempt_backend,
                         api_key=attempt_key,
                     )
+                    whisper_returned_segments = bool(all_segments)
                     transcript_segments = filter_range(all_segments, start_sec, end_sec) if focused else all_segments
                     transcript_text = format_transcript(transcript_segments)
                     transcript_source = f"whisper ({used_backend})"
@@ -510,11 +519,30 @@ def main() -> int:
             f"Run `python3 {setup_py}` to enable Whisper, then re-run._"
         )
 
+    # A RUN THAT WAS ASKED TO TRANSCRIBE AND CAME BACK WITH NOTHING IS A
+    # FAILURE, and it used to exit 0. One real run lost all six of its audio
+    # chunks, printed `Transcript: none available`, and returned success; a
+    # batch of thirty driven off exit codes would have recorded it as done.
+    # Two things this deliberately does NOT do: it does not fire when
+    # `--no-whisper` was passed, because not asking is a choice rather than a
+    # failure; and it does not read `transcript_segments`, because an empty
+    # FOCUS WINDOW over a complete transcript is the correct answer to the
+    # question that was asked.
+    transcription_failed = whisper_attempted and not whisper_returned_segments
+    if transcription_failed:
+        print()
+        print(
+            "> **Transcription failed.** Whisper ran and returned no usable "
+            "segments, so this run has no transcript at all. The exit status "
+            "is 1: a batch driven off exit codes must not record this as a "
+            "success. The stderr above names why each attempt failed."
+        )
+
     print()
     print("---")
     if not make_note:
         print(f"_Work dir: `{work}` — delete when done._")
-        return 0
+        return 1 if transcription_failed else 0
 
     run = build_run(
         source=args.source,
@@ -552,7 +580,7 @@ def main() -> int:
           f"under `transcript.segment_starts`.")
     print(f"- **The note contract is not in this report.** Read `NOTE.md` "
           f"beside this skill and follow it instead of Step 4.")
-    return 0
+    return 1 if transcription_failed else 0
 
 
 if __name__ == "__main__":
