@@ -1,0 +1,215 @@
+{
+ "_provenance": {
+  "captured": "2026-09-07",
+  "kind": "CAPTURED from a live OpenRouter response, text redacted",
+  "endpoint": "https://openrouter.ai/api/v1/audio/transcriptions",
+  "model": "openai/whisper-large-v3",
+  "provider_requested": "deepinfra",
+  "provider_served": "unknown; this endpoint ignores the provider pin",
+  "source_chunk": "chunk_000.mp3",
+  "request_variant": "none",
+  "label": "baseline-no-granularity",
+  "note": "Word and segment TEXT is replaced by placeholders of the same word count. Timings are untouched. The fork is public and the audio is a third party's video."
+ },
+ "_derived": {
+  "segments": 31,
+  "median_segment_span": 6.76,
+  "longest_segment_span": 29.7,
+  "words": 0,
+  "median_word_span": null,
+  "duration": 284.294
+ },
+ "task": "transcribe",
+ "language": "en",
+ "duration": 284.294,
+ "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+ "segments": [
+  {
+   "id": 0,
+   "start": 0.32,
+   "end": 28.02,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 28.41,
+   "end": 40.55,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 40.65,
+   "end": 42.75,
+   "text": "word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 42.9,
+   "end": 44.1,
+   "text": "word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 44.61,
+   "end": 47.589999999999996,
+   "text": "word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 47.76,
+   "end": 49.66,
+   "text": "word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 49.71,
+   "end": 50.07,
+   "text": "word"
+  },
+  {
+   "id": 0,
+   "start": 50.37,
+   "end": 52.89,
+   "text": "word word word word word word"
+  },
+  {
+   "id": 8,
+   "start": 52.98,
+   "end": 69.34,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 9,
+   "start": 69.36,
+   "end": 82.6,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 10,
+   "start": 82.8,
+   "end": 90,
+   "text": "word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 90.18,
+   "end": 99.24000000000001,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 12,
+   "start": 99.3,
+   "end": 108.8,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 108.87,
+   "end": 110.95,
+   "text": "word word word word word word word"
+  },
+  {
+   "id": 14,
+   "start": 111.36,
+   "end": 118.74,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 15,
+   "start": 118.8,
+   "end": 135.07999999999998,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 135.18,
+   "end": 136.48000000000002,
+   "text": "word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 136.5,
+   "end": 141.78,
+   "text": "word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 141.84,
+   "end": 146.24,
+   "text": "word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 146.43,
+   "end": 150.51000000000002,
+   "text": "word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 150.78,
+   "end": 156.16,
+   "text": "word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 21,
+   "start": 156.33,
+   "end": 186.03,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 186.12,
+   "end": 211.66,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 23,
+   "start": 211.95,
+   "end": 225.45,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 24,
+   "start": 225.69,
+   "end": 233.51,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 234.36,
+   "end": 237.10000000000002,
+   "text": "word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 237.12,
+   "end": 241.98000000000002,
+   "text": "word word word word word word word word word word word word"
+  },
+  {
+   "id": 27,
+   "start": 242.13,
+   "end": 247.23,
+   "text": "word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 28,
+   "start": 247.29,
+   "end": 254.04999999999998,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 29,
+   "start": 254.43,
+   "end": 265.05,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 265.41,
+   "end": 284.29,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  }
+ ],
+ "words": []
+}

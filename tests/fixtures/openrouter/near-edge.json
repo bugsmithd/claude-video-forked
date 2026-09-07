@@ -1,0 +1,4583 @@
+{
+ "_provenance": {
+  "captured": "2026-09-07",
+  "kind": "CAPTURED from a live OpenRouter response, text redacted",
+  "endpoint": "https://openrouter.ai/api/v1/audio/transcriptions",
+  "model": "openai/whisper-large-v3",
+  "provider_requested": "deepinfra",
+  "provider_served": "unknown; this endpoint ignores the provider pin",
+  "source_chunk": "chunk_002.mp3",
+  "request_variant": "segment+word",
+  "label": "near-edge",
+  "note": "Word and segment TEXT is replaced by placeholders of the same word count. Timings are untouched. The fork is public and the audio is a third party's video."
+ },
+ "_derived": {
+  "segments": 23,
+  "median_segment_span": 9.02,
+  "longest_segment_span": 28.82,
+  "words": 883,
+  "median_word_span": 0.24,
+  "duration": 284.294
+ },
+ "task": "transcribe",
+ "language": "en",
+ "duration": 284.294,
+ "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+ "segments": [
+  {
+   "id": 0,
+   "start": 0,
+   "end": 28.82,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 30,
+   "end": 34.16,
+   "text": "word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 34.47,
+   "end": 54.33,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 3,
+   "start": 64.47,
+   "end": 79.47,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 79.65,
+   "end": 86.47,
+   "text": "word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 5,
+   "start": 86.58,
+   "end": 93.2,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 6,
+   "start": 95.25,
+   "end": 100.43,
+   "text": "word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 7,
+   "start": 100.86,
+   "end": 128.4,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 8,
+   "start": 130.86,
+   "end": 134.62,
+   "text": "word word word word word word word word word word"
+  },
+  {
+   "id": 9,
+   "start": 134.7,
+   "end": 143.72,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 144.09,
+   "end": 146.17000000000002,
+   "text": "word word word word word"
+  },
+  {
+   "id": 11,
+   "start": 146.22,
+   "end": 166.56,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 12,
+   "start": 166.77,
+   "end": 189.51000000000002,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 189.54,
+   "end": 190.23999999999998,
+   "text": "word"
+  },
+  {
+   "id": 14,
+   "start": 190.32,
+   "end": 205.68,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 15,
+   "start": 206.71,
+   "end": 220.35,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 220.56,
+   "end": 223.32,
+   "text": "word word word word"
+  },
+  {
+   "id": 0,
+   "start": 223.56,
+   "end": 229.22,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 229.74,
+   "end": 241.48000000000002,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 241.68,
+   "end": 244.02,
+   "text": "word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 244.62,
+   "end": 250.72,
+   "text": "word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 0,
+   "start": 250.74,
+   "end": 262.42,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+   "id": 22,
+   "start": 262.53,
+   "end": 284.28999999999996,
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+  }
+ ],
+ "words": [
+  {
+   "word": "word",
+   "start": 0,
+   "end": 0.10000000149011612
+  },
+  {
+   "word": "word",
+   "start": 0.10000000149011612,
+   "end": 0.2800000011920929
+  },
+  {
+   "word": "word",
+   "start": 0.2800000011920929,
+   "end": 0.5199999809265137
+  },
+  {
+   "word": "word",
+   "start": 0.5199999809265137,
+   "end": 0.9800000190734863
+  },
+  {
+   "word": "word",
+   "start": 0.9800000190734863,
+   "end": 1.2999999523162842
+  },
+  {
+   "word": "word",
+   "start": 1.2999999523162842,
+   "end": 1.399999976158142
+  },
+  {
+   "word": "word",
+   "start": 1.399999976158142,
+   "end": 1.5199999809265137
+  },
+  {
+   "word": "word",
+   "start": 1.5199999809265137,
+   "end": 1.8200000524520874
+  },
+  {
+   "word": "word",
+   "start": 1.8200000524520874,
+   "end": 2.059999942779541
+  },
+  {
+   "word": "word",
+   "start": 2.059999942779541,
+   "end": 2.2200000286102295
+  },
+  {
+   "word": "word",
+   "start": 2.2200000286102295,
+   "end": 2.380000114440918
+  },
+  {
+   "word": "word",
+   "start": 2.380000114440918,
+   "end": 2.619999885559082
+  },
+  {
+   "word": "word",
+   "start": 2.619999885559082,
+   "end": 3.1600000858306885
+  },
+  {
+   "word": "word",
+   "start": 3.1600000858306885,
+   "end": 3.559999942779541
+  },
+  {
+   "word": "word",
+   "start": 3.559999942779541,
+   "end": 4.039999723434448
+  },
+  {
+   "word": "word",
+   "start": 4.360000133514404,
+   "end": 4.760000228881836
+  },
+  {
+   "word": "word",
+   "start": 4.760000228881836,
+   "end": 4.840000152587891
+  },
+  {
+   "word": "word",
+   "start": 4.840000152587891,
+   "end": 5.059999942779541
+  },
+  {
+   "word": "word",
+   "start": 5.059999942779541,
+   "end": 5.400000095367432
+  },
+  {
+   "word": "word",
+   "start": 5.400000095367432,
+   "end": 5.800000190734863
+  },
+  {
+   "word": "word",
+   "start": 5.800000190734863,
+   "end": 5.960000038146973
+  },
+  {
+   "word": "word",
+   "start": 5.960000038146973,
+   "end": 6.5
+  },
+  {
+   "word": "word",
+   "start": 6.5,
+   "end": 6.739999771118164
+  },
+  {
+   "word": "word",
+   "start": 6.739999771118164,
+   "end": 7.019999980926514
+  },
+  {
+   "word": "word",
+   "start": 7.019999980926514,
+   "end": 7.199999809265137
+  },
+  {
+   "word": "word",
+   "start": 7.199999809265137,
+   "end": 7.699999809265137
+  },
+  {
+   "word": "word",
+   "start": 7.699999809265137,
+   "end": 7.800000190734863
+  },
+  {
+   "word": "word",
+   "start": 7.800000190734863,
+   "end": 7.900000095367432
+  },
+  {
+   "word": "word",
+   "start": 7.900000095367432,
+   "end": 8.119999885559082
+  },
+  {
+   "word": "word",
+   "start": 8.119999885559082,
+   "end": 8.319999694824219
+  },
+  {
+   "word": "word",
+   "start": 8.319999694824219,
+   "end": 8.640000343322754
+  },
+  {
+   "word": "word",
+   "start": 8.640000343322754,
+   "end": 8.880000114440918
+  },
+  {
+   "word": "word",
+   "start": 8.880000114440918,
+   "end": 9.140000343322754
+  },
+  {
+   "word": "word",
+   "start": 9.140000343322754,
+   "end": 9.34000015258789
+  },
+  {
+   "word": "word",
+   "start": 9.34000015258789,
+   "end": 9.479999542236328
+  },
+  {
+   "word": "word",
+   "start": 9.479999542236328,
+   "end": 9.619999885559082
+  },
+  {
+   "word": "word",
+   "start": 9.619999885559082,
+   "end": 9.960000038146973
+  },
+  {
+   "word": "word",
+   "start": 9.960000038146973,
+   "end": 10.079999923706055
+  },
+  {
+   "word": "word",
+   "start": 10.079999923706055,
+   "end": 10.359999656677246
+  },
+  {
+   "word": "word",
+   "start": 10.359999656677246,
+   "end": 10.5600004196167
+  },
+  {
+   "word": "word",
+   "start": 10.5600004196167,
+   "end": 10.760000228881836
+  },
+  {
+   "word": "word",
+   "start": 10.760000228881836,
+   "end": 11
+  },
+  {
+   "word": "word",
+   "start": 11,
+   "end": 11.180000305175781
+  },
+  {
+   "word": "word",
+   "start": 11.180000305175781,
+   "end": 11.359999656677246
+  },
+  {
+   "word": "word",
+   "start": 11.359999656677246,
+   "end": 11.680000305175781
+  },
+  {
+   "word": "word",
+   "start": 11.680000305175781,
+   "end": 12
+  },
+  {
+   "word": "word",
+   "start": 12,
+   "end": 12.15999984741211
+  },
+  {
+   "word": "word",
+   "start": 12.15999984741211,
+   "end": 12.34000015258789
+  },
+  {
+   "word": "word",
+   "start": 12.34000015258789,
+   "end": 12.4399995803833
+  },
+  {
+   "word": "word",
+   "start": 12.4399995803833,
+   "end": 12.760000228881836
+  },
+  {
+   "word": "word",
+   "start": 12.760000228881836,
+   "end": 12.899999618530273
+  },
+  {
+   "word": "word",
+   "start": 12.899999618530273,
+   "end": 13.0600004196167
+  },
+  {
+   "word": "word",
+   "start": 13.0600004196167,
+   "end": 13.359999656677246
+  },
+  {
+   "word": "word",
+   "start": 13.359999656677246,
+   "end": 13.460000038146973
+  },
+  {
+   "word": "word",
+   "start": 13.460000038146973,
+   "end": 13.760000228881836
+  },
+  {
+   "word": "word",
+   "start": 13.760000228881836,
+   "end": 13.979999542236328
+  },
+  {
+   "word": "word",
+   "start": 13.979999542236328,
+   "end": 14.039999961853027
+  },
+  {
+   "word": "word",
+   "start": 14.039999961853027,
+   "end": 14.380000114440918
+  },
+  {
+   "word": "word",
+   "start": 14.380000114440918,
+   "end": 14.520000457763672
+  },
+  {
+   "word": "word",
+   "start": 14.520000457763672,
+   "end": 14.600000381469727
+  },
+  {
+   "word": "word",
+   "start": 14.600000381469727,
+   "end": 14.84000015258789
+  },
+  {
+   "word": "word",
+   "start": 14.84000015258789,
+   "end": 14.960000038146973
+  },
+  {
+   "word": "word",
+   "start": 14.960000038146973,
+   "end": 15.359999656677246
+  },
+  {
+   "word": "word",
+   "start": 15.359999656677246,
+   "end": 15.539999961853027
+  },
+  {
+   "word": "word",
+   "start": 15.539999961853027,
+   "end": 15.739999771118164
+  },
+  {
+   "word": "word",
+   "start": 15.739999771118164,
+   "end": 16.040000915527344
+  },
+  {
+   "word": "word",
+   "start": 16.040000915527344,
+   "end": 16.360000610351562
+  },
+  {
+   "word": "word",
+   "start": 16.360000610351562,
+   "end": 16.84000015258789
+  },
+  {
+   "word": "word",
+   "start": 16.84000015258789,
+   "end": 17.079999923706055
+  },
+  {
+   "word": "word",
+   "start": 17.079999923706055,
+   "end": 17.219999313354492
+  },
+  {
+   "word": "word",
+   "start": 17.219999313354492,
+   "end": 17.3799991607666
+  },
+  {
+   "word": "word",
+   "start": 17.3799991607666,
+   "end": 17.520000457763672
+  },
+  {
+   "word": "word",
+   "start": 17.520000457763672,
+   "end": 17.860000610351562
+  },
+  {
+   "word": "word",
+   "start": 17.860000610351562,
+   "end": 18.100000381469727
+  },
+  {
+   "word": "word",
+   "start": 18.100000381469727,
+   "end": 18.479999542236328
+  },
+  {
+   "word": "word",
+   "start": 18.479999542236328,
+   "end": 18.700000762939453
+  },
+  {
+   "word": "word",
+   "start": 18.700000762939453,
+   "end": 18.920000076293945
+  },
+  {
+   "word": "word",
+   "start": 18.920000076293945,
+   "end": 19.559999465942383
+  },
+  {
+   "word": "word",
+   "start": 19.559999465942383,
+   "end": 19.739999771118164
+  },
+  {
+   "word": "word",
+   "start": 19.739999771118164,
+   "end": 19.860000610351562
+  },
+  {
+   "word": "word",
+   "start": 19.860000610351562,
+   "end": 20.020000457763672
+  },
+  {
+   "word": "word",
+   "start": 20.020000457763672,
+   "end": 20.239999771118164
+  },
+  {
+   "word": "word",
+   "start": 20.239999771118164,
+   "end": 21.059999465942383
+  },
+  {
+   "word": "word",
+   "start": 21.059999465942383,
+   "end": 21.479999542236328
+  },
+  {
+   "word": "word",
+   "start": 21.479999542236328,
+   "end": 21.6200008392334
+  },
+  {
+   "word": "word",
+   "start": 21.6200008392334,
+   "end": 21.739999771118164
+  },
+  {
+   "word": "word",
+   "start": 21.739999771118164,
+   "end": 22.15999984741211
+  },
+  {
+   "word": "word",
+   "start": 22.15999984741211,
+   "end": 22.6200008392334
+  },
+  {
+   "word": "word",
+   "start": 22.6200008392334,
+   "end": 22.780000686645508
+  },
+  {
+   "word": "word",
+   "start": 22.780000686645508,
+   "end": 22.979999542236328
+  },
+  {
+   "word": "word",
+   "start": 22.979999542236328,
+   "end": 23.15999984741211
+  },
+  {
+   "word": "word",
+   "start": 23.15999984741211,
+   "end": 23.579999923706055
+  },
+  {
+   "word": "word",
+   "start": 23.579999923706055,
+   "end": 24
+  },
+  {
+   "word": "word",
+   "start": 24,
+   "end": 24.15999984741211
+  },
+  {
+   "word": "word",
+   "start": 24.15999984741211,
+   "end": 24.239999771118164
+  },
+  {
+   "word": "word",
+   "start": 24.239999771118164,
+   "end": 24.3799991607666
+  },
+  {
+   "word": "word",
+   "start": 24.3799991607666,
+   "end": 24.639999389648438
+  },
+  {
+   "word": "word",
+   "start": 24.639999389648438,
+   "end": 25
+  },
+  {
+   "word": "word",
+   "start": 25,
+   "end": 25.479999542236328
+  },
+  {
+   "word": "word",
+   "start": 25.479999542236328,
+   "end": 25.719999313354492
+  },
+  {
+   "word": "word",
+   "start": 25.719999313354492,
+   "end": 25.940000534057617
+  },
+  {
+   "word": "word",
+   "start": 25.940000534057617,
+   "end": 26.1200008392334
+  },
+  {
+   "word": "word",
+   "start": 26.1200008392334,
+   "end": 26.239999771118164
+  },
+  {
+   "word": "word",
+   "start": 26.239999771118164,
+   "end": 26.479999542236328
+  },
+  {
+   "word": "word",
+   "start": 26.479999542236328,
+   "end": 26.68000030517578
+  },
+  {
+   "word": "word",
+   "start": 26.68000030517578,
+   "end": 26.81999969482422
+  },
+  {
+   "word": "word",
+   "start": 26.81999969482422,
+   "end": 27
+  },
+  {
+   "word": "word",
+   "start": 27,
+   "end": 27.15999984741211
+  },
+  {
+   "word": "word",
+   "start": 27.15999984741211,
+   "end": 27.34000015258789
+  },
+  {
+   "word": "word",
+   "start": 27.34000015258789,
+   "end": 27.5
+  },
+  {
+   "word": "word",
+   "start": 27.5,
+   "end": 27.639999389648438
+  },
+  {
+   "word": "word",
+   "start": 27.639999389648438,
+   "end": 27.799999237060547
+  },
+  {
+   "word": "word",
+   "start": 27.799999237060547,
+   "end": 28.079999923706055
+  },
+  {
+   "word": "word",
+   "start": 28.079999923706055,
+   "end": 28.260000228881836
+  },
+  {
+   "word": "word",
+   "start": 28.260000228881836,
+   "end": 28.459999084472656
+  },
+  {
+   "word": "word",
+   "start": 28.459999084472656,
+   "end": 28.6200008392334
+  },
+  {
+   "word": "word",
+   "start": 28.6200008392334,
+   "end": 28.780000686645508
+  },
+  {
+   "word": "word",
+   "start": 30,
+   "end": 30.07999999821186
+  },
+  {
+   "word": "word",
+   "start": 30.07999999821186,
+   "end": 30.69999998807907
+  },
+  {
+   "word": "word",
+   "start": 30.69999998807907,
+   "end": 30.980000019073486
+  },
+  {
+   "word": "word",
+   "start": 30.980000019073486,
+   "end": 31.259999990463257
+  },
+  {
+   "word": "word",
+   "start": 31.259999990463257,
+   "end": 31.539999961853027
+  },
+  {
+   "word": "word",
+   "start": 31.539999961853027,
+   "end": 31.820000052452087
+  },
+  {
+   "word": "word",
+   "start": 31.820000052452087,
+   "end": 31.980000019073486
+  },
+  {
+   "word": "word",
+   "start": 31.980000019073486,
+   "end": 32.16000008583069
+  },
+  {
+   "word": "word",
+   "start": 32.16000008583069,
+   "end": 32.46000003814697
+  },
+  {
+   "word": "word",
+   "start": 32.46000003814697,
+   "end": 32.61999988555908
+  },
+  {
+   "word": "word",
+   "start": 32.61999988555908,
+   "end": 32.74000000953674
+  },
+  {
+   "word": "word",
+   "start": 32.74000000953674,
+   "end": 32.77999997138977
+  },
+  {
+   "word": "word",
+   "start": 32.77999997138977,
+   "end": 32.96000003814697
+  },
+  {
+   "word": "word",
+   "start": 32.96000003814697,
+   "end": 33.079999923706055
+  },
+  {
+   "word": "word",
+   "start": 33.079999923706055,
+   "end": 33.200000047683716
+  },
+  {
+   "word": "word",
+   "start": 33.200000047683716,
+   "end": 33.519999980926514
+  },
+  {
+   "word": "word",
+   "start": 33.519999980926514,
+   "end": 33.66000008583069
+  },
+  {
+   "word": "word",
+   "start": 33.66000008583069,
+   "end": 33.859999895095825
+  },
+  {
+   "word": "word",
+   "start": 33.859999895095825,
+   "end": 34.019999980926514
+  },
+  {
+   "word": "word",
+   "start": 34.47,
+   "end": 34.93000000834465
+  },
+  {
+   "word": "word",
+   "start": 34.93000000834465,
+   "end": 35.309999973773955
+  },
+  {
+   "word": "word",
+   "start": 35.309999973773955,
+   "end": 36.05000004291534
+  },
+  {
+   "word": "word",
+   "start": 36.05000004291534,
+   "end": 37.1500000667572
+  },
+  {
+   "word": "word",
+   "start": 37.1500000667572,
+   "end": 37.509999961853026
+  },
+  {
+   "word": "word",
+   "start": 37.509999961853026,
+   "end": 38.04999992370605
+  },
+  {
+   "word": "word",
+   "start": 38.04999992370605,
+   "end": 38.229999990463256
+  },
+  {
+   "word": "word",
+   "start": 38.229999990463256,
+   "end": 38.37000009536743
+  },
+  {
+   "word": "word",
+   "start": 38.37000009536743,
+   "end": 38.509999961853026
+  },
+  {
+   "word": "word",
+   "start": 38.509999961853026,
+   "end": 38.93000003814697
+  },
+  {
+   "word": "word",
+   "start": 38.93000003814697,
+   "end": 39.08999988555908
+  },
+  {
+   "word": "word",
+   "start": 39.08999988555908,
+   "end": 39.31000015258789
+  },
+  {
+   "word": "word",
+   "start": 39.31000015258789,
+   "end": 39.58999988555908
+  },
+  {
+   "word": "word",
+   "start": 39.58999988555908,
+   "end": 39.85000011444092
+  },
+  {
+   "word": "word",
+   "start": 39.85000011444092,
+   "end": 39.97
+  },
+  {
+   "word": "word",
+   "start": 39.97,
+   "end": 40.04999992370605
+  },
+  {
+   "word": "word",
+   "start": 40.04999992370605,
+   "end": 40.25000020980835
+  },
+  {
+   "word": "word",
+   "start": 40.25000020980835,
+   "end": 40.47
+  },
+  {
+   "word": "word",
+   "start": 40.47,
+   "end": 40.87000009536743
+  },
+  {
+   "word": "word",
+   "start": 40.87000009536743,
+   "end": 42.5300004196167
+  },
+  {
+   "word": "word",
+   "start": 42.5300004196167,
+   "end": 42.69000026702881
+  },
+  {
+   "word": "word",
+   "start": 42.69000026702881,
+   "end": 42.97
+  },
+  {
+   "word": "word",
+   "start": 42.97,
+   "end": 43.11000034332275
+  },
+  {
+   "word": "word",
+   "start": 43.11000034332275,
+   "end": 43.20999977111816
+  },
+  {
+   "word": "word",
+   "start": 43.20999977111816,
+   "end": 43.36999961853027
+  },
+  {
+   "word": "word",
+   "start": 43.36999961853027,
+   "end": 43.5300004196167
+  },
+  {
+   "word": "word",
+   "start": 43.5300004196167,
+   "end": 43.93000003814697
+  },
+  {
+   "word": "word",
+   "start": 43.93000003814697,
+   "end": 44.47
+  },
+  {
+   "word": "word",
+   "start": 44.47,
+   "end": 44.9099995803833
+  },
+  {
+   "word": "word",
+   "start": 44.9099995803833,
+   "end": 45.04999992370605
+  },
+  {
+   "word": "word",
+   "start": 45.04999992370605,
+   "end": 45.390000076293944
+  },
+  {
+   "word": "word",
+   "start": 45.390000076293944,
+   "end": 45.69000026702881
+  },
+  {
+   "word": "word",
+   "start": 45.69000026702881,
+   "end": 46.04999992370605
+  },
+  {
+   "word": "word",
+   "start": 46.04999992370605,
+   "end": 46.27000019073486
+  },
+  {
+   "word": "word",
+   "start": 46.27000019073486,
+   "end": 46.35000011444092
+  },
+  {
+   "word": "word",
+   "start": 46.35000011444092,
+   "end": 46.44999954223633
+  },
+  {
+   "word": "word",
+   "start": 46.44999954223633,
+   "end": 46.5300004196167
+  },
+  {
+   "word": "word",
+   "start": 46.5300004196167,
+   "end": 46.81000015258789
+  },
+  {
+   "word": "word",
+   "start": 46.81000015258789,
+   "end": 47.08999988555908
+  },
+  {
+   "word": "word",
+   "start": 47.08999988555908,
+   "end": 47.730000228881835
+  },
+  {
+   "word": "word",
+   "start": 47.730000228881835,
+   "end": 47.97
+  },
+  {
+   "word": "word",
+   "start": 47.97,
+   "end": 49.11000034332275
+  },
+  {
+   "word": "word",
+   "start": 49.11000034332275,
+   "end": 49.36999961853027
+  },
+  {
+   "word": "word",
+   "start": 49.36999961853027,
+   "end": 49.69000026702881
+  },
+  {
+   "word": "word",
+   "start": 49.69000026702881,
+   "end": 49.99000045776367
+  },
+  {
+   "word": "word",
+   "start": 49.99000045776367,
+   "end": 50.169999809265136
+  },
+  {
+   "word": "word",
+   "start": 50.169999809265136,
+   "end": 50.24999973297119
+  },
+  {
+   "word": "word",
+   "start": 50.24999973297119,
+   "end": 50.31000015258789
+  },
+  {
+   "word": "word",
+   "start": 50.31000015258789,
+   "end": 50.4099995803833
+  },
+  {
+   "word": "word",
+   "start": 50.4099995803833,
+   "end": 50.47
+  },
+  {
+   "word": "word",
+   "start": 50.47,
+   "end": 50.609999389648436
+  },
+  {
+   "word": "word",
+   "start": 50.609999389648436,
+   "end": 50.730000228881835
+  },
+  {
+   "word": "word",
+   "start": 50.730000228881835,
+   "end": 51.3499991607666
+  },
+  {
+   "word": "word",
+   "start": 51.3499991607666,
+   "end": 51.929999084472655
+  },
+  {
+   "word": "word",
+   "start": 51.929999084472655,
+   "end": 52.46999904632568
+  },
+  {
+   "word": "word",
+   "start": 52.51000091552734,
+   "end": 52.910000534057616
+  },
+  {
+   "word": "word",
+   "start": 52.910000534057616,
+   "end": 53.02999946594238
+  },
+  {
+   "word": "word",
+   "start": 53.02999946594238,
+   "end": 53.31000015258789
+  },
+  {
+   "word": "word",
+   "start": 53.31000015258789,
+   "end": 53.67000076293945
+  },
+  {
+   "word": "word",
+   "start": 53.67000076293945,
+   "end": 54.21000072479248
+  },
+  {
+   "word": "word",
+   "start": 64.47,
+   "end": 64.77000001192093
+  },
+  {
+   "word": "word",
+   "start": 64.77000001192093,
+   "end": 65.07000002384186
+  },
+  {
+   "word": "word",
+   "start": 65.07000002384186,
+   "end": 65.27000001192093
+  },
+  {
+   "word": "word",
+   "start": 65.27000001192093,
+   "end": 65.3900000166893
+  },
+  {
+   "word": "word",
+   "start": 65.3900000166893,
+   "end": 65.45000001907349
+  },
+  {
+   "word": "word",
+   "start": 65.45000001907349,
+   "end": 65.57000002384186
+  },
+  {
+   "word": "word",
+   "start": 65.57000002384186,
+   "end": 65.69000002861023
+  },
+  {
+   "word": "word",
+   "start": 65.69000002861023,
+   "end": 65.95000001907349
+  },
+  {
+   "word": "word",
+   "start": 65.95000001907349,
+   "end": 66.09000000476837
+  },
+  {
+   "word": "word",
+   "start": 66.09000000476837,
+   "end": 66.50999996185303
+  },
+  {
+   "word": "word",
+   "start": 66.50999996185303,
+   "end": 66.61000010490417
+  },
+  {
+   "word": "word",
+   "start": 66.61000010490417,
+   "end": 66.72999999046326
+  },
+  {
+   "word": "word",
+   "start": 66.72999999046326,
+   "end": 66.89000007629394
+  },
+  {
+   "word": "word",
+   "start": 66.89000007629394,
+   "end": 67.13000008583069
+  },
+  {
+   "word": "word",
+   "start": 67.13000008583069,
+   "end": 67.80999991416931
+  },
+  {
+   "word": "word",
+   "start": 67.80999991416931,
+   "end": 68.32999989509582
+  },
+  {
+   "word": "word",
+   "start": 68.32999989509582,
+   "end": 68.47
+  },
+  {
+   "word": "word",
+   "start": 68.47,
+   "end": 68.70999977111816
+  },
+  {
+   "word": "word",
+   "start": 68.70999977111816,
+   "end": 69.00999996185303
+  },
+  {
+   "word": "word",
+   "start": 69.00999996185303,
+   "end": 69.44999972105026
+  },
+  {
+   "word": "word",
+   "start": 69.97000143051147,
+   "end": 70.41000005722046
+  },
+  {
+   "word": "word",
+   "start": 70.41000005722046,
+   "end": 70.58999988555908
+  },
+  {
+   "word": "word",
+   "start": 70.58999988555908,
+   "end": 70.73000022888183
+  },
+  {
+   "word": "word",
+   "start": 70.73000022888183,
+   "end": 70.77000019073486
+  },
+  {
+   "word": "word",
+   "start": 70.77000019073486,
+   "end": 70.93000003814697
+  },
+  {
+   "word": "word",
+   "start": 70.93000003814697,
+   "end": 71.31000015258789
+  },
+  {
+   "word": "word",
+   "start": 71.31000015258789,
+   "end": 71.47
+  },
+  {
+   "word": "word",
+   "start": 71.47,
+   "end": 71.93000003814697
+  },
+  {
+   "word": "word",
+   "start": 71.93000003814697,
+   "end": 74.32999965667724
+  },
+  {
+   "word": "word",
+   "start": 74.32999965667724,
+   "end": 75.12999984741211
+  },
+  {
+   "word": "word",
+   "start": 75.12999984741211,
+   "end": 75.4099995803833
+  },
+  {
+   "word": "word",
+   "start": 75.4099995803833,
+   "end": 75.49000045776367
+  },
+  {
+   "word": "word",
+   "start": 75.49000045776367,
+   "end": 75.54999992370605
+  },
+  {
+   "word": "word",
+   "start": 75.54999992370605,
+   "end": 75.73000022888183
+  },
+  {
+   "word": "word",
+   "start": 75.73000022888183,
+   "end": 75.94999954223633
+  },
+  {
+   "word": "word",
+   "start": 75.94999954223633,
+   "end": 76.20999977111816
+  },
+  {
+   "word": "word",
+   "start": 76.20999977111816,
+   "end": 76.50999996185303
+  },
+  {
+   "word": "word",
+   "start": 76.50999996185303,
+   "end": 76.78999969482422
+  },
+  {
+   "word": "word",
+   "start": 76.78999969482422,
+   "end": 76.99000045776367
+  },
+  {
+   "word": "word",
+   "start": 76.99000045776367,
+   "end": 77.23000022888183
+  },
+  {
+   "word": "word",
+   "start": 77.23000022888183,
+   "end": 77.49000045776367
+  },
+  {
+   "word": "word",
+   "start": 77.49000045776367,
+   "end": 77.69000026702881
+  },
+  {
+   "word": "word",
+   "start": 77.69000026702881,
+   "end": 77.93000003814697
+  },
+  {
+   "word": "word",
+   "start": 77.93000003814697,
+   "end": 78.04999992370605
+  },
+  {
+   "word": "word",
+   "start": 78.04999992370605,
+   "end": 78.57000038146973
+  },
+  {
+   "word": "word",
+   "start": 78.57000038146973,
+   "end": 78.89000007629394
+  },
+  {
+   "word": "word",
+   "start": 78.89000007629394,
+   "end": 79.20999977111816
+  },
+  {
+   "word": "word",
+   "start": 79.65,
+   "end": 80.12999998927117
+  },
+  {
+   "word": "word",
+   "start": 80.12999998927117,
+   "end": 80.19000002145768
+  },
+  {
+   "word": "word",
+   "start": 80.19000002145768,
+   "end": 80.33000000715256
+  },
+  {
+   "word": "word",
+   "start": 80.33000000715256,
+   "end": 80.65
+  },
+  {
+   "word": "word",
+   "start": 80.65,
+   "end": 81.02999999523163
+  },
+  {
+   "word": "word",
+   "start": 81.02999999523163,
+   "end": 81.79000010490418
+  },
+  {
+   "word": "word",
+   "start": 81.79000010490418,
+   "end": 82.13000001907349
+  },
+  {
+   "word": "word",
+   "start": 82.13000001907349,
+   "end": 82.66999998092652
+  },
+  {
+   "word": "word",
+   "start": 82.66999998092652,
+   "end": 83.15
+  },
+  {
+   "word": "word",
+   "start": 83.15,
+   "end": 83.29000010490418
+  },
+  {
+   "word": "word",
+   "start": 83.29000010490418,
+   "end": 84.16999998092652
+  },
+  {
+   "word": "word",
+   "start": 84.16999998092652,
+   "end": 84.36999979019166
+  },
+  {
+   "word": "word",
+   "start": 84.36999979019166,
+   "end": 85.13000001907349
+  },
+  {
+   "word": "word",
+   "start": 85.13000001907349,
+   "end": 85.7899998664856
+  },
+  {
+   "word": "word",
+   "start": 85.7899998664856,
+   "end": 86.13000001907349
+  },
+  {
+   "word": "word",
+   "start": 86.13000001907349,
+   "end": 86.43000020980836
+  },
+  {
+   "word": "word",
+   "start": 86.58,
+   "end": 86.76000000715256
+  },
+  {
+   "word": "word",
+   "start": 86.76000000715256,
+   "end": 87.32000000953674
+  },
+  {
+   "word": "word",
+   "start": 87.32000000953674,
+   "end": 88.08
+  },
+  {
+   "word": "word",
+   "start": 88.08,
+   "end": 88.28000004768371
+  },
+  {
+   "word": "word",
+   "start": 88.28000004768371,
+   "end": 88.61999996185303
+  },
+  {
+   "word": "word",
+   "start": 88.61999996185303,
+   "end": 88.78000004768371
+  },
+  {
+   "word": "word",
+   "start": 88.78000004768371,
+   "end": 88.98000009536743
+  },
+  {
+   "word": "word",
+   "start": 88.98000009536743,
+   "end": 89.06000001907348
+  },
+  {
+   "word": "word",
+   "start": 89.06000001907348,
+   "end": 89.37999995231628
+  },
+  {
+   "word": "word",
+   "start": 89.37999995231628,
+   "end": 89.72000010490417
+  },
+  {
+   "word": "word",
+   "start": 89.72000010490417,
+   "end": 89.96000011444092
+  },
+  {
+   "word": "word",
+   "start": 89.96000011444092,
+   "end": 90.09999998092651
+  },
+  {
+   "word": "word",
+   "start": 90.09999998092651,
+   "end": 90.37999995231628
+  },
+  {
+   "word": "word",
+   "start": 90.37999995231628,
+   "end": 90.65999992370605
+  },
+  {
+   "word": "word",
+   "start": 90.65999992370605,
+   "end": 90.73999984741211
+  },
+  {
+   "word": "word",
+   "start": 90.73999984741211,
+   "end": 90.86000020980835
+  },
+  {
+   "word": "word",
+   "start": 90.86000020980835,
+   "end": 91.00000007629394
+  },
+  {
+   "word": "word",
+   "start": 91.00000007629394,
+   "end": 91.27999980926514
+  },
+  {
+   "word": "word",
+   "start": 91.27999980926514,
+   "end": 91.42000015258789
+  },
+  {
+   "word": "word",
+   "start": 91.42000015258789,
+   "end": 91.56000001907348
+  },
+  {
+   "word": "word",
+   "start": 91.56000001907348,
+   "end": 91.84000070571899
+  },
+  {
+   "word": "word",
+   "start": 92.59999979019165,
+   "end": 93.29999979019165
+  },
+  {
+   "word": "word",
+   "start": 95.25,
+   "end": 95.4699999988079
+  },
+  {
+   "word": "word",
+   "start": 95.4699999988079,
+   "end": 95.5300000011921
+  },
+  {
+   "word": "word",
+   "start": 95.5300000011921,
+   "end": 95.68999999761581
+  },
+  {
+   "word": "word",
+   "start": 95.68999999761581,
+   "end": 95.79000002145767
+  },
+  {
+   "word": "word",
+   "start": 95.79000002145767,
+   "end": 95.85000002384186
+  },
+  {
+   "word": "word",
+   "start": 95.85000002384186,
+   "end": 96.08999997377396
+  },
+  {
+   "word": "word",
+   "start": 96.08999997377396,
+   "end": 96.4099999666214
+  },
+  {
+   "word": "word",
+   "start": 96.97000002861023,
+   "end": 97.16999995708466
+  },
+  {
+   "word": "word",
+   "start": 97.16999995708466,
+   "end": 97.16999995708466
+  },
+  {
+   "word": "word",
+   "start": 97.16999995708466,
+   "end": 97.30999994277954
+  },
+  {
+   "word": "word",
+   "start": 97.30999994277954,
+   "end": 97.50999999046326
+  },
+  {
+   "word": "word",
+   "start": 97.50999999046326,
+   "end": 97.67000007629395
+  },
+  {
+   "word": "word",
+   "start": 97.67000007629395,
+   "end": 98.00999999046326
+  },
+  {
+   "word": "word",
+   "start": 98.00999999046326,
+   "end": 98.4300000667572
+  },
+  {
+   "word": "word",
+   "start": 98.4300000667572,
+   "end": 98.76999998092651
+  },
+  {
+   "word": "word",
+   "start": 98.76999998092651,
+   "end": 98.97000002861023
+  },
+  {
+   "word": "word",
+   "start": 98.97000002861023,
+   "end": 99.10999989509583
+  },
+  {
+   "word": "word",
+   "start": 99.10999989509583,
+   "end": 99.59000015258789
+  },
+  {
+   "word": "word",
+   "start": 99.59000015258789,
+   "end": 99.75
+  },
+  {
+   "word": "word",
+   "start": 99.75,
+   "end": 100.01000022888184
+  },
+  {
+   "word": "word",
+   "start": 100.01000022888184,
+   "end": 100.36999988555908
+  },
+  {
+   "word": "word",
+   "start": 100.86,
+   "end": 101.32000000834465
+  },
+  {
+   "word": "word",
+   "start": 101.32000000834465,
+   "end": 101.55999998807907
+  },
+  {
+   "word": "word",
+   "start": 101.55999998807907,
+   "end": 102.10000000953674
+  },
+  {
+   "word": "word",
+   "start": 102.10000000953674,
+   "end": 102.68000005245209
+  },
+  {
+   "word": "word",
+   "start": 102.68000005245209,
+   "end": 103.28000007629394
+  },
+  {
+   "word": "word",
+   "start": 103.28000007629394,
+   "end": 103.61999999046326
+  },
+  {
+   "word": "word",
+   "start": 103.61999999046326,
+   "end": 103.74000011444092
+  },
+  {
+   "word": "word",
+   "start": 103.74000011444092,
+   "end": 103.93999992370605
+  },
+  {
+   "word": "word",
+   "start": 103.93999992370605,
+   "end": 104.11999999046326
+  },
+  {
+   "word": "word",
+   "start": 104.11999999046326,
+   "end": 104.28000007629394
+  },
+  {
+   "word": "word",
+   "start": 104.28000007629394,
+   "end": 104.52000008583069
+  },
+  {
+   "word": "word",
+   "start": 104.52000008583069,
+   "end": 105.18000017166138
+  },
+  {
+   "word": "word",
+   "start": 105.18000017166138,
+   "end": 105.43999992370605
+  },
+  {
+   "word": "word",
+   "start": 105.43999992370605,
+   "end": 105.57999979019165
+  },
+  {
+   "word": "word",
+   "start": 105.57999979019165,
+   "end": 105.84000001907349
+  },
+  {
+   "word": "word",
+   "start": 105.84000001907349,
+   "end": 106.07999979019165
+  },
+  {
+   "word": "word",
+   "start": 106.07999979019165,
+   "end": 106.59999977111816
+  },
+  {
+   "word": "word",
+   "start": 106.59999977111816,
+   "end": 106.70000015258789
+  },
+  {
+   "word": "word",
+   "start": 106.70000015258789,
+   "end": 106.84000001907349
+  },
+  {
+   "word": "word",
+   "start": 106.84000001907349,
+   "end": 107.43999992370605
+  },
+  {
+   "word": "word",
+   "start": 107.43999992370605,
+   "end": 107.53999982833862
+  },
+  {
+   "word": "word",
+   "start": 107.53999982833862,
+   "end": 107.74000011444092
+  },
+  {
+   "word": "word",
+   "start": 107.74000011444092,
+   "end": 107.93999992370605
+  },
+  {
+   "word": "word",
+   "start": 107.93999992370605,
+   "end": 108.28000007629394
+  },
+  {
+   "word": "word",
+   "start": 108.28000007629394,
+   "end": 108.66000019073486
+  },
+  {
+   "word": "word",
+   "start": 108.66000019073486,
+   "end": 109.15999995231628
+  },
+  {
+   "word": "word",
+   "start": 109.47999988555908,
+   "end": 109.62000022888184
+  },
+  {
+   "word": "word",
+   "start": 109.62000022888184,
+   "end": 109.78000007629394
+  },
+  {
+   "word": "word",
+   "start": 109.78000007629394,
+   "end": 109.93999992370605
+  },
+  {
+   "word": "word",
+   "start": 109.93999992370605,
+   "end": 110.86
+  },
+  {
+   "word": "word",
+   "start": 110.86,
+   "end": 111.58000026702881
+  },
+  {
+   "word": "word",
+   "start": 111.58000026702881,
+   "end": 111.9200004196167
+  },
+  {
+   "word": "word",
+   "start": 111.9200004196167,
+   "end": 112.33999954223633
+  },
+  {
+   "word": "word",
+   "start": 112.33999954223633,
+   "end": 112.4200004196167
+  },
+  {
+   "word": "word",
+   "start": 112.4200004196167,
+   "end": 112.66000019073486
+  },
+  {
+   "word": "word",
+   "start": 112.66000019073486,
+   "end": 112.97999988555908
+  },
+  {
+   "word": "word",
+   "start": 112.97999988555908,
+   "end": 113.09999977111816
+  },
+  {
+   "word": "word",
+   "start": 113.09999977111816,
+   "end": 113.28000007629394
+  },
+  {
+   "word": "word",
+   "start": 113.28000007629394,
+   "end": 113.54000030517578
+  },
+  {
+   "word": "word",
+   "start": 113.54000030517578,
+   "end": 114.04000030517578
+  },
+  {
+   "word": "word",
+   "start": 114.04000030517578,
+   "end": 114.55999980926514
+  },
+  {
+   "word": "word",
+   "start": 114.55999980926514,
+   "end": 114.70000015258789
+  },
+  {
+   "word": "word",
+   "start": 114.70000015258789,
+   "end": 114.88000045776367
+  },
+  {
+   "word": "word",
+   "start": 114.88000045776367,
+   "end": 115.04000030517578
+  },
+  {
+   "word": "word",
+   "start": 115.04000030517578,
+   "end": 115.25999961853027
+  },
+  {
+   "word": "word",
+   "start": 115.25999961853027,
+   "end": 115.43999992370605
+  },
+  {
+   "word": "word",
+   "start": 115.43999992370605,
+   "end": 115.63999973297119
+  },
+  {
+   "word": "word",
+   "start": 115.63999973297119,
+   "end": 115.74000011444092
+  },
+  {
+   "word": "word",
+   "start": 115.74000011444092,
+   "end": 115.96000038146973
+  },
+  {
+   "word": "word",
+   "start": 115.96000038146973,
+   "end": 116.37999950408935
+  },
+  {
+   "word": "word",
+   "start": 117.50000129699707,
+   "end": 117.78000007629394
+  },
+  {
+   "word": "word",
+   "start": 117.78000007629394,
+   "end": 118.04000030517578
+  },
+  {
+   "word": "word",
+   "start": 118.04000030517578,
+   "end": 118.17999969482422
+  },
+  {
+   "word": "word",
+   "start": 118.17999969482422,
+   "end": 118.40000091552734
+  },
+  {
+   "word": "word",
+   "start": 118.40000091552734,
+   "end": 118.46000038146973
+  },
+  {
+   "word": "word",
+   "start": 118.46000038146973,
+   "end": 118.51999984741211
+  },
+  {
+   "word": "word",
+   "start": 118.51999984741211,
+   "end": 118.91999946594238
+  },
+  {
+   "word": "word",
+   "start": 118.91999946594238,
+   "end": 119.04000030517578
+  },
+  {
+   "word": "word",
+   "start": 119.04000030517578,
+   "end": 119.20000015258789
+  },
+  {
+   "word": "word",
+   "start": 119.20000015258789,
+   "end": 119.28000007629394
+  },
+  {
+   "word": "word",
+   "start": 119.28000007629394,
+   "end": 119.36
+  },
+  {
+   "word": "word",
+   "start": 119.36,
+   "end": 119.41999946594238
+  },
+  {
+   "word": "word",
+   "start": 119.41999946594238,
+   "end": 119.69999824523926
+  },
+  {
+   "word": "word",
+   "start": 119.80000053405762,
+   "end": 120.12000022888184
+  },
+  {
+   "word": "word",
+   "start": 120.12000022888184,
+   "end": 120.30000053405762
+  },
+  {
+   "word": "word",
+   "start": 120.30000053405762,
+   "end": 120.49999938964844
+  },
+  {
+   "word": "word",
+   "start": 120.49999938964844,
+   "end": 120.86
+  },
+  {
+   "word": "word",
+   "start": 120.86,
+   "end": 121.83999954223633
+  },
+  {
+   "word": "word",
+   "start": 121.83999954223633,
+   "end": 122.09999977111816
+  },
+  {
+   "word": "word",
+   "start": 122.09999977111816,
+   "end": 122.2399991607666
+  },
+  {
+   "word": "word",
+   "start": 122.2399991607666,
+   "end": 122.56000076293945
+  },
+  {
+   "word": "word",
+   "start": 122.56000076293945,
+   "end": 123.09999977111816
+  },
+  {
+   "word": "word",
+   "start": 123.09999977111816,
+   "end": 123.49999938964844
+  },
+  {
+   "word": "word",
+   "start": 123.49999938964844,
+   "end": 125.22000061035156
+  },
+  {
+   "word": "word",
+   "start": 125.22000061035156,
+   "end": 125.75999961853027
+  },
+  {
+   "word": "word",
+   "start": 125.75999961853027,
+   "end": 126.06000076293945
+  },
+  {
+   "word": "word",
+   "start": 126.06000076293945,
+   "end": 126.78000007629394
+  },
+  {
+   "word": "word",
+   "start": 126.78000007629394,
+   "end": 127.07999931335449
+  },
+  {
+   "word": "word",
+   "start": 127.07999931335449,
+   "end": 127.4800008392334
+  },
+  {
+   "word": "word",
+   "start": 127.4800008392334,
+   "end": 127.54000030517578
+  },
+  {
+   "word": "word",
+   "start": 127.54000030517578,
+   "end": 127.81999908447266
+  },
+  {
+   "word": "word",
+   "start": 127.81999908447266,
+   "end": 128.42000137329103
+  },
+  {
+   "word": "word",
+   "start": 130.86,
+   "end": 131.11999999046327
+  },
+  {
+   "word": "word",
+   "start": 131.11999999046327,
+   "end": 131.58000002861024
+  },
+  {
+   "word": "word",
+   "start": 131.58000002861024,
+   "end": 132.25999997615816
+  },
+  {
+   "word": "word",
+   "start": 132.25999997615816,
+   "end": 132.820000038147
+  },
+  {
+   "word": "word",
+   "start": 132.820000038147,
+   "end": 133.0200000858307
+  },
+  {
+   "word": "word",
+   "start": 133.0200000858307,
+   "end": 133.13999997138978
+  },
+  {
+   "word": "word",
+   "start": 133.13999997138978,
+   "end": 133.39999996185304
+  },
+  {
+   "word": "word",
+   "start": 133.39999996185304,
+   "end": 133.78000007629396
+  },
+  {
+   "word": "word",
+   "start": 133.78000007629396,
+   "end": 134.320000038147
+  },
+  {
+   "word": "word",
+   "start": 134.7,
+   "end": 134.93999999463557
+  },
+  {
+   "word": "word",
+   "start": 134.93999999463557,
+   "end": 135.2
+  },
+  {
+   "word": "word",
+   "start": 135.29999991953372,
+   "end": 135.7199999809265
+  },
+  {
+   "word": "word",
+   "start": 135.7199999809265,
+   "end": 136.18000001907347
+  },
+  {
+   "word": "word",
+   "start": 136.18000001907347,
+   "end": 136.23999996185302
+  },
+  {
+   "word": "word",
+   "start": 136.23999996185302,
+   "end": 136.4000000476837
+  },
+  {
+   "word": "word",
+   "start": 136.4000000476837,
+   "end": 136.73999996185302
+  },
+  {
+   "word": "word",
+   "start": 136.73999996185302,
+   "end": 137.0399999141693
+  },
+  {
+   "word": "word",
+   "start": 137.0399999141693,
+   "end": 137.2
+  },
+  {
+   "word": "word",
+   "start": 137.2,
+   "end": 137.84000010490416
+  },
+  {
+   "word": "word",
+   "start": 137.84000010490416,
+   "end": 137.8800000667572
+  },
+  {
+   "word": "word",
+   "start": 137.8800000667572,
+   "end": 137.99999995231627
+  },
+  {
+   "word": "word",
+   "start": 137.99999995231627,
+   "end": 138.16000003814696
+  },
+  {
+   "word": "word",
+   "start": 138.16000003814696,
+   "end": 138.34000010490416
+  },
+  {
+   "word": "word",
+   "start": 138.34000010490416,
+   "end": 138.7
+  },
+  {
+   "word": "word",
+   "start": 138.7,
+   "end": 138.83999986648558
+  },
+  {
+   "word": "word",
+   "start": 138.83999986648558,
+   "end": 138.93999977111815
+  },
+  {
+   "word": "word",
+   "start": 138.93999977111815,
+   "end": 139.27999992370604
+  },
+  {
+   "word": "word",
+   "start": 139.27999992370604,
+   "end": 139.68000001907347
+  },
+  {
+   "word": "word",
+   "start": 139.68000001907347,
+   "end": 139.75999994277953
+  },
+  {
+   "word": "word",
+   "start": 139.75999994277953,
+   "end": 139.8799998283386
+  },
+  {
+   "word": "word",
+   "start": 139.8799998283386,
+   "end": 140.04000015258788
+  },
+  {
+   "word": "word",
+   "start": 140.04000015258788,
+   "end": 140.27999992370604
+  },
+  {
+   "word": "word",
+   "start": 140.27999992370604,
+   "end": 140.31999988555907
+  },
+  {
+   "word": "word",
+   "start": 140.31999988555907,
+   "end": 140.39999980926513
+  },
+  {
+   "word": "word",
+   "start": 140.39999980926513,
+   "end": 140.60000009536742
+  },
+  {
+   "word": "word",
+   "start": 140.60000009536742,
+   "end": 140.75999994277953
+  },
+  {
+   "word": "word",
+   "start": 140.75999994277953,
+   "end": 140.93999977111815
+  },
+  {
+   "word": "word",
+   "start": 140.93999977111815,
+   "end": 141.2999994277954
+  },
+  {
+   "word": "word",
+   "start": 141.3599998474121,
+   "end": 141.5800001144409
+  },
+  {
+   "word": "word",
+   "start": 141.5800001144409,
+   "end": 141.81999988555907
+  },
+  {
+   "word": "word",
+   "start": 141.81999988555907,
+   "end": 141.93999977111815
+  },
+  {
+   "word": "word",
+   "start": 141.93999977111815,
+   "end": 141.98000020980834
+  },
+  {
+   "word": "word",
+   "start": 141.98000020980834,
+   "end": 142.14000005722045
+  },
+  {
+   "word": "word",
+   "start": 142.14000005722045,
+   "end": 142.3799998283386
+  },
+  {
+   "word": "word",
+   "start": 142.3799998283386,
+   "end": 142.7600004196167
+  },
+  {
+   "word": "word",
+   "start": 142.7600004196167,
+   "end": 142.96000022888182
+  },
+  {
+   "word": "word",
+   "start": 142.96000022888182,
+   "end": 143.34000034332274
+  },
+  {
+   "word": "word",
+   "start": 143.34000034332274,
+   "end": 143.7
+  },
+  {
+   "word": "word",
+   "start": 144.09,
+   "end": 144.46999999523163
+  },
+  {
+   "word": "word",
+   "start": 144.46999999523163,
+   "end": 144.69000002384186
+  },
+  {
+   "word": "word",
+   "start": 144.69000002384186,
+   "end": 145.26999994754792
+  },
+  {
+   "word": "word",
+   "start": 145.26999994754792,
+   "end": 145.53000005722046
+  },
+  {
+   "word": "word",
+   "start": 145.53000005722046,
+   "end": 145.9100000524521
+  },
+  {
+   "word": "word",
+   "start": 146.22,
+   "end": 146.5800000143051
+  },
+  {
+   "word": "word",
+   "start": 146.5800000143051,
+   "end": 146.97999999046326
+  },
+  {
+   "word": "word",
+   "start": 146.97999999046326,
+   "end": 147.44000002861023
+  },
+  {
+   "word": "word",
+   "start": 147.44000002861023,
+   "end": 147.7399999809265
+  },
+  {
+   "word": "word",
+   "start": 147.7399999809265,
+   "end": 148.01999995231628
+  },
+  {
+   "word": "word",
+   "start": 148.01999995231628,
+   "end": 148.27999994277954
+  },
+  {
+   "word": "word",
+   "start": 148.27999994277954,
+   "end": 148.60000011444092
+  },
+  {
+   "word": "word",
+   "start": 148.60000011444092,
+   "end": 148.77999994277954
+  },
+  {
+   "word": "word",
+   "start": 148.77999994277954,
+   "end": 149.31999990463257
+  },
+  {
+   "word": "word",
+   "start": 149.31999990463257,
+   "end": 149.70000001907349
+  },
+  {
+   "word": "word",
+   "start": 149.70000001907349,
+   "end": 150.31999990463257
+  },
+  {
+   "word": "word",
+   "start": 150.31999990463257,
+   "end": 150.5600001525879
+  },
+  {
+   "word": "word",
+   "start": 150.5600001525879,
+   "end": 150.7399999809265
+  },
+  {
+   "word": "word",
+   "start": 150.7399999809265,
+   "end": 151.02000019073486
+  },
+  {
+   "word": "word",
+   "start": 151.02000019073486,
+   "end": 151.58000061035156
+  },
+  {
+   "word": "word",
+   "start": 151.7399999809265,
+   "end": 151.91999980926514
+  },
+  {
+   "word": "word",
+   "start": 151.91999980926514,
+   "end": 152.50000020980835
+  },
+  {
+   "word": "word",
+   "start": 152.50000020980835,
+   "end": 152.75999996185303
+  },
+  {
+   "word": "word",
+   "start": 152.75999996185303,
+   "end": 153.16000005722046
+  },
+  {
+   "word": "word",
+   "start": 153.16000005722046,
+   "end": 153.72
+  },
+  {
+   "word": "word",
+   "start": 153.72,
+   "end": 153.89999982833862
+  },
+  {
+   "word": "word",
+   "start": 153.89999982833862,
+   "end": 154.18000003814697
+  },
+  {
+   "word": "word",
+   "start": 154.18000003814697,
+   "end": 154.91999980926514
+  },
+  {
+   "word": "word",
+   "start": 154.91999980926514,
+   "end": 155.36000034332275
+  },
+  {
+   "word": "word",
+   "start": 155.36000034332275,
+   "end": 155.45999977111816
+  },
+  {
+   "word": "word",
+   "start": 155.45999977111816,
+   "end": 155.53999969482422
+  },
+  {
+   "word": "word",
+   "start": 155.53999969482422,
+   "end": 156.22
+  },
+  {
+   "word": "word",
+   "start": 156.22,
+   "end": 156.4400002670288
+  },
+  {
+   "word": "word",
+   "start": 156.4400002670288,
+   "end": 156.68000003814697
+  },
+  {
+   "word": "word",
+   "start": 156.68000003814697,
+   "end": 156.72
+  },
+  {
+   "word": "word",
+   "start": 156.72,
+   "end": 156.86000034332275
+  },
+  {
+   "word": "word",
+   "start": 156.86000034332275,
+   "end": 156.9999997329712
+  },
+  {
+   "word": "word",
+   "start": 156.9999997329712,
+   "end": 157.52000019073486
+  },
+  {
+   "word": "word",
+   "start": 157.52000019073486,
+   "end": 157.9999997329712
+  },
+  {
+   "word": "word",
+   "start": 157.9999997329712,
+   "end": 158.48000022888183
+  },
+  {
+   "word": "word",
+   "start": 158.48000022888183,
+   "end": 158.79999992370605
+  },
+  {
+   "word": "word",
+   "start": 158.79999992370605,
+   "end": 159.1599995803833
+  },
+  {
+   "word": "word",
+   "start": 159.1599995803833,
+   "end": 159.75999996185303
+  },
+  {
+   "word": "word",
+   "start": 159.75999996185303,
+   "end": 159.9400002670288
+  },
+  {
+   "word": "word",
+   "start": 159.9400002670288,
+   "end": 160.18000003814697
+  },
+  {
+   "word": "word",
+   "start": 160.18000003814697,
+   "end": 160.4400002670288
+  },
+  {
+   "word": "word",
+   "start": 160.4400002670288,
+   "end": 160.68000003814697
+  },
+  {
+   "word": "word",
+   "start": 160.68000003814697,
+   "end": 160.98000022888183
+  },
+  {
+   "word": "word",
+   "start": 160.98000022888183,
+   "end": 161.4400002670288
+  },
+  {
+   "word": "word",
+   "start": 161.4400002670288,
+   "end": 161.60000011444092
+  },
+  {
+   "word": "word",
+   "start": 161.60000011444092,
+   "end": 161.74000045776367
+  },
+  {
+   "word": "word",
+   "start": 161.74000045776367,
+   "end": 161.8799998474121
+  },
+  {
+   "word": "word",
+   "start": 161.8799998474121,
+   "end": 162.3799998474121
+  },
+  {
+   "word": "word",
+   "start": 162.3799998474121,
+   "end": 162.67999908447266
+  },
+  {
+   "word": "word",
+   "start": 162.67999908447266,
+   "end": 162.90000030517578
+  },
+  {
+   "word": "word",
+   "start": 162.90000030517578,
+   "end": 163.01999923706055
+  },
+  {
+   "word": "word",
+   "start": 163.01999923706055,
+   "end": 163.69999954223633
+  },
+  {
+   "word": "word",
+   "start": 163.69999954223633,
+   "end": 164.14000007629394
+  },
+  {
+   "word": "word",
+   "start": 164.14000007629394,
+   "end": 164.3799998474121
+  },
+  {
+   "word": "word",
+   "start": 164.3799998474121,
+   "end": 164.5600001525879
+  },
+  {
+   "word": "word",
+   "start": 164.5600001525879,
+   "end": 164.66000053405762
+  },
+  {
+   "word": "word",
+   "start": 164.66000053405762,
+   "end": 165.32000038146973
+  },
+  {
+   "word": "word",
+   "start": 165.32000038146973,
+   "end": 165.72
+  },
+  {
+   "word": "word",
+   "start": 165.72,
+   "end": 165.90000030517578
+  },
+  {
+   "word": "word",
+   "start": 165.90000030517578,
+   "end": 166.26000091552734
+  },
+  {
+   "word": "word",
+   "start": 166.77,
+   "end": 166.97000000298024
+  },
+  {
+   "word": "word",
+   "start": 166.97000000298024,
+   "end": 167.4099999856949
+  },
+  {
+   "word": "word",
+   "start": 167.4099999856949,
+   "end": 167.64999999523164
+  },
+  {
+   "word": "word",
+   "start": 167.64999999523164,
+   "end": 168.02999999046327
+  },
+  {
+   "word": "word",
+   "start": 168.02999999046327,
+   "end": 168.27
+  },
+  {
+   "word": "word",
+   "start": 168.27,
+   "end": 168.51000000953675
+  },
+  {
+   "word": "word",
+   "start": 168.51000000953675,
+   "end": 168.99000002861024
+  },
+  {
+   "word": "word",
+   "start": 169.4900005054474,
+   "end": 169.97000004768373
+  },
+  {
+   "word": "word",
+   "start": 169.97000004768373,
+   "end": 170.17000009536744
+  },
+  {
+   "word": "word",
+   "start": 170.17000009536744,
+   "end": 170.4300000858307
+  },
+  {
+   "word": "word",
+   "start": 170.4300000858307,
+   "end": 170.65000011444093
+  },
+  {
+   "word": "word",
+   "start": 170.65000011444093,
+   "end": 171.15000011444093
+  },
+  {
+   "word": "word",
+   "start": 171.15000011444093,
+   "end": 171.44999982833863
+  },
+  {
+   "word": "word",
+   "start": 171.44999982833863,
+   "end": 171.5900001716614
+  },
+  {
+   "word": "word",
+   "start": 171.5900001716614,
+   "end": 171.77
+  },
+  {
+   "word": "word",
+   "start": 171.77,
+   "end": 171.92999984741212
+  },
+  {
+   "word": "word",
+   "start": 171.92999984741212,
+   "end": 172.19000007629396
+  },
+  {
+   "word": "word",
+   "start": 172.19000007629396,
+   "end": 172.69000007629396
+  },
+  {
+   "word": "word",
+   "start": 172.69000007629396,
+   "end": 172.92999984741212
+  },
+  {
+   "word": "word",
+   "start": 172.92999984741212,
+   "end": 173.13000013351441
+  },
+  {
+   "word": "word",
+   "start": 173.13000013351441,
+   "end": 173.27
+  },
+  {
+   "word": "word",
+   "start": 173.27,
+   "end": 173.74999954223634
+  },
+  {
+   "word": "word",
+   "start": 173.78999998092652,
+   "end": 174.34999992370606
+  },
+  {
+   "word": "word",
+   "start": 174.34999992370606,
+   "end": 174.50999977111817
+  },
+  {
+   "word": "word",
+   "start": 174.50999977111817,
+   "end": 174.71000005722047
+  },
+  {
+   "word": "word",
+   "start": 174.71000005722047,
+   "end": 175.08999969482423
+  },
+  {
+   "word": "word",
+   "start": 175.08999969482423,
+   "end": 175.53000022888185
+  },
+  {
+   "word": "word",
+   "start": 175.53000022888185,
+   "end": 175.87000038146974
+  },
+  {
+   "word": "word",
+   "start": 175.87000038146974,
+   "end": 176.03000022888185
+  },
+  {
+   "word": "word",
+   "start": 176.03000022888185,
+   "end": 176.12999965667726
+  },
+  {
+   "word": "word",
+   "start": 176.12999965667726,
+   "end": 176.4500003051758
+  },
+  {
+   "word": "word",
+   "start": 176.4500003051758,
+   "end": 176.74999954223634
+  },
+  {
+   "word": "word",
+   "start": 176.74999954223634,
+   "end": 176.96999980926515
+  },
+  {
+   "word": "word",
+   "start": 176.96999980926515,
+   "end": 177.41000034332276
+  },
+  {
+   "word": "word",
+   "start": 177.41000034332276,
+   "end": 177.77
+  },
+  {
+   "word": "word",
+   "start": 177.77,
+   "end": 177.8899998855591
+  },
+  {
+   "word": "word",
+   "start": 177.8899998855591,
+   "end": 178.00999977111817
+  },
+  {
+   "word": "word",
+   "start": 178.00999977111817,
+   "end": 178.12999965667726
+  },
+  {
+   "word": "word",
+   "start": 178.12999965667726,
+   "end": 178.37000038146974
+  },
+  {
+   "word": "word",
+   "start": 178.37000038146974,
+   "end": 178.46999980926515
+  },
+  {
+   "word": "word",
+   "start": 178.46999980926515,
+   "end": 178.58999969482423
+  },
+  {
+   "word": "word",
+   "start": 178.58999969482423,
+   "end": 178.79000045776368
+  },
+  {
+   "word": "word",
+   "start": 178.79000045776368,
+   "end": 179.03000022888185
+  },
+  {
+   "word": "word",
+   "start": 179.19000007629396,
+   "end": 179.3899998855591
+  },
+  {
+   "word": "word",
+   "start": 179.3899998855591,
+   "end": 179.66999961853028
+  },
+  {
+   "word": "word",
+   "start": 179.66999961853028,
+   "end": 179.77
+  },
+  {
+   "word": "word",
+   "start": 179.77,
+   "end": 180.29000045776368
+  },
+  {
+   "word": "word",
+   "start": 180.29000045776368,
+   "end": 180.50999977111817
+  },
+  {
+   "word": "word",
+   "start": 180.50999977111817,
+   "end": 180.69000007629396
+  },
+  {
+   "word": "word",
+   "start": 180.69000007629396,
+   "end": 180.91000034332276
+  },
+  {
+   "word": "word",
+   "start": 180.91000034332276,
+   "end": 181.46999980926515
+  },
+  {
+   "word": "word",
+   "start": 181.46999980926515,
+   "end": 181.91000034332276
+  },
+  {
+   "word": "word",
+   "start": 182.41000034332276,
+   "end": 182.69000007629396
+  },
+  {
+   "word": "word",
+   "start": 182.69000007629396,
+   "end": 182.8900008392334
+  },
+  {
+   "word": "word",
+   "start": 182.8900008392334,
+   "end": 183.06999923706056
+  },
+  {
+   "word": "word",
+   "start": 183.06999923706056,
+   "end": 183.19000007629396
+  },
+  {
+   "word": "word",
+   "start": 183.19000007629396,
+   "end": 183.55000068664552
+  },
+  {
+   "word": "word",
+   "start": 183.55000068664552,
+   "end": 183.97000076293946
+  },
+  {
+   "word": "word",
+   "start": 183.97000076293946,
+   "end": 184.3900008392334
+  },
+  {
+   "word": "word",
+   "start": 184.3900008392334,
+   "end": 184.77
+  },
+  {
+   "word": "word",
+   "start": 184.77,
+   "end": 185.08999969482423
+  },
+  {
+   "word": "word",
+   "start": 185.08999969482423,
+   "end": 185.42999984741212
+  },
+  {
+   "word": "word",
+   "start": 185.42999984741212,
+   "end": 185.63000061035157
+  },
+  {
+   "word": "word",
+   "start": 185.63000061035157,
+   "end": 185.8900008392334
+  },
+  {
+   "word": "word",
+   "start": 185.8900008392334,
+   "end": 186.27
+  },
+  {
+   "word": "word",
+   "start": 186.27,
+   "end": 186.6499991607666
+  },
+  {
+   "word": "word",
+   "start": 186.6499991607666,
+   "end": 187.00999977111817
+  },
+  {
+   "word": "word",
+   "start": 187.00999977111817,
+   "end": 187.22999908447267
+  },
+  {
+   "word": "word",
+   "start": 187.22999908447267,
+   "end": 187.37000038146974
+  },
+  {
+   "word": "word",
+   "start": 187.37000038146974,
+   "end": 187.53000022888185
+  },
+  {
+   "word": "word",
+   "start": 187.53000022888185,
+   "end": 187.72999908447267
+  },
+  {
+   "word": "word",
+   "start": 187.72999908447267,
+   "end": 187.97000076293946
+  },
+  {
+   "word": "word",
+   "start": 187.97000076293946,
+   "end": 188.22999908447267
+  },
+  {
+   "word": "word",
+   "start": 188.22999908447267,
+   "end": 188.4500003051758
+  },
+  {
+   "word": "word",
+   "start": 188.4500003051758,
+   "end": 188.9100032043457
+  },
+  {
+   "word": "word",
+   "start": 189.54,
+   "end": 189.65999999731778
+  },
+  {
+   "word": "word",
+   "start": 190.32,
+   "end": 190.43999999731778
+  },
+  {
+   "word": "word",
+   "start": 190.43999999731778,
+   "end": 190.73999998688697
+  },
+  {
+   "word": "word",
+   "start": 190.73999998688697,
+   "end": 191.00000000715255
+  },
+  {
+   "word": "word",
+   "start": 191.00000000715255,
+   "end": 191.19999999523162
+  },
+  {
+   "word": "word",
+   "start": 191.19999999523162,
+   "end": 191.27999997854232
+  },
+  {
+   "word": "word",
+   "start": 191.27999997854232,
+   "end": 191.4799999666214
+  },
+  {
+   "word": "word",
+   "start": 191.4799999666214,
+   "end": 191.6800000143051
+  },
+  {
+   "word": "word",
+   "start": 191.6800000143051,
+   "end": 191.85999996185302
+  },
+  {
+   "word": "word",
+   "start": 191.85999996185302,
+   "end": 192.0200000476837
+  },
+  {
+   "word": "word",
+   "start": 192.0200000476837,
+   "end": 192.11999995231628
+  },
+  {
+   "word": "word",
+   "start": 192.11999995231628,
+   "end": 192.1600000333786
+  },
+  {
+   "word": "word",
+   "start": 192.1600000333786,
+   "end": 192.23999995708465
+  },
+  {
+   "word": "word",
+   "start": 192.23999995708465,
+   "end": 192.3399999809265
+  },
+  {
+   "word": "word",
+   "start": 192.3399999809265,
+   "end": 192.5000000667572
+  },
+  {
+   "word": "word",
+   "start": 192.5000000667572,
+   "end": 192.7000001144409
+  },
+  {
+   "word": "word",
+   "start": 192.7000001144409,
+   "end": 192.85999996185302
+  },
+  {
+   "word": "word",
+   "start": 192.85999996185302,
+   "end": 192.98000008583068
+  },
+  {
+   "word": "word",
+   "start": 192.98000008583068,
+   "end": 193.1399999332428
+  },
+  {
+   "word": "word",
+   "start": 193.1399999332428,
+   "end": 193.459999628067
+  },
+  {
+   "word": "word",
+   "start": 194.10000020980834,
+   "end": 194.62000019073486
+  },
+  {
+   "word": "word",
+   "start": 194.62000019073486,
+   "end": 194.82
+  },
+  {
+   "word": "word",
+   "start": 194.82,
+   "end": 194.99999982833862
+  },
+  {
+   "word": "word",
+   "start": 194.99999982833862,
+   "end": 195.28000003814697
+  },
+  {
+   "word": "word",
+   "start": 195.28000003814697,
+   "end": 195.43999988555908
+  },
+  {
+   "word": "word",
+   "start": 195.43999988555908,
+   "end": 195.72000009536742
+  },
+  {
+   "word": "word",
+   "start": 195.72000009536742,
+   "end": 195.91999990463256
+  },
+  {
+   "word": "word",
+   "start": 195.91999990463256,
+   "end": 196.32
+  },
+  {
+   "word": "word",
+   "start": 196.32,
+   "end": 196.53999979019164
+  },
+  {
+   "word": "word",
+   "start": 196.53999979019164,
+   "end": 196.6800001335144
+  },
+  {
+   "word": "word",
+   "start": 196.6800001335144,
+   "end": 197.01999980926513
+  },
+  {
+   "word": "word",
+   "start": 197.01999980926513,
+   "end": 197.49999982833862
+  },
+  {
+   "word": "word",
+   "start": 197.49999982833862,
+   "end": 197.80000001907348
+  },
+  {
+   "word": "word",
+   "start": 197.80000001907348,
+   "end": 198.28000003814697
+  },
+  {
+   "word": "word",
+   "start": 198.28000003814697,
+   "end": 198.51999980926513
+  },
+  {
+   "word": "word",
+   "start": 198.51999980926513,
+   "end": 198.7599995803833
+  },
+  {
+   "word": "word",
+   "start": 198.7599995803833,
+   "end": 199.46000034332275
+  },
+  {
+   "word": "word",
+   "start": 199.46000034332275,
+   "end": 199.67999965667724
+  },
+  {
+   "word": "word",
+   "start": 199.67999965667724,
+   "end": 200.08000022888183
+  },
+  {
+   "word": "word",
+   "start": 200.08000022888183,
+   "end": 200.3800004196167
+  },
+  {
+   "word": "word",
+   "start": 200.3800004196167,
+   "end": 200.93999988555908
+  },
+  {
+   "word": "word",
+   "start": 200.93999988555908,
+   "end": 201.0400002670288
+  },
+  {
+   "word": "word",
+   "start": 201.0400002670288,
+   "end": 201.1399996948242
+  },
+  {
+   "word": "word",
+   "start": 201.1399996948242,
+   "end": 201.21999961853027
+  },
+  {
+   "word": "word",
+   "start": 201.21999961853027,
+   "end": 201.29999954223632
+  },
+  {
+   "word": "word",
+   "start": 201.29999954223632,
+   "end": 201.43999988555908
+  },
+  {
+   "word": "word",
+   "start": 201.43999988555908,
+   "end": 201.74000007629394
+  },
+  {
+   "word": "word",
+   "start": 201.74000007629394,
+   "end": 202.09999973297118
+  },
+  {
+   "word": "word",
+   "start": 202.09999973297118,
+   "end": 202.21999961853027
+  },
+  {
+   "word": "word",
+   "start": 202.21999961853027,
+   "end": 202.3800004196167
+  },
+  {
+   "word": "word",
+   "start": 202.3800004196167,
+   "end": 202.58000022888183
+  },
+  {
+   "word": "word",
+   "start": 202.58000022888183,
+   "end": 202.9799998474121
+  },
+  {
+   "word": "word",
+   "start": 202.9799998474121,
+   "end": 203.28000003814697
+  },
+  {
+   "word": "word",
+   "start": 203.28000003814697,
+   "end": 203.78000003814697
+  },
+  {
+   "word": "word",
+   "start": 203.78000003814697,
+   "end": 203.9799998474121
+  },
+  {
+   "word": "word",
+   "start": 203.9799998474121,
+   "end": 204.24000007629394
+  },
+  {
+   "word": "word",
+   "start": 204.24000007629394,
+   "end": 204.42000038146972
+  },
+  {
+   "word": "word",
+   "start": 204.42000038146972,
+   "end": 204.74000007629394
+  },
+  {
+   "word": "word",
+   "start": 204.74000007629394,
+   "end": 204.85999996185302
+  },
+  {
+   "word": "word",
+   "start": 204.85999996185302,
+   "end": 204.96000034332275
+  },
+  {
+   "word": "word",
+   "start": 204.96000034332275,
+   "end": 205.09999973297118
+  },
+  {
+   "word": "word",
+   "start": 205.09999973297118,
+   "end": 205.28000003814697
+  },
+  {
+   "word": "word",
+   "start": 205.28000003814697,
+   "end": 205.64000064849853
+  },
+  {
+   "word": "word",
+   "start": 206.250000538826,
+   "end": 206.81000000476837
+  },
+  {
+   "word": "word",
+   "start": 206.81000000476837,
+   "end": 206.93000000953674
+  },
+  {
+   "word": "word",
+   "start": 206.93000000953674,
+   "end": 207.3900000476837
+  },
+  {
+   "word": "word",
+   "start": 207.3900000476837,
+   "end": 207.58999997615814
+  },
+  {
+   "word": "word",
+   "start": 207.58999997615814,
+   "end": 207.77000004291534
+  },
+  {
+   "word": "word",
+   "start": 207.77000004291534,
+   "end": 208.0500000143051
+  },
+  {
+   "word": "word",
+   "start": 208.0500000143051,
+   "end": 208.48999995231628
+  },
+  {
+   "word": "word",
+   "start": 208.48999995231628,
+   "end": 209.63000005722046
+  },
+  {
+   "word": "word",
+   "start": 209.63000005722046,
+   "end": 210.51000017166137
+  },
+  {
+   "word": "word",
+   "start": 210.51000017166137,
+   "end": 210.65000003814697
+  },
+  {
+   "word": "word",
+   "start": 210.65000003814697,
+   "end": 210.8499998474121
+  },
+  {
+   "word": "word",
+   "start": 210.8499998474121,
+   "end": 210.99000019073486
+  },
+  {
+   "word": "word",
+   "start": 210.99000019073486,
+   "end": 211.26999992370605
+  },
+  {
+   "word": "word",
+   "start": 211.26999992370605,
+   "end": 211.42999977111816
+  },
+  {
+   "word": "word",
+   "start": 211.42999977111816,
+   "end": 211.5300001525879
+  },
+  {
+   "word": "word",
+   "start": 211.5300001525879,
+   "end": 211.90999979019165
+  },
+  {
+   "word": "word",
+   "start": 211.90999979019165,
+   "end": 212.09000009536743
+  },
+  {
+   "word": "word",
+   "start": 212.09000009536743,
+   "end": 212.61000007629394
+  },
+  {
+   "word": "word",
+   "start": 212.61000007629394,
+   "end": 212.95000022888183
+  },
+  {
+   "word": "word",
+   "start": 212.95000022888183,
+   "end": 213.30999988555908
+  },
+  {
+   "word": "word",
+   "start": 213.30999988555908,
+   "end": 213.57000011444092
+  },
+  {
+   "word": "word",
+   "start": 213.57000011444092,
+   "end": 214.38999980926513
+  },
+  {
+   "word": "word",
+   "start": 214.38999980926513,
+   "end": 215.08999961853027
+  },
+  {
+   "word": "word",
+   "start": 215.22999996185303,
+   "end": 215.87000030517578
+  },
+  {
+   "word": "word",
+   "start": 215.87000030517578,
+   "end": 216.07000011444092
+  },
+  {
+   "word": "word",
+   "start": 216.07000011444092,
+   "end": 216.29000038146972
+  },
+  {
+   "word": "word",
+   "start": 216.29000038146972,
+   "end": 216.5300001525879
+  },
+  {
+   "word": "word",
+   "start": 216.5300001525879,
+   "end": 217.21000045776367
+  },
+  {
+   "word": "word",
+   "start": 217.21000045776367,
+   "end": 217.3499998474121
+  },
+  {
+   "word": "word",
+   "start": 217.3499998474121,
+   "end": 217.61000007629394
+  },
+  {
+   "word": "word",
+   "start": 217.61000007629394,
+   "end": 217.88999980926513
+  },
+  {
+   "word": "word",
+   "start": 217.88999980926513,
+   "end": 218.58999961853027
+  },
+  {
+   "word": "word",
+   "start": 218.58999961853027,
+   "end": 219.19
+  },
+  {
+   "word": "word",
+   "start": 219.19,
+   "end": 219.38999980926513
+  },
+  {
+   "word": "word",
+   "start": 219.38999980926513,
+   "end": 219.61000007629394
+  },
+  {
+   "word": "word",
+   "start": 219.61000007629394,
+   "end": 219.95000022888183
+  },
+  {
+   "word": "word",
+   "start": 219.95000022888183,
+   "end": 220.07000011444092
+  },
+  {
+   "word": "word",
+   "start": 220.56,
+   "end": 221.10000002145767
+  },
+  {
+   "word": "word",
+   "start": 221.10000002145767,
+   "end": 221.5400000190735
+  },
+  {
+   "word": "word",
+   "start": 221.5400000190735,
+   "end": 221.73999994754791
+  },
+  {
+   "word": "word",
+   "start": 221.73999994754791,
+   "end": 222.09999996185303
+  },
+  {
+   "word": "word",
+   "start": 222.09999996185303,
+   "end": 222.4000000333786
+  },
+  {
+   "word": "word",
+   "start": 222.4000000333786,
+   "end": 222.65999990463257
+  },
+  {
+   "word": "word",
+   "start": 222.65999990463257,
+   "end": 222.91999989509583
+  },
+  {
+   "word": "word",
+   "start": 223.61999997258187,
+   "end": 224.03999998927117
+  },
+  {
+   "word": "word",
+   "start": 224.03999998927117,
+   "end": 224.25999998807907
+  },
+  {
+   "word": "word",
+   "start": 224.25999998807907,
+   "end": 224.51999997854233
+  },
+  {
+   "word": "word",
+   "start": 224.51999997854233,
+   "end": 224.73999994754791
+  },
+  {
+   "word": "word",
+   "start": 224.73999994754791,
+   "end": 224.83999997138977
+  },
+  {
+   "word": "word",
+   "start": 224.83999997138977,
+   "end": 225.16000002384186
+  },
+  {
+   "word": "word",
+   "start": 225.16000002384186,
+   "end": 225.58000004053116
+  },
+  {
+   "word": "word",
+   "start": 225.65999990463257,
+   "end": 225.76000004768372
+  },
+  {
+   "word": "word",
+   "start": 225.76000004768372,
+   "end": 225.94000011444092
+  },
+  {
+   "word": "word",
+   "start": 225.94000011444092,
+   "end": 226.17999988555908
+  },
+  {
+   "word": "word",
+   "start": 226.17999988555908,
+   "end": 226.30000000953675
+  },
+  {
+   "word": "word",
+   "start": 226.30000000953675,
+   "end": 226.67999988555908
+  },
+  {
+   "word": "word",
+   "start": 226.67999988555908,
+   "end": 226.8999999141693
+  },
+  {
+   "word": "word",
+   "start": 226.8999999141693,
+   "end": 227.09999996185303
+  },
+  {
+   "word": "word",
+   "start": 227.09999996185303,
+   "end": 227.17999988555908
+  },
+  {
+   "word": "word",
+   "start": 227.17999988555908,
+   "end": 227.28000002861023
+  },
+  {
+   "word": "word",
+   "start": 227.28000002861023,
+   "end": 227.70000004529953
+  },
+  {
+   "word": "word",
+   "start": 227.82000022888184,
+   "end": 227.96000009536743
+  },
+  {
+   "word": "word",
+   "start": 227.96000009536743,
+   "end": 228.15999990463257
+  },
+  {
+   "word": "word",
+   "start": 228.15999990463257,
+   "end": 228.4000001525879
+  },
+  {
+   "word": "word",
+   "start": 228.4000001525879,
+   "end": 228.56
+  },
+  {
+   "word": "word",
+   "start": 228.56,
+   "end": 228.6999998664856
+  },
+  {
+   "word": "word",
+   "start": 228.6999998664856,
+   "end": 228.88000017166138
+  },
+  {
+   "word": "word",
+   "start": 228.88000017166138,
+   "end": 229.2199998474121
+  },
+  {
+   "word": "word",
+   "start": 229.74,
+   "end": 229.88000000059606
+  },
+  {
+   "word": "word",
+   "start": 229.88000000059606,
+   "end": 230.04000001192094
+  },
+  {
+   "word": "word",
+   "start": 230.04000001192094,
+   "end": 230.25999998092652
+  },
+  {
+   "word": "word",
+   "start": 230.25999998092652,
+   "end": 230.74
+  },
+  {
+   "word": "word",
+   "start": 231.11999999523164,
+   "end": 231.60000001430512
+  },
+  {
+   "word": "word",
+   "start": 231.60000001430512,
+   "end": 232.3599998855591
+  },
+  {
+   "word": "word",
+   "start": 232.3599998855591,
+   "end": 232.49999999046327
+  },
+  {
+   "word": "word",
+   "start": 232.49999999046327,
+   "end": 232.59999989509583
+  },
+  {
+   "word": "word",
+   "start": 232.59999989509583,
+   "end": 232.70000003814698
+  },
+  {
+   "word": "word",
+   "start": 232.70000003814698,
+   "end": 232.75999998092652
+  },
+  {
+   "word": "word",
+   "start": 232.75999998092652,
+   "end": 232.9000000858307
+  },
+  {
+   "word": "word",
+   "start": 232.9000000858307,
+   "end": 233.01999997138978
+  },
+  {
+   "word": "word",
+   "start": 233.01999997138978,
+   "end": 233.14000009536744
+  },
+  {
+   "word": "word",
+   "start": 233.14000009536744,
+   "end": 233.27999996185304
+  },
+  {
+   "word": "word",
+   "start": 233.27999996185304,
+   "end": 233.5399999523163
+  },
+  {
+   "word": "word",
+   "start": 233.5399999523163,
+   "end": 233.70000003814698
+  },
+  {
+   "word": "word",
+   "start": 233.70000003814698,
+   "end": 234.18000005722047
+  },
+  {
+   "word": "word",
+   "start": 234.18000005722047,
+   "end": 234.41999982833863
+  },
+  {
+   "word": "word",
+   "start": 234.41999982833863,
+   "end": 234.45999979019166
+  },
+  {
+   "word": "word",
+   "start": 234.45999979019166,
+   "end": 234.6000001335144
+  },
+  {
+   "word": "word",
+   "start": 234.6000001335144,
+   "end": 234.89999984741212
+  },
+  {
+   "word": "word",
+   "start": 234.89999984741212,
+   "end": 235.14000009536744
+  },
+  {
+   "word": "word",
+   "start": 235.14000009536744,
+   "end": 235.25999998092652
+  },
+  {
+   "word": "word",
+   "start": 235.25999998092652,
+   "end": 235.5600001716614
+  },
+  {
+   "word": "word",
+   "start": 235.5600001716614,
+   "end": 235.70000003814698
+  },
+  {
+   "word": "word",
+   "start": 235.70000003814698,
+   "end": 235.93999980926515
+  },
+  {
+   "word": "word",
+   "start": 235.93999980926515,
+   "end": 236.31999992370606
+  },
+  {
+   "word": "word",
+   "start": 236.31999992370606,
+   "end": 236.5600001716614
+  },
+  {
+   "word": "word",
+   "start": 236.5600001716614,
+   "end": 237.00000022888185
+  },
+  {
+   "word": "word",
+   "start": 237.00000022888185,
+   "end": 237.14000009536744
+  },
+  {
+   "word": "word",
+   "start": 237.14000009536744,
+   "end": 237.5600001716614
+  },
+  {
+   "word": "word",
+   "start": 237.5600001716614,
+   "end": 237.81999992370606
+  },
+  {
+   "word": "word",
+   "start": 237.81999992370606,
+   "end": 238.12000011444093
+  },
+  {
+   "word": "word",
+   "start": 238.12000011444093,
+   "end": 238.39999984741212
+  },
+  {
+   "word": "word",
+   "start": 238.39999984741212,
+   "end": 238.66000007629395
+  },
+  {
+   "word": "word",
+   "start": 238.66000007629395,
+   "end": 239.00000022888185
+  },
+  {
+   "word": "word",
+   "start": 239.00000022888185,
+   "end": 239.34000038146974
+  },
+  {
+   "word": "word",
+   "start": 239.34000038146974,
+   "end": 239.84000038146974
+  },
+  {
+   "word": "word",
+   "start": 239.84000038146974,
+   "end": 240.04000019073487
+  },
+  {
+   "word": "word",
+   "start": 240.04000019073487,
+   "end": 240.5800001525879
+  },
+  {
+   "word": "word",
+   "start": 240.5800001525879,
+   "end": 240.88000034332276
+  },
+  {
+   "word": "word",
+   "start": 240.88000034332276,
+   "end": 241.0800001525879
+  },
+  {
+   "word": "word",
+   "start": 241.68000002980233,
+   "end": 242.08000000596047
+  },
+  {
+   "word": "word",
+   "start": 242.08000000596047,
+   "end": 242.2400000023842
+  },
+  {
+   "word": "word",
+   "start": 242.2400000023842,
+   "end": 242.36000000715256
+  },
+  {
+   "word": "word",
+   "start": 242.36000000715256,
+   "end": 242.55999999523164
+  },
+  {
+   "word": "word",
+   "start": 242.55999999523164,
+   "end": 242.68
+  },
+  {
+   "word": "word",
+   "start": 242.68,
+   "end": 242.90000002861024
+  },
+  {
+   "word": "word",
+   "start": 242.90000002861024,
+   "end": 243.1600000190735
+  },
+  {
+   "word": "word",
+   "start": 243.1600000190735,
+   "end": 243.30000000476838
+  },
+  {
+   "word": "word",
+   "start": 243.30000000476838,
+   "end": 243.6600000190735
+  },
+  {
+   "word": "word",
+   "start": 244.62,
+   "end": 244.8599999946356
+  },
+  {
+   "word": "word",
+   "start": 244.8599999946356,
+   "end": 244.99999999523163
+  },
+  {
+   "word": "word",
+   "start": 244.99999999523163,
+   "end": 246.20000004291535
+  },
+  {
+   "word": "word",
+   "start": 246.20000004291535,
+   "end": 246.69999992370606
+  },
+  {
+   "word": "word",
+   "start": 246.69999992370606,
+   "end": 247.2800000858307
+  },
+  {
+   "word": "word",
+   "start": 247.2800000858307,
+   "end": 247.47999989509583
+  },
+  {
+   "word": "word",
+   "start": 247.47999989509583,
+   "end": 247.9199999523163
+  },
+  {
+   "word": "word",
+   "start": 247.9199999523163,
+   "end": 248.3000000667572
+  },
+  {
+   "word": "word",
+   "start": 248.3000000667572,
+   "end": 248.45999991416932
+  },
+  {
+   "word": "word",
+   "start": 248.45999991416932,
+   "end": 248.67999994277955
+  },
+  {
+   "word": "word",
+   "start": 248.67999994277955,
+   "end": 248.94000017166138
+  },
+  {
+   "word": "word",
+   "start": 248.94000017166138,
+   "end": 249.21999990463257
+  },
+  {
+   "word": "word",
+   "start": 249.21999990463257,
+   "end": 249.7399998855591
+  },
+  {
+   "word": "word",
+   "start": 249.7399998855591,
+   "end": 250.31999980926514
+  },
+  {
+   "word": "word",
+   "start": 251.11999951839448,
+   "end": 251.60000001430512
+  },
+  {
+   "word": "word",
+   "start": 251.60000001430512,
+   "end": 251.96000002861024
+  },
+  {
+   "word": "word",
+   "start": 251.96000002861024,
+   "end": 252.29999994277955
+  },
+  {
+   "word": "word",
+   "start": 252.29999994277955,
+   "end": 252.61999999523164
+  },
+  {
+   "word": "word",
+   "start": 252.61999999523164,
+   "end": 252.88000010490418
+  },
+  {
+   "word": "word",
+   "start": 252.88000010490418,
+   "end": 253.16000007629395
+  },
+  {
+   "word": "word",
+   "start": 253.16000007629395,
+   "end": 253.3599998855591
+  },
+  {
+   "word": "word",
+   "start": 253.3599998855591,
+   "end": 253.44000004768372
+  },
+  {
+   "word": "word",
+   "start": 253.44000004768372,
+   "end": 253.59999989509583
+  },
+  {
+   "word": "word",
+   "start": 253.59999989509583,
+   "end": 253.74
+  },
+  {
+   "word": "word",
+   "start": 253.74,
+   "end": 253.81999992370606
+  },
+  {
+   "word": "word",
+   "start": 253.81999992370606,
+   "end": 254.09999989509583
+  },
+  {
+   "word": "word",
+   "start": 254.09999989509583,
+   "end": 254.31999992370606
+  },
+  {
+   "word": "word",
+   "start": 254.31999992370606,
+   "end": 254.46000002861024
+  },
+  {
+   "word": "word",
+   "start": 254.46000002861024,
+   "end": 254.74
+  },
+  {
+   "word": "word",
+   "start": 254.74,
+   "end": 255.70000003814698
+  },
+  {
+   "word": "word",
+   "start": 255.70000003814698,
+   "end": 256.1200001144409
+  },
+  {
+   "word": "word",
+   "start": 256.1200001144409,
+   "end": 256.2599999809265
+  },
+  {
+   "word": "word",
+   "start": 256.2599999809265,
+   "end": 256.50000022888185
+  },
+  {
+   "word": "word",
+   "start": 256.50000022888185,
+   "end": 256.700000038147
+  },
+  {
+   "word": "word",
+   "start": 256.700000038147,
+   "end": 256.79999994277955
+  },
+  {
+   "word": "word",
+   "start": 256.79999994277955,
+   "end": 257.2800004386902
+  },
+  {
+   "word": "word",
+   "start": 257.479999294281,
+   "end": 257.95999979019166
+  },
+  {
+   "word": "word",
+   "start": 257.95999979019166,
+   "end": 258.1200001144409
+  },
+  {
+   "word": "word",
+   "start": 258.1200001144409,
+   "end": 258.31999992370606
+  },
+  {
+   "word": "word",
+   "start": 258.31999992370606,
+   "end": 258.52000020980836
+  },
+  {
+   "word": "word",
+   "start": 258.52000020980836,
+   "end": 258.6000001335144
+  },
+  {
+   "word": "word",
+   "start": 258.6000001335144,
+   "end": 258.8599998855591
+  },
+  {
+   "word": "word",
+   "start": 258.8599998855591,
+   "end": 259.0199997329712
+  },
+  {
+   "word": "word",
+   "start": 259.0199997329712,
+   "end": 259.1799995803833
+  },
+  {
+   "word": "word",
+   "start": 259.1799995803833,
+   "end": 259.38000034332276
+  },
+  {
+   "word": "word",
+   "start": 259.38000034332276,
+   "end": 260.00000022888185
+  },
+  {
+   "word": "word",
+   "start": 260.00000022888185,
+   "end": 260.4799997711182
+  },
+  {
+   "word": "word",
+   "start": 260.4799997711182,
+   "end": 260.9799997711182
+  },
+  {
+   "word": "word",
+   "start": 260.9799997711182,
+   "end": 261.5400001907349
+  },
+  {
+   "word": "word",
+   "start": 261.5400001907349,
+   "end": 261.66000007629395
+  },
+  {
+   "word": "word",
+   "start": 261.66000007629395,
+   "end": 262.09999965667726
+  },
+  {
+   "word": "word",
+   "start": 262.53,
+   "end": 262.94999998688695
+  },
+  {
+   "word": "word",
+   "start": 262.94999998688695,
+   "end": 263.3900000143051
+  },
+  {
+   "word": "word",
+   "start": 263.3900000143051,
+   "end": 263.8900000143051
+  },
+  {
+   "word": "word",
+   "start": 263.8900000143051,
+   "end": 264.44999995708463
+  },
+  {
+   "word": "word",
+   "start": 264.44999995708463,
+   "end": 264.9300004529953
+  },
+  {
+   "word": "word",
+   "start": 265.14999988555905,
+   "end": 265.30999997138974
+  },
+  {
+   "word": "word",
+   "start": 265.30999997138974,
+   "end": 265.3699999141693
+  },
+  {
+   "word": "word",
+   "start": 265.3699999141693,
+   "end": 265.5499999809265
+  },
+  {
+   "word": "word",
+   "start": 265.5499999809265,
+   "end": 265.7700000095367
+  },
+  {
+   "word": "word",
+   "start": 265.7700000095367,
+   "end": 265.9100001144409
+  },
+  {
+   "word": "word",
+   "start": 265.9100001144409,
+   "end": 266.03
+  },
+  {
+   "word": "word",
+   "start": 266.03,
+   "end": 266.32999995231626
+  },
+  {
+   "word": "word",
+   "start": 266.32999995231626,
+   "end": 266.7299998092651
+  },
+  {
+   "word": "word",
+   "start": 266.7299998092651,
+   "end": 267.26999977111814
+  },
+  {
+   "word": "word",
+   "start": 267.26999977111814,
+   "end": 267.51000001907346
+  },
+  {
+   "word": "word",
+   "start": 267.51000001907346,
+   "end": 267.7299998092651
+  },
+  {
+   "word": "word",
+   "start": 267.7299998092651,
+   "end": 267.83000019073484
+  },
+  {
+   "word": "word",
+   "start": 267.83000019073484,
+   "end": 268.16999986648557
+  },
+  {
+   "word": "word",
+   "start": 268.16999986648557,
+   "end": 268.76999977111814
+  },
+  {
+   "word": "word",
+   "start": 268.76999977111814,
+   "end": 268.9100001144409
+  },
+  {
+   "word": "word",
+   "start": 268.9100001144409,
+   "end": 269.2299998092651
+  },
+  {
+   "word": "word",
+   "start": 269.2299998092651,
+   "end": 269.4500000762939
+  },
+  {
+   "word": "word",
+   "start": 269.4500000762939,
+   "end": 269.5899999427795
+  },
+  {
+   "word": "word",
+   "start": 269.5899999427795,
+   "end": 269.87000015258786
+  },
+  {
+   "word": "word",
+   "start": 269.87000015258786,
+   "end": 269.99000003814695
+  },
+  {
+   "word": "word",
+   "start": 269.99000003814695,
+   "end": 270.7299998092651
+  },
+  {
+   "word": "word",
+   "start": 270.7299998092651,
+   "end": 270.9100001144409
+  },
+  {
+   "word": "word",
+   "start": 270.9100001144409,
+   "end": 271.069999961853
+  },
+  {
+   "word": "word",
+   "start": 271.069999961853,
+   "end": 271.21000030517575
+  },
+  {
+   "word": "word",
+   "start": 271.21000030517575,
+   "end": 271.3899996566772
+  },
+  {
+   "word": "word",
+   "start": 271.3899996566772,
+   "end": 271.609999923706
+  },
+  {
+   "word": "word",
+   "start": 271.609999923706,
+   "end": 272.0099995422363
+  },
+  {
+   "word": "word",
+   "start": 272.0099995422363,
+   "end": 272.21000030517575
+  },
+  {
+   "word": "word",
+   "start": 272.21000030517575,
+   "end": 272.4500000762939
+  },
+  {
+   "word": "word",
+   "start": 272.4500000762939,
+   "end": 272.7500002670288
+  },
+  {
+   "word": "word",
+   "start": 272.7500002670288,
+   "end": 273.1300003814697
+  },
+  {
+   "word": "word",
+   "start": 273.1300003814697,
+   "end": 273.21000030517575
+  },
+  {
+   "word": "word",
+   "start": 273.21000030517575,
+   "end": 273.37000015258786
+  },
+  {
+   "word": "word",
+   "start": 273.37000015258786,
+   "end": 273.569999961853
+  },
+  {
+   "word": "word",
+   "start": 273.569999961853,
+   "end": 273.7900002288818
+  },
+  {
+   "word": "word",
+   "start": 273.7900002288818,
+   "end": 274.05000045776364
+  },
+  {
+   "word": "word",
+   "start": 274.05000045776364,
+   "end": 274.6300003814697
+  },
+  {
+   "word": "word",
+   "start": 274.6300003814697,
+   "end": 275.1899998474121
+  },
+  {
+   "word": "word",
+   "start": 275.1899998474121,
+   "end": 275.4100001144409
+  },
+  {
+   "word": "word",
+   "start": 275.4100001144409,
+   "end": 275.71000030517575
+  },
+  {
+   "word": "word",
+   "start": 275.71000030517575,
+   "end": 275.80999973297116
+  },
+  {
+   "word": "word",
+   "start": 275.80999973297116,
+   "end": 276.03
+  },
+  {
+   "word": "word",
+   "start": 276.03,
+   "end": 276.30999973297116
+  },
+  {
+   "word": "word",
+   "start": 276.30999973297116,
+   "end": 276.49000003814695
+  },
+  {
+   "word": "word",
+   "start": 276.49000003814695,
+   "end": 276.7299998092651
+  },
+  {
+   "word": "word",
+   "start": 276.7299998092651,
+   "end": 276.8899996566772
+  },
+  {
+   "word": "word",
+   "start": 276.8899996566772,
+   "end": 277.0900004196167
+  },
+  {
+   "word": "word",
+   "start": 277.0900004196167,
+   "end": 277.42999961853025
+  },
+  {
+   "word": "word",
+   "start": 277.42999961853025,
+   "end": 277.569999961853
+  },
+  {
+   "word": "word",
+   "start": 277.569999961853,
+   "end": 278.2299998092651
+  },
+  {
+   "word": "word",
+   "start": 278.2299998092651,
+   "end": 278.53
+  },
+  {
+   "word": "word",
+   "start": 278.53,
+   "end": 278.74999931335446
+  },
+  {
+   "word": "word",
+   "start": 278.74999931335446,
+   "end": 278.89000061035154
+  },
+  {
+   "word": "word",
+   "start": 278.89000061035154,
+   "end": 279.05000045776364
+  },
+  {
+   "word": "word",
+   "start": 279.05000045776364,
+   "end": 279.26999977111814
+  },
+  {
+   "word": "word",
+   "start": 279.26999977111814,
+   "end": 279.6300003814697
+  },
+  {
+   "word": "word",
+   "start": 279.6300003814697,
+   "end": 279.9099991607666
+  },
+  {
+   "word": "word",
+   "start": 279.9099991607666,
+   "end": 280.0700009155273
+  },
+  {
+   "word": "word",
+   "start": 280.0700009155273,
+   "end": 280.1699993896484
+  },
+  {
+   "word": "word",
+   "start": 280.1699993896484,
+   "end": 280.48999908447263
+  },
+  {
+   "word": "word",
+   "start": 280.48999908447263,
+   "end": 280.9500000762939
+  },
+  {
+   "word": "word",
+   "start": 280.9500000762939,
+   "end": 281.0700009155273
+  },
+  {
+   "word": "word",
+   "start": 281.0700009155273,
+   "end": 281.109999923706
+  },
+  {
+   "word": "word",
+   "start": 281.109999923706,
+   "end": 281.2900002288818
+  },
+  {
+   "word": "word",
+   "start": 281.2900002288818,
+   "end": 281.39000061035154
+  },
+  {
+   "word": "word",
+   "start": 281.39000061035154,
+   "end": 281.6899998474121
+  },
+  {
+   "word": "word",
+   "start": 281.6899998474121,
+   "end": 281.9099991607666
+  },
+  {
+   "word": "word",
+   "start": 281.9099991607666,
+   "end": 282.1300003814697
+  },
+  {
+   "word": "word",
+   "start": 282.1300003814697,
+   "end": 282.2900002288818
+  },
+  {
+   "word": "word",
+   "start": 282.2900002288818,
+   "end": 282.5700009155273
+  },
+  {
+   "word": "word",
+   "start": 282.5700009155273,
+   "end": 283.0700009155273
+  },
+  {
+   "word": "word",
+   "start": 283.0700009155273,
+   "end": 283.76999977111814
+  },
+  {
+   "word": "word",
+   "start": 283.76999977111814,
+   "end": 284.05000045776364
+  }
+ ]
+}
