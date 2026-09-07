@@ -198,3 +198,90 @@ def test_a_url_run_records_the_caption_file_its_segments_came_from(
     assert transcript["source"] == "captions"
     assert transcript["subtitle_path"], transcript
     assert Path(transcript["subtitle_path"]).name == "video.en.vtt"
+
+
+def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str):
+    """Drive watch.main() with yt-dlp, ffprobe and Whisper all stubbed."""
+    import io
+    import sys as _sys
+    from contextlib import redirect_stdout
+
+    _sys.path.insert(0, str(WATCH.parent))
+    import watch
+
+    (tmp_path / "v.mp4").write_bytes(b"\x00")
+    fetched = {"subtitle_path": None, "video_path": str(tmp_path / "v.mp4"),
+               "downloaded": True,
+               "info": {"title": "A Talk", "duration": 600, "id": "vid0000000"}}
+    monkeypatch.setattr(watch, "fetch_captions", lambda *a, **k: dict(fetched))
+    monkeypatch.setattr(watch, "download", lambda *a, **k: dict(fetched))
+    monkeypatch.setattr(watch, "get_metadata", lambda *a, **k: {
+        "duration_seconds": 600.0, "width": 640, "height": 360,
+        "codec": "h264", "size_bytes": 1, "has_audio": True})
+    monkeypatch.setattr(watch, "load_api_key",
+                        lambda which=None: ("openrouter", "sk"))
+    monkeypatch.setattr(watch, "transcribe_video", transcribe)
+    monkeypatch.setattr(_sys, "argv",
+                        ["watch.py", "https://example.com/watch?v=vid0000000",
+                         "--detail", "transcript", *args])
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        code = watch.main()
+    return code, buf.getvalue()
+
+
+def test_a_failed_transcription_exits_non_zero(monkeypatch, tmp_path: Path):
+    """Fails if the run still returns 0: a batch driven off exit codes records
+    a video with no transcript as a success.
+
+    Run 1 of FIhj0yb9KPI on 2026-09-07 did exactly that -- all six chunks
+    refused as too coarse, `Transcript: none available`, exit 0.
+    """
+    def refuse(*a, **k):
+        raise SystemExit("the transcription is too coarse to anchor")
+
+    code, out = _whisper_run(monkeypatch, tmp_path, refuse)
+    assert code == 1
+    assert "Transcript:** none available" in out
+    assert "Transcription failed" in out
+
+
+def test_a_focused_run_over_silence_is_not_a_failed_transcription(
+        monkeypatch, tmp_path: Path):
+    """Fails if the flag reads `transcript_segments` instead of what Whisper returned.
+
+    Measured by the design refutation on 2026-09-07: a complete 143-segment
+    transcript spanning 0:30-10:00, asked for `--start 0:00 --end 0:20`, exited 1
+    and claimed Whisper returned nothing. Whisper returned everything; the focus
+    window is simply empty, which is the correct answer. The repository
+    recommends exactly this input at watch.py:454-461.
+    """
+    def healthy(*a, **k):
+        return ([{"start": 30.0 + i, "end": 31.0 + i, "text": f"line {i}"}
+                 for i in range(143)], "openrouter")
+
+    code, out = _whisper_run(monkeypatch, tmp_path, healthy,
+                             "--start", "0:00", "--end", "0:20")
+    assert code == 0
+    assert "Transcription failed" not in out
+
+
+def test_a_failed_transcription_still_writes_its_run_record(
+        monkeypatch, tmp_path: Path):
+    """Fails if the exit status is an early return before build_run/write_run.
+
+    A run that failed is the run you most want a record of. The draft returned
+    before watch.py:519-535 and wrote no run.json at all.
+    """
+    import json
+
+    def refuse(*a, **k):
+        raise SystemExit("the transcription is too coarse to anchor")
+
+    monkeypatch.setenv("WATCH_NOTE_DIR", str(tmp_path / "runs"))
+    code, out = _whisper_run(monkeypatch, tmp_path, refuse, "--make-note")
+    assert code == 1
+    assert "## Note mode" in out
+    runs = sorted((tmp_path / "runs").rglob("run.json"))
+    assert len(runs) == 1, runs
+    assert json.loads(runs[0].read_text(encoding="utf-8"))["transcript"]["segments"] == 0

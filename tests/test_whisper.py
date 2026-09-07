@@ -773,3 +773,373 @@ def test_an_unknown_backend_name_names_the_mistake(monkeypatch):
     with pytest.raises(SystemExit) as caught:
         whisper.load_api_key("Local")
     assert "Local" in str(caught.value), caught.value
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "openrouter"
+
+
+def _fixture(name: str) -> dict:
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+class TestWordGrouping:
+    """Segments are a lottery on this route; words are not.
+
+    Measured 2026-09-07 on one chunk of FIhj0yb9KPI: ten direct probes came
+    back at 23-31 segments and a 6.76-9.02s median, and two `watch` runs over
+    the same audio and the same payload came back at 11-13 segments and a 30s
+    median, which `check_granularity` refuses. Every one of those responses
+    carried a word array, at a 0.20s median. So the words are the rendering
+    that does not depend on which provider the router picked.
+
+    The three numbers were set by measurement, not by taste. Grouped at
+    max 4.0s / gap 0.5s, the two captured fixtures come back as 80 segments
+    with a median of 3.76s and 3.65s -- the shape whisper-large-v3 produces on
+    its own (2.26s and 3.06s, measured 2026-08-19 beside COARSE_MEDIAN_SECONDS)
+    and comfortably under the 10.0s guard. A cap of 8.0s also passes, at a
+    median of 7.8s, which is 2.2s of margin under a threshold one rounding
+    change away from firing.
+    """
+
+    def test_words_group_into_segments_a_run_can_anchor(self):
+        """Fails if the grouping returns one blob: median would be 284s, not 3.76s."""
+        words = _fixture("fine")["words"]
+        segments = whisper.segments_from_words(words)
+        median, longest, covered = whisper.segment_shape(segments)
+        assert median < whisper.COARSE_MEDIAN_SECONDS, median
+        assert longest <= whisper.WORD_SEGMENT_MAX_SECONDS + 0.01, longest
+        assert 3.0 < median < 4.5, median
+        assert covered > 280.0, covered
+
+    def test_the_near_edge_response_groups_the_same_way(self):
+        """Fails if the cap is applied per word instead of per group."""
+        segments = whisper.segments_from_words(_fixture("near-edge")["words"])
+        median, longest, _covered = whisper.segment_shape(segments)
+        assert median < whisper.COARSE_MEDIAN_SECONDS, median
+        assert longest <= whisper.WORD_SEGMENT_MAX_SECONDS + 0.01, longest
+
+    def test_every_word_survives_the_grouping_in_order(self):
+        """Fails if a group boundary drops the word it splits on.
+
+        Asserting only the median passes on a grouping that silently loses
+        half the words, which is the defect this fix exists to remove.
+        """
+        words = [{"word": w, "start": i * 0.5, "end": i * 0.5 + 0.4}
+                 for i, w in enumerate("alpha bravo charlie delta echo "
+                                       "foxtrot golf hotel india".split())]
+        segments = whisper.segments_from_words(words)
+        assert len(segments) > 1, segments
+        joined = " ".join(s["text"] for s in segments)
+        assert joined == "alpha bravo charlie delta echo foxtrot golf hotel india"
+
+    def test_a_silence_ends_a_segment(self):
+        """Fails if the gap rule is dropped: the two halves would be one segment."""
+        words = ([{"word": "before", "start": 0.0, "end": 0.3}]
+                 + [{"word": "after", "start": 9.0, "end": 9.3}])
+        segments = whisper.segments_from_words(words)
+        assert len(segments) == 2, segments
+        assert segments[0] == {"start": 0.0, "end": 0.3, "text": "before"}
+        assert segments[1] == {"start": 9.0, "end": 9.3, "text": "after"}
+
+    def test_a_sentence_end_only_splits_once_the_segment_has_length(self):
+        """Fails if the minimum is dropped: 'Yes.' becomes its own segment.
+
+        A one-word segment out of an interjection is not wrong, it is noise --
+        it puts a citable anchor on a word nobody would cite.
+        """
+        words = [{"word": "Yes.", "start": 0.0, "end": 0.3},
+                 {"word": "So", "start": 0.4, "end": 0.6},
+                 {"word": "anyway", "start": 0.7, "end": 1.1}]
+        segments = whisper.segments_from_words(words)
+        assert len(segments) == 1, segments
+        assert segments[0]["text"] == "Yes. So anyway"
+
+    def test_a_sentence_end_splits_a_segment_that_has_run_long_enough(self):
+        """Fails if the sentence rule never fires: this would be one segment."""
+        words = [{"word": "one", "start": 0.0, "end": 0.4},
+                 {"word": "two", "start": 0.5, "end": 0.9},
+                 {"word": "three.", "start": 1.0, "end": 1.4},
+                 {"word": "four", "start": 1.5, "end": 1.9}]
+        segments = whisper.segments_from_words(words)
+        assert len(segments) == 2, segments
+        assert segments[0]["text"] == "one two three."
+        assert segments[1]["text"] == "four"
+
+    def test_no_words_is_no_segments(self):
+        """Fails if the function invents a 0.0-0.0 segment out of an empty list."""
+        assert whisper.segments_from_words([]) == []
+
+    def test_a_malformed_word_is_skipped_rather_than_crashing(self):
+        """Fails if a missing key raises: one bad word would lose a whole chunk."""
+        words = [{"word": "kept", "start": 0.0, "end": 0.4},
+                 {"word": "no-times"},
+                 {"word": "", "start": 1.0, "end": 1.2},
+                 {"word": "also-kept", "start": 1.3, "end": 1.6}]
+        segments = whisper.segments_from_words(words)
+        assert " ".join(s["text"] for s in segments) == "kept also-kept"
+
+    def test_the_request_asks_for_word_timestamps(self, monkeypatch, tmp_path):
+        """Fails if the key is dropped from the payload.
+
+        This is a CONTRACT test and it proves nothing works -- it proves the
+        request asks. Measured 2026-09-07: without the key the response carries
+        zero words (`tests/fixtures/openrouter/no-granularity.json`), so the
+        fallback below would have nothing to rebuild from.
+        """
+        audio = tmp_path / "a.mp3"
+        audio.write_bytes(b"\x00")
+        sent = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"segments": []}'
+
+        def fake_urlopen(request, *a, **k):
+            sent["body"] = json.loads(request.data.decode("utf-8"))
+            return FakeResponse()
+
+        monkeypatch.setattr(whisper, "urlopen", fake_urlopen)
+        whisper._post_openrouter("sk", "m", audio, provider="deepinfra")
+        assert sent["body"]["timestamp_granularities"] == ["segment", "word"]
+
+    def test_a_coarse_response_is_rebuilt_from_its_words(self, capsys):
+        """Fails if the words path is skipped: the chunk is refused instead.
+
+        This is the run that lost 9:28-14:12. The segments are the shape that
+        run reported; the words are the captured ones.
+        """
+        data = _fixture("coarse-reconstructed")
+        assert whisper.segment_shape(
+            whisper._segments_from_response({"segments": data["segments"]})
+        )[0] > whisper.COARSE_MEDIAN_SECONDS
+
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        median, _longest, _covered = whisper.segment_shape(segments)
+        assert median < whisper.COARSE_MEDIAN_SECONDS, median
+        assert len(segments) > 12, len(segments)
+        assert "word timestamps" in capsys.readouterr().err
+        whisper.check_granularity(segments, "openai/whisper-large-v3", refuse=True)
+
+    def test_a_response_with_words_and_no_segments_is_rebuilt(self):
+        """Fails if the reader still requires a `segments` key to be present."""
+        segments = whisper._segments_from_response(_fixture("words-only"),
+                                                   allow_untimed=False)
+        assert whisper.segment_shape(segments)[0] < whisper.COARSE_MEDIAN_SECONDS
+        whisper.check_granularity(segments, "openai/whisper-large-v3", refuse=True)
+
+    def test_a_fine_response_is_left_exactly_as_it_came(self):
+        """Fails if the grouping runs unconditionally and replaces good segments.
+
+        31 segments at a 6.76s median already anchor. Regrouping them would
+        throw away the provider's own sentence boundaries for no gain.
+        """
+        data = _fixture("fine")
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert len(segments) == len(data["segments"])
+        assert segments[0]["start"] == round(float(data["segments"][0]["start"]), 2)
+
+    def test_a_near_edge_response_is_left_alone_too(self):
+        """Fails if the guard's comparison flips to `<`.
+
+        9.02s sits 0.98s under the 10.0s threshold. A mean-instead-of-median
+        edit, or a `>=` where a `>` belongs, moves this fixture across and
+        starts regrouping renderings that were fine.
+        """
+        data = _fixture("near-edge")
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert len(segments) == len(data["segments"])
+
+    def test_no_segments_and_no_words_still_refuses(self):
+        """Fails if the untimed refusal is lost behind the new branch."""
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response({"text": "everything, untimed"},
+                                            allow_untimed=False)
+        assert "no segment timestamps" in str(caught.value)
+
+    def test_no_segments_and_no_words_still_allows_untimed_when_asked(self):
+        """Fails if the new branch changes the groq and openai paths."""
+        segments = whisper._segments_from_response({"text": "untimed"})
+        assert segments == [{"start": 0.0, "end": 0.0, "text": "untimed"}]
+
+
+class TestDroppedChunks:
+    """A skipped chunk is a hole in the evidence, and it used to be invisible.
+
+    Run 2 of FIhj0yb9KPI on 2026-09-07 kept chunks 1, 2, 4, 5 and 6, lost
+    chunk 3, and reported `Transcript: 141 segments (via whisper (openrouter))`
+    with no mention that roughly 9:28-14:12 was absent. Every gate downstream
+    read that transcript as whole.
+    """
+
+    def test_a_failed_chunk_records_the_span_it_lost(self, tmp_path, capsys):
+        """Fails if the drop is only printed: `dropped` stays empty."""
+        chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 568.0),
+                  (tmp_path / "c2.mp3", 1136.0)]
+
+        def transcribe_one(path):
+            if path.name == "c1.mp3":
+                raise SystemExit("too coarse to anchor")
+            return [{"start": 0.0, "end": 2.0, "text": "kept"}]
+
+        dropped = []
+        segments = whisper.transcribe_chunks(chunks, transcribe_one,
+                                             dropped=dropped)
+        assert len(segments) == 2
+        assert dropped == [(568.0, 1136.0, "failed")]
+        assert "9:28" in capsys.readouterr().err
+
+    def test_a_failed_last_chunk_records_an_open_span(self, tmp_path):
+        """Fails if the code indexes chunks[index + 1] unguarded: IndexError."""
+        chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 600.0)]
+
+        def transcribe_one(path):
+            if path.name == "c1.mp3":
+                raise SystemExit("nope")
+            return [{"start": 0.0, "end": 2.0, "text": "kept"}]
+
+        dropped = []
+        whisper.transcribe_chunks(chunks, transcribe_one, dropped=dropped)
+        assert dropped == [(600.0, None, "failed")]
+
+    def test_a_chunk_that_returns_nothing_is_recorded_as_empty(self, tmp_path):
+        """Fails if only the raising path is recorded.
+
+        The refutation measured this door: a chunk that RETURNS `[]` takes the
+        success path, never increments `failures`, and used to vanish. It is
+        recorded and named `empty` rather than `failed`, because silence is a
+        legitimate reason a chunk carries no speech.
+        """
+        chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 568.0),
+                  (tmp_path / "c2.mp3", 1136.0)]
+        dropped = []
+        whisper.transcribe_chunks(
+            chunks,
+            lambda p: [] if p.name == "c1.mp3"
+            else [{"start": 0.0, "end": 2.0, "text": "kept"}],
+            dropped=dropped)
+        assert dropped == [(568.0, 1136.0, "empty")]
+
+    def test_a_clean_run_records_nothing(self, tmp_path):
+        """Fails if the list is appended to unconditionally."""
+        chunks = [(tmp_path / "c0.mp3", 0.0)]
+        dropped = []
+        whisper.transcribe_chunks(
+            chunks, lambda p: [{"start": 0.0, "end": 1.0, "text": "x"}],
+            dropped=dropped)
+        assert dropped == []
+
+    def test_the_span_reads_as_a_clock(self):
+        """Fails if the formatter prints raw seconds a reader has to convert."""
+        assert whisper._format_span(568.0, 852.0) == "9:28–14:12"
+        assert whisper._format_span(600.0, None) == "10:00 to the end"
+
+    def test_omitting_the_list_keeps_the_old_signature_working(self, tmp_path):
+        """Fails if `dropped` becomes required: every existing caller breaks."""
+        chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 10.0)]
+
+        def transcribe_one(path):
+            if path.name == "c1.mp3":
+                raise SystemExit("nope")
+            return [{"start": 0.0, "end": 2.0, "text": "kept"}]
+
+        assert whisper.transcribe_chunks(chunks, transcribe_one) == [
+            {"start": 0.0, "end": 2.0, "text": "kept"}]
+
+
+class TestGappedTranscriptIsRefused:
+    def test_a_run_that_lost_a_chunk_is_refused_by_name(self, monkeypatch,
+                                                        tmp_path):
+        """Fails if the gap only warns: a 30-video batch skips warnings."""
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1704.0)
+        monkeypatch.setattr(whisper, "split_audio",
+                            lambda a, d, plan: [(tmp_path / f"c{i}.mp3", off)
+                                                for i, (off, _len)
+                                                in enumerate(plan)])
+        monkeypatch.setattr(whisper, "second_model", lambda backend: None)
+        monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
+
+        def transcribe_one(path):
+            if path.name == "c1.mp3":
+                raise SystemExit("too coarse to anchor")
+            return [{"start": 0.0, "end": 2.0, "text": "kept"}]
+
+        monkeypatch.setattr(whisper, "_transcribe_file",
+                            lambda backend, key, path, override=None:
+                            transcribe_one(path))
+
+        with pytest.raises(SystemExit) as caught:
+            whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                     backend="openrouter", api_key="sk")
+        message = str(caught.value)
+        assert "missing from the transcript" in message
+        assert "9:28" in message
+        assert "WATCH_ALLOW_TRANSCRIPT_GAPS" in message
+
+    def test_a_silent_chunk_is_named_but_does_not_refuse(self, monkeypatch,
+                                                         tmp_path, capsys):
+        """Fails if `empty` refuses too: a musical intro would fail the run.
+
+        A chunk that returns no segments may be silence. Refusing on it would
+        report a healthy video as a failure, which is the defect the exit-status
+        task was amended for. It is named in stderr and carried, not refused.
+        """
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1704.0)
+        monkeypatch.setattr(whisper, "split_audio",
+                            lambda a, d, plan: [(tmp_path / f"c{i}.mp3", off)
+                                                for i, (off, _len)
+                                                in enumerate(plan)])
+        monkeypatch.setattr(whisper, "second_model", lambda backend: None)
+        monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
+        monkeypatch.setattr(
+            whisper, "_transcribe_file",
+            lambda backend, key, path, override=None:
+            [] if path.name == "c1.mp3"
+            else [{"start": 0.0, "end": 2.0, "text": "kept"}])
+
+        segments, _backend = whisper.transcribe_video(
+            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
+        assert segments
+        err = capsys.readouterr().err
+        assert "9:28" in err
+        assert "no speech" in err
+
+    def test_the_escape_hatch_keeps_the_partial_transcript(self, monkeypatch,
+                                                           tmp_path):
+        """Fails if the refusal has no override: exploratory runs lose the flag."""
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1704.0)
+        monkeypatch.setattr(whisper, "split_audio",
+                            lambda a, d, plan: [(tmp_path / f"c{i}.mp3", off)
+                                                for i, (off, _len)
+                                                in enumerate(plan)])
+        monkeypatch.setattr(whisper, "second_model", lambda backend: None)
+        monkeypatch.setattr(
+            whisper, "_read_config_value",
+            lambda name: "1" if name == "WATCH_ALLOW_TRANSCRIPT_GAPS" else None)
+        def refuse_one(backend, key, path, override=None):
+            # The SAME failure as the test above -- the flag decides what the
+            # run does about it, not whether it happened.
+            if path.name == "c1.mp3":
+                raise SystemExit("too coarse to anchor")
+            return [{"start": 0.0, "end": 2.0, "text": "kept"}]
+
+        monkeypatch.setattr(whisper, "_transcribe_file", refuse_one)
+
+        segments, backend = whisper.transcribe_video(
+            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
+        assert backend == "openrouter"
+        assert segments
