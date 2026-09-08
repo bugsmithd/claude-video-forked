@@ -1,0 +1,1556 @@
+{
+  "_provenance": {
+    "captured": "2026-09-08",
+    "kind": "CAPTURED segments and CAPTURED words, trimmed to the first 120s. Nothing is edited; whole segments and whole words past that mark are dropped. The response is chunk 1 of 9 of YPKV-UCLLd0, the chunk four consecutive runs refused.",
+    "reported_by": "corpus build 2026-09-08, YPKV-UCLLd0 chunk 1 of 9, refused four times with identical numbers: words covering 526s of the 541s the segments cover, at a typical 25s",
+    "why_it_matters": "The 15s sits at the START. Segment 1 runs 0.00-14.88 with the text '\u266a' and holds no words, and the first word starts at 14.86. Measuring coverage as last_end - first_start therefore reads a music intro as 15s of dropped speech."
+  },
+  "_derived": {
+    "segments": 7,
+    "median_segment_span": 14.88,
+    "longest_segment_span": 26.4,
+    "words": 230,
+    "first_segment_start": 0.0,
+    "first_word_start": 14.859999656677246,
+    "last_segment_end": 114.12,
+    "last_word_end": 113.06000045776368
+  },
+  "task": "transcribe",
+  "language": "en",
+  "duration": 114.12,
+  "text": "\ud83c\udfb5 I'm actually the lone interviewer, Elf's probably in Budapest mourning Arsenal's recent defeat by Paris Saint-Germain. And if he were here, he'd probably be in too great a state of emotional distress.  But I'm delighted to be hosting Rita McGrath from Colombia, whose great area of expertise is something which is vastly less important. prevalent than it should be, which is corporate entrepreneurship, which is, in other words,  the capacity for large organizations to genuinely innovate internally rather than merely buying in  what threatens them or doing more or less nothing. And so, as we always do on the Bottleneck Podcast,  and actually the Bottleneck Podcast is a perfect name for this very problem, what are the bottlenecks you vastly more innovative, we'll always start by allowing the guests to introduce themselves and  to explain how they got there and how they particularly, because your original PhD was  in fact on this topic, wasn't it? Yes, it was. Yeah. So tell us more about yourself for people  who don't know Rita. Oh, sure. So what a pleasure to get to talk about yourself. How amazing.  So my main work is at the intersection of strategy and innovation, where corporate large-scale organizational change in my previous role where I worked for a government agency for  about 10 years. And back then we were doing, you'll remember this phrase, \"computerization.\"",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0,
+      "end": 14.88,
+      "text": " \ud83c\udfb5",
+      "tokens": [
+        25674
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.5499703685442606,
+      "compression_ratio": 0.38461538461538464,
+      "no_speech_prob": 0
+    },
+    {
+      "id": 0,
+      "seek": 15,
+      "start": 15.84,
+      "end": 22.88,
+      "text": " I'm actually the lone interviewer, Elf's probably in Budapest mourning Arsenal's recent defeat by Paris Saint-Germain.",
+      "tokens": [
+        286,
+        478,
+        767,
+        264,
+        35314,
+        4049,
+        260,
+        11,
+        2699,
+        69,
+        311,
+        1391,
+        294,
+        6384,
+        569,
+        377,
+        42947,
+        49156,
+        311,
+        5162,
+        11785,
+        538,
+        8380,
+        12902,
+        12,
+        38,
+        966,
+        491,
+        13
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.2167482162387328,
+      "compression_ratio": 1.0818181818181818,
+      "no_speech_prob": 0
+    },
+    {
+      "id": 2,
+      "seek": 15,
+      "start": 24.22,
+      "end": 43.68,
+      "text": " And if he were here, he'd probably be in too great a state of emotional distress.  But I'm delighted to be hosting Rita McGrath from Colombia, whose great area of expertise is something which is vastly less important.",
+      "tokens": [
+        400,
+        498,
+        415,
+        645,
+        510,
+        11,
+        415,
+        1116,
+        1391,
+        312,
+        294,
+        886,
+        869,
+        257,
+        1785,
+        295,
+        6863,
+        24516,
+        13,
+        583,
+        286,
+        478,
+        18783,
+        281,
+        312,
+        16058,
+        32672,
+        4050,
+        20038,
+        998,
+        490,
+        22677,
+        11,
+        6104,
+        869,
+        1859,
+        295,
+        11769,
+        307,
+        746,
+        597,
+        307,
+        41426,
+        1570,
+        1021,
+        13
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.10834563679276306,
+      "compression_ratio": 1.3540372670807452,
+      "no_speech_prob": 0
+    },
+    {
+      "id": 3,
+      "seek": 43,
+      "start": 43.83,
+      "end": 70.23,
+      "text": " prevalent than it should be, which is corporate entrepreneurship, which is, in other words,  the capacity for large organizations to genuinely innovate internally rather than merely buying in  what threatens them or doing more or less nothing. And so, as we always do on the Bottleneck Podcast,  and actually the Bottleneck Podcast is a perfect name for this very problem, what are the bottlenecks",
+      "tokens": [
+        30652,
+        813,
+        309,
+        820,
+        312,
+        11,
+        597,
+        307,
+        10896,
+        26582,
+        11,
+        597,
+        307,
+        11,
+        294,
+        661,
+        2283,
+        11,
+        264,
+        6042,
+        337,
+        2416,
+        6150,
+        281,
+        17839,
+        33444,
+        19501,
+        2831,
+        813,
+        17003,
+        6382,
+        294,
+        437,
+        47511,
+        552,
+        420,
+        884,
+        544,
+        420,
+        1570,
+        1825,
+        13,
+        400,
+        370,
+        11,
+        382,
+        321,
+        1009,
+        360,
+        322,
+        264,
+        28479,
+        21323,
+        547,
+        29972,
+        11,
+        293,
+        767,
+        264,
+        28479,
+        21323,
+        547,
+        29972,
+        307,
+        257,
+        2176,
+        1315,
+        337,
+        341,
+        588,
+        1154,
+        11,
+        437,
+        366,
+        264,
+        44641,
+        2761
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.11415325236317003,
+      "compression_ratio": 1.6793248945147679,
+      "no_speech_prob": 0
+    },
+    {
+      "id": 0,
+      "seek": 73,
+      "start": 73.83,
+      "end": 73.91,
+      "text": " you",
+      "tokens": [
+        291
+      ],
+      "temperature": 0,
+      "avg_logprob": -1.2529677152633667,
+      "compression_ratio": 0.3333333333333333,
+      "no_speech_prob": 0
+    },
+    {
+      "id": 5,
+      "seek": 74,
+      "start": 74.04,
+      "end": 98.18,
+      "text": " vastly more innovative, we'll always start by allowing the guests to introduce themselves and  to explain how they got there and how they particularly, because your original PhD was  in fact on this topic, wasn't it? Yes, it was. Yeah. So tell us more about yourself for people  who don't know Rita. Oh, sure. So what a pleasure to get to talk about yourself. How amazing.  So my main work is at the intersection of strategy and innovation, where corporate",
+      "tokens": [
+        41426,
+        544,
+        12999,
+        11,
+        321,
+        603,
+        1009,
+        722,
+        538,
+        8293,
+        264,
+        9804,
+        281,
+        5366,
+        2969,
+        293,
+        281,
+        2903,
+        577,
+        436,
+        658,
+        456,
+        293,
+        577,
+        436,
+        4098,
+        11,
+        570,
+        428,
+        3380,
+        14476,
+        390,
+        294,
+        1186,
+        322,
+        341,
+        4829,
+        11,
+        2067,
+        380,
+        309,
+        30,
+        1079,
+        11,
+        309,
+        390,
+        13,
+        865,
+        13,
+        407,
+        980,
+        505,
+        544,
+        466,
+        1803,
+        337,
+        561,
+        567,
+        500,
+        380,
+        458,
+        32672,
+        13,
+        876,
+        11,
+        988,
+        13,
+        407,
+        437,
+        257,
+        6834,
+        281,
+        483,
+        281,
+        751,
+        466,
+        1803,
+        13,
+        1012,
+        2243,
+        13,
+        407,
+        452,
+        2135,
+        589,
+        307,
+        412,
+        264,
+        15236,
+        295,
+        5206,
+        293,
+        8504,
+        11,
+        689,
+        10896
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.09550881764079518,
+      "compression_ratio": 1.6205673758865249,
+      "no_speech_prob": 0
+    },
+    {
+      "id": 6,
+      "seek": 104,
+      "start": 104.04,
+      "end": 114.12,
+      "text": " large-scale organizational change in my previous role where I worked for a government agency for  about 10 years. And back then we were doing, you'll remember this phrase, \"computerization.\"",
+      "tokens": [
+        2416,
+        12,
+        20033,
+        24730,
+        1319,
+        294,
+        452,
+        3894,
+        3090,
+        689,
+        286,
+        2732,
+        337,
+        257,
+        2463,
+        7934,
+        337,
+        466,
+        1266,
+        924,
+        13,
+        400,
+        646,
+        550,
+        321,
+        645,
+        884,
+        11,
+        291,
+        603,
+        1604,
+        341,
+        9535,
+        11,
+        503,
+        1112,
+        13849,
+        2144,
+        889
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.1719816083725411,
+      "compression_ratio": 1.2993197278911566,
+      "no_speech_prob": 0
+    }
+  ],
+  "words": [
+    {
+      "word": " \ud83c\udfb5",
+      "start": 14.859999656677246,
+      "end": 14.859999656677246
+    },
+    {
+      "word": " I'm",
+      "start": 15.84,
+      "end": 16.21999999523163
+    },
+    {
+      "word": " actually",
+      "start": 16.21999999523163,
+      "end": 16.56000002861023
+    },
+    {
+      "word": " the",
+      "start": 16.56000002861023,
+      "end": 16.71999999523163
+    },
+    {
+      "word": " lone",
+      "start": 16.71999999523163,
+      "end": 16.920000042915344
+    },
+    {
+      "word": " interviewer,",
+      "start": 16.920000042915344,
+      "end": 17.39999994277954
+    },
+    {
+      "word": " Elf's",
+      "start": 17.39999994277954,
+      "end": 17.820000019073486
+    },
+    {
+      "word": " probably",
+      "start": 17.820000019073486,
+      "end": 18.159999933242798
+    },
+    {
+      "word": " in",
+      "start": 18.159999933242798,
+      "end": 18.379999961853027
+    },
+    {
+      "word": " Budapest",
+      "start": 18.379999961853027,
+      "end": 18.919999923706055
+    },
+    {
+      "word": " mourning",
+      "start": 18.919999923706055,
+      "end": 19.359999980926514
+    },
+    {
+      "word": " Arsenal's",
+      "start": 19.359999980926514,
+      "end": 20.519999828338623
+    },
+    {
+      "word": " recent",
+      "start": 20.519999828338623,
+      "end": 20.919999923706055
+    },
+    {
+      "word": " defeat",
+      "start": 20.919999923706055,
+      "end": 21.24000009536743
+    },
+    {
+      "word": " by",
+      "start": 21.24000009536743,
+      "end": 21.660000171661377
+    },
+    {
+      "word": " Paris",
+      "start": 21.660000171661377,
+      "end": 22.200000133514404
+    },
+    {
+      "word": " Saint",
+      "start": 22.200000133514404,
+      "end": 22.459999885559082
+    },
+    {
+      "word": "-Germain.",
+      "start": 22.459999885559082,
+      "end": 22.99999984741211
+    },
+    {
+      "word": " And",
+      "start": 24.659998741149902,
+      "end": 25.139999237060547
+    },
+    {
+      "word": " if",
+      "start": 25.139999237060547,
+      "end": 25.61999973297119
+    },
+    {
+      "word": " he",
+      "start": 25.61999973297119,
+      "end": 26.039999809265137
+    },
+    {
+      "word": " were",
+      "start": 26.039999809265137,
+      "end": 26.220000114440918
+    },
+    {
+      "word": " here,",
+      "start": 26.220000114440918,
+      "end": 26.720000114440918
+    },
+    {
+      "word": " he'd",
+      "start": 26.720000114440918,
+      "end": 27.140000190734863
+    },
+    {
+      "word": " probably",
+      "start": 27.140000190734863,
+      "end": 27.4000004196167
+    },
+    {
+      "word": " be",
+      "start": 27.4000004196167,
+      "end": 27.61999973297119
+    },
+    {
+      "word": " in",
+      "start": 27.61999973297119,
+      "end": 27.7799995803833
+    },
+    {
+      "word": " too",
+      "start": 27.7799995803833,
+      "end": 27.959999885559082
+    },
+    {
+      "word": " great",
+      "start": 27.959999885559082,
+      "end": 28.220000114440918
+    },
+    {
+      "word": " a",
+      "start": 28.220000114440918,
+      "end": 28.379999961853027
+    },
+    {
+      "word": " state",
+      "start": 28.379999961853027,
+      "end": 28.579999771118164
+    },
+    {
+      "word": " of",
+      "start": 28.579999771118164,
+      "end": 28.720000114440918
+    },
+    {
+      "word": " emotional",
+      "start": 28.720000114440918,
+      "end": 28.940000381469726
+    },
+    {
+      "word": " distress.",
+      "start": 28.940000381469726,
+      "end": 29.42000087738037
+    },
+    {
+      "word": " But",
+      "start": 30.140000190734863,
+      "end": 30.68000015258789
+    },
+    {
+      "word": " I'm",
+      "start": 30.68000015258789,
+      "end": 33.38000091552735
+    },
+    {
+      "word": " delighted",
+      "start": 33.38000091552735,
+      "end": 33.63999923706055
+    },
+    {
+      "word": " to",
+      "start": 33.63999923706055,
+      "end": 33.79999908447266
+    },
+    {
+      "word": " be",
+      "start": 33.79999908447266,
+      "end": 33.81999954223633
+    },
+    {
+      "word": " hosting",
+      "start": 33.81999954223633,
+      "end": 34.10000022888184
+    },
+    {
+      "word": " Rita",
+      "start": 34.10000022888184,
+      "end": 34.79999908447266
+    },
+    {
+      "word": " McGrath",
+      "start": 34.79999908447266,
+      "end": 35.219999160766605
+    },
+    {
+      "word": " from",
+      "start": 35.219999160766605,
+      "end": 35.57999977111817
+    },
+    {
+      "word": " Colombia,",
+      "start": 35.57999977111817,
+      "end": 36.23999961853028
+    },
+    {
+      "word": " whose",
+      "start": 36.23999961853028,
+      "end": 36.78000053405762
+    },
+    {
+      "word": " great",
+      "start": 36.78000053405762,
+      "end": 37.26000007629395
+    },
+    {
+      "word": " area",
+      "start": 37.26000007629395,
+      "end": 37.520000305175785
+    },
+    {
+      "word": " of",
+      "start": 37.520000305175785,
+      "end": 37.719999160766605
+    },
+    {
+      "word": " expertise",
+      "start": 37.719999160766605,
+      "end": 37.99999984741211
+    },
+    {
+      "word": " is",
+      "start": 37.99999984741211,
+      "end": 39.28000053405762
+    },
+    {
+      "word": " something",
+      "start": 39.28000053405762,
+      "end": 40.559999313354496
+    },
+    {
+      "word": " which",
+      "start": 40.559999313354496,
+      "end": 41.10000022888184
+    },
+    {
+      "word": " is",
+      "start": 41.10000022888184,
+      "end": 41.49999984741211
+    },
+    {
+      "word": " vastly",
+      "start": 41.49999984741211,
+      "end": 42.38000091552735
+    },
+    {
+      "word": " less",
+      "start": 42.38000091552735,
+      "end": 42.88000091552735
+    },
+    {
+      "word": " important.",
+      "start": 42.88000091552735,
+      "end": 43.49999984741211
+    },
+    {
+      "word": " prevalent",
+      "start": 43.83,
+      "end": 44.19000001430511
+    },
+    {
+      "word": " than",
+      "start": 44.19000001430511,
+      "end": 45.00999994754791
+    },
+    {
+      "word": " it",
+      "start": 45.00999994754791,
+      "end": 45.150000052452086
+    },
+    {
+      "word": " should",
+      "start": 45.150000052452086,
+      "end": 45.369999961853026
+    },
+    {
+      "word": " be,",
+      "start": 45.369999961853026,
+      "end": 45.70999999523163
+    },
+    {
+      "word": " which",
+      "start": 45.70999999523163,
+      "end": 46.05000002861023
+    },
+    {
+      "word": " is",
+      "start": 46.05000002861023,
+      "end": 46.210000114440916
+    },
+    {
+      "word": " corporate",
+      "start": 46.210000114440916,
+      "end": 46.60999997138977
+    },
+    {
+      "word": " entrepreneurship,",
+      "start": 46.60999997138977,
+      "end": 47.5100000667572
+    },
+    {
+      "word": " which",
+      "start": 47.5100000667572,
+      "end": 48.11000020980835
+    },
+    {
+      "word": " is,",
+      "start": 48.11000020980835,
+      "end": 48.50999982833862
+    },
+    {
+      "word": " in",
+      "start": 48.50999982833862,
+      "end": 48.77000005722046
+    },
+    {
+      "word": " other",
+      "start": 48.77000005722046,
+      "end": 48.92999990463257
+    },
+    {
+      "word": " words,",
+      "start": 48.92999990463257,
+      "end": 49.27000005722046
+    },
+    {
+      "word": " the",
+      "start": 49.27000005722046,
+      "end": 49.63000019073486
+    },
+    {
+      "word": " capacity",
+      "start": 49.63000019073486,
+      "end": 50.13000019073486
+    },
+    {
+      "word": " for",
+      "start": 50.13000019073486,
+      "end": 50.469999866485594
+    },
+    {
+      "word": " large",
+      "start": 50.469999866485594,
+      "end": 50.810000019073485
+    },
+    {
+      "word": " organizations",
+      "start": 50.810000019073485,
+      "end": 51.469999866485594
+    },
+    {
+      "word": " to",
+      "start": 51.469999866485594,
+      "end": 52.05000026702881
+    },
+    {
+      "word": " genuinely",
+      "start": 52.05000026702881,
+      "end": 52.55000026702881
+    },
+    {
+      "word": " innovate",
+      "start": 52.55000026702881,
+      "end": 53.06999977111816
+    },
+    {
+      "word": " internally",
+      "start": 53.06999977111816,
+      "end": 53.79000003814697
+    },
+    {
+      "word": " rather",
+      "start": 53.79000003814697,
+      "end": 54.94999988555908
+    },
+    {
+      "word": " than",
+      "start": 54.94999988555908,
+      "end": 55.29000003814697
+    },
+    {
+      "word": " merely",
+      "start": 55.29000003814697,
+      "end": 55.51000030517578
+    },
+    {
+      "word": " buying",
+      "start": 55.51000030517578,
+      "end": 56.309999542236326
+    },
+    {
+      "word": " in",
+      "start": 56.309999542236326,
+      "end": 56.63000019073486
+    },
+    {
+      "word": " what",
+      "start": 56.63000019073486,
+      "end": 56.85000045776367
+    },
+    {
+      "word": " threatens",
+      "start": 56.85000045776367,
+      "end": 57.2699995803833
+    },
+    {
+      "word": " them",
+      "start": 57.2699995803833,
+      "end": 57.590000228881834
+    },
+    {
+      "word": " or",
+      "start": 57.590000228881834,
+      "end": 58.06999977111816
+    },
+    {
+      "word": " doing",
+      "start": 58.06999977111816,
+      "end": 58.90999992370605
+    },
+    {
+      "word": " more",
+      "start": 58.90999992370605,
+      "end": 59.22999961853027
+    },
+    {
+      "word": " or",
+      "start": 59.22999961853027,
+      "end": 59.35000045776367
+    },
+    {
+      "word": " less",
+      "start": 59.35000045776367,
+      "end": 59.430000381469725
+    },
+    {
+      "word": " nothing.",
+      "start": 59.430000381469725,
+      "end": 59.88999946594238
+    },
+    {
+      "word": " And",
+      "start": 60.50999839782715,
+      "end": 61.14999969482422
+    },
+    {
+      "word": " so,",
+      "start": 61.14999969482422,
+      "end": 61.72999961853027
+    },
+    {
+      "word": " as",
+      "start": 61.72999961853027,
+      "end": 62.14999969482422
+    },
+    {
+      "word": " we",
+      "start": 62.14999969482422,
+      "end": 62.309999542236326
+    },
+    {
+      "word": " always",
+      "start": 62.309999542236326,
+      "end": 62.56999977111816
+    },
+    {
+      "word": " do",
+      "start": 62.56999977111816,
+      "end": 62.7099991607666
+    },
+    {
+      "word": " on",
+      "start": 62.7099991607666,
+      "end": 62.83
+    },
+    {
+      "word": " the",
+      "start": 62.83,
+      "end": 62.90999992370605
+    },
+    {
+      "word": " Bottleneck",
+      "start": 62.90999992370605,
+      "end": 63.270000534057615
+    },
+    {
+      "word": " Podcast,",
+      "start": 63.270000534057615,
+      "end": 64.27000053405762
+    },
+    {
+      "word": " and",
+      "start": 64.27000053405762,
+      "end": 65.09000022888183
+    },
+    {
+      "word": " actually",
+      "start": 65.09000022888183,
+      "end": 65.37000091552734
+    },
+    {
+      "word": " the",
+      "start": 65.37000091552734,
+      "end": 65.53000076293945
+    },
+    {
+      "word": " Bottleneck",
+      "start": 65.53000076293945,
+      "end": 65.88999946594238
+    },
+    {
+      "word": " Podcast",
+      "start": 65.88999946594238,
+      "end": 66.12999923706055
+    },
+    {
+      "word": " is",
+      "start": 66.12999923706055,
+      "end": 66.69000061035156
+    },
+    {
+      "word": " a",
+      "start": 66.69000061035156,
+      "end": 66.83
+    },
+    {
+      "word": " perfect",
+      "start": 66.83,
+      "end": 67.19000061035156
+    },
+    {
+      "word": " name",
+      "start": 67.19000061035156,
+      "end": 67.51000030517578
+    },
+    {
+      "word": " for",
+      "start": 67.51000030517578,
+      "end": 67.77000053405762
+    },
+    {
+      "word": " this",
+      "start": 67.77000053405762,
+      "end": 68.06999977111816
+    },
+    {
+      "word": " very",
+      "start": 68.06999977111816,
+      "end": 68.30999954223633
+    },
+    {
+      "word": " problem,",
+      "start": 68.30999954223633,
+      "end": 68.83
+    },
+    {
+      "word": " what",
+      "start": 68.83,
+      "end": 69.01000030517578
+    },
+    {
+      "word": " are",
+      "start": 69.01000030517578,
+      "end": 69.25000007629394
+    },
+    {
+      "word": " the",
+      "start": 69.25000007629394,
+      "end": 69.4500008392334
+    },
+    {
+      "word": " bottlenecks",
+      "start": 69.4500008392334,
+      "end": 70.1100006866455
+    },
+    {
+      "word": " you",
+      "start": 73.83,
+      "end": 73.86999999910593
+    },
+    {
+      "word": " vastly",
+      "start": 74.05999999955297,
+      "end": 74.76000002861024
+    },
+    {
+      "word": " more",
+      "start": 74.76000002861024,
+      "end": 74.9600000166893
+    },
+    {
+      "word": " innovative,",
+      "start": 74.9600000166893,
+      "end": 75.6999999666214
+    },
+    {
+      "word": " we'll",
+      "start": 75.6999999666214,
+      "end": 76.54
+    },
+    {
+      "word": " always",
+      "start": 76.54,
+      "end": 76.72000006675721
+    },
+    {
+      "word": " start",
+      "start": 76.72000006675721,
+      "end": 76.92000011444092
+    },
+    {
+      "word": " by",
+      "start": 76.92000011444092,
+      "end": 77.09999994277955
+    },
+    {
+      "word": " allowing",
+      "start": 77.09999994277955,
+      "end": 77.61999992370606
+    },
+    {
+      "word": " the",
+      "start": 77.61999992370606,
+      "end": 77.89999989509583
+    },
+    {
+      "word": " guests",
+      "start": 77.89999989509583,
+      "end": 78.07999996185303
+    },
+    {
+      "word": " to",
+      "start": 78.07999996185303,
+      "end": 78.25999979019166
+    },
+    {
+      "word": " introduce",
+      "start": 78.25999979019166,
+      "end": 78.55999998092652
+    },
+    {
+      "word": " themselves",
+      "start": 78.55999998092652,
+      "end": 79.04
+    },
+    {
+      "word": " and",
+      "start": 79.04,
+      "end": 79.3800001525879
+    },
+    {
+      "word": " to",
+      "start": 79.3800001525879,
+      "end": 79.50000003814698
+    },
+    {
+      "word": " explain",
+      "start": 79.50000003814698,
+      "end": 79.73999980926514
+    },
+    {
+      "word": " how",
+      "start": 79.73999980926514,
+      "end": 80.00000003814698
+    },
+    {
+      "word": " they",
+      "start": 80.00000003814698,
+      "end": 80.21999982833863
+    },
+    {
+      "word": " got",
+      "start": 80.21999982833863,
+      "end": 80.46000007629395
+    },
+    {
+      "word": " there",
+      "start": 80.46000007629395,
+      "end": 80.6799998664856
+    },
+    {
+      "word": " and",
+      "start": 80.6799998664856,
+      "end": 80.86000017166138
+    },
+    {
+      "word": " how",
+      "start": 80.86000017166138,
+      "end": 81.04
+    },
+    {
+      "word": " they",
+      "start": 81.04,
+      "end": 81.19999984741212
+    },
+    {
+      "word": " particularly,",
+      "start": 81.19999984741212,
+      "end": 81.77999977111817
+    },
+    {
+      "word": " because",
+      "start": 81.77999977111817,
+      "end": 81.98000005722047
+    },
+    {
+      "word": " your",
+      "start": 81.98000005722047,
+      "end": 82.11999992370606
+    },
+    {
+      "word": " original",
+      "start": 82.11999992370606,
+      "end": 82.50000003814698
+    },
+    {
+      "word": " PhD",
+      "start": 82.50000003814698,
+      "end": 82.85999969482423
+    },
+    {
+      "word": " was",
+      "start": 82.85999969482423,
+      "end": 83.43999961853028
+    },
+    {
+      "word": " in",
+      "start": 83.43999961853028,
+      "end": 83.56000045776368
+    },
+    {
+      "word": " fact",
+      "start": 83.56000045776368,
+      "end": 83.76000026702881
+    },
+    {
+      "word": " on",
+      "start": 83.76000026702881,
+      "end": 83.92000011444092
+    },
+    {
+      "word": " this",
+      "start": 83.92000011444092,
+      "end": 84.11999992370606
+    },
+    {
+      "word": " topic,",
+      "start": 84.11999992370606,
+      "end": 84.4799995803833
+    },
+    {
+      "word": " wasn't",
+      "start": 84.4799995803833,
+      "end": 84.73999980926514
+    },
+    {
+      "word": " it?",
+      "start": 84.73999980926514,
+      "end": 85.00000003814698
+    },
+    {
+      "word": " Yes,",
+      "start": 85.00000003814698,
+      "end": 85.01999954223633
+    },
+    {
+      "word": " it",
+      "start": 85.01999954223633,
+      "end": 85.01999954223633
+    },
+    {
+      "word": " was.",
+      "start": 85.01999954223633,
+      "end": 85.11999992370606
+    },
+    {
+      "word": " Yeah.",
+      "start": 85.11999992370606,
+      "end": 85.43999961853028
+    },
+    {
+      "word": " So",
+      "start": 85.43999961853028,
+      "end": 85.69999984741212
+    },
+    {
+      "word": " tell",
+      "start": 85.69999984741212,
+      "end": 85.8800001525879
+    },
+    {
+      "word": " us",
+      "start": 85.8800001525879,
+      "end": 86.27999977111817
+    },
+    {
+      "word": " more",
+      "start": 86.27999977111817,
+      "end": 86.42000011444092
+    },
+    {
+      "word": " about",
+      "start": 86.42000011444092,
+      "end": 86.61999992370606
+    },
+    {
+      "word": " yourself",
+      "start": 86.61999992370606,
+      "end": 86.93999961853028
+    },
+    {
+      "word": " for",
+      "start": 86.93999961853028,
+      "end": 87.15999988555909
+    },
+    {
+      "word": " people",
+      "start": 87.15999988555909,
+      "end": 87.3199997329712
+    },
+    {
+      "word": " who",
+      "start": 87.3199997329712,
+      "end": 87.46000007629395
+    },
+    {
+      "word": " don't",
+      "start": 87.46000007629395,
+      "end": 87.68000034332276
+    },
+    {
+      "word": " know",
+      "start": 87.68000034332276,
+      "end": 87.80000022888184
+    },
+    {
+      "word": " Rita.",
+      "start": 87.80000022888184,
+      "end": 88.18000034332276
+    },
+    {
+      "word": " Oh,",
+      "start": 88.18000034332276,
+      "end": 88.39999965667725
+    },
+    {
+      "word": " sure.",
+      "start": 88.39999965667725,
+      "end": 88.81999782562256
+    },
+    {
+      "word": " So",
+      "start": 88.96000007629395,
+      "end": 89.19999984741212
+    },
+    {
+      "word": " what",
+      "start": 89.19999984741212,
+      "end": 89.76000026702881
+    },
+    {
+      "word": " a",
+      "start": 89.76000026702881,
+      "end": 89.89999965667725
+    },
+    {
+      "word": " pleasure",
+      "start": 89.89999965667725,
+      "end": 90.17999938964844
+    },
+    {
+      "word": " to",
+      "start": 90.17999938964844,
+      "end": 90.35999969482423
+    },
+    {
+      "word": " get",
+      "start": 90.35999969482423,
+      "end": 90.54
+    },
+    {
+      "word": " to",
+      "start": 90.54,
+      "end": 90.64000038146973
+    },
+    {
+      "word": " talk",
+      "start": 90.64000038146973,
+      "end": 90.83999923706055
+    },
+    {
+      "word": " about",
+      "start": 90.83999923706055,
+      "end": 90.98000053405762
+    },
+    {
+      "word": " yourself.",
+      "start": 90.98000053405762,
+      "end": 91.32000068664551
+    },
+    {
+      "word": " How",
+      "start": 91.32000068664551,
+      "end": 91.41999916076661
+    },
+    {
+      "word": " amazing.",
+      "start": 91.41999916076661,
+      "end": 91.83999732971192
+    },
+    {
+      "word": " So",
+      "start": 92.3500004196167,
+      "end": 92.64000038146973
+    },
+    {
+      "word": " my",
+      "start": 92.64000038146973,
+      "end": 93.35999969482423
+    },
+    {
+      "word": " main",
+      "start": 93.35999969482423,
+      "end": 94.85999969482423
+    },
+    {
+      "word": " work",
+      "start": 94.85999969482423,
+      "end": 95.08000091552735
+    },
+    {
+      "word": " is",
+      "start": 95.08000091552735,
+      "end": 95.24000076293946
+    },
+    {
+      "word": " at",
+      "start": 95.24000076293946,
+      "end": 95.33999923706055
+    },
+    {
+      "word": " the",
+      "start": 95.33999923706055,
+      "end": 95.46000007629395
+    },
+    {
+      "word": " intersection",
+      "start": 95.46000007629395,
+      "end": 95.7599993133545
+    },
+    {
+      "word": " of",
+      "start": 95.7599993133545,
+      "end": 96.04
+    },
+    {
+      "word": " strategy",
+      "start": 96.04,
+      "end": 96.30000022888184
+    },
+    {
+      "word": " and",
+      "start": 96.30000022888184,
+      "end": 96.58000091552735
+    },
+    {
+      "word": " innovation,",
+      "start": 96.58000091552735,
+      "end": 97.06000045776368
+    },
+    {
+      "word": " where",
+      "start": 97.06000045776368,
+      "end": 97.74000076293946
+    },
+    {
+      "word": " corporate",
+      "start": 97.74000076293946,
+      "end": 98.06000045776368
+    },
+    {
+      "word": " large",
+      "start": 104.04,
+      "end": 104.18000000059605
+    },
+    {
+      "word": "-scale",
+      "start": 104.18000000059605,
+      "end": 104.58000002145768
+    },
+    {
+      "word": " organizational",
+      "start": 104.58000002145768,
+      "end": 104.93999997615815
+    },
+    {
+      "word": " change",
+      "start": 104.93999997615815,
+      "end": 105.74000004768372
+    },
+    {
+      "word": " in",
+      "start": 105.74000004768372,
+      "end": 106.68000010490418
+    },
+    {
+      "word": " my",
+      "start": 106.68000010490418,
+      "end": 106.92000011444092
+    },
+    {
+      "word": " previous",
+      "start": 106.92000011444092,
+      "end": 107.28000000953675
+    },
+    {
+      "word": " role",
+      "start": 107.28000000953675,
+      "end": 107.63999990463257
+    },
+    {
+      "word": " where",
+      "start": 107.63999990463257,
+      "end": 107.87999991416932
+    },
+    {
+      "word": " I",
+      "start": 107.87999991416932,
+      "end": 108.07999996185303
+    },
+    {
+      "word": " worked",
+      "start": 108.07999996185303,
+      "end": 108.52000001907349
+    },
+    {
+      "word": " for",
+      "start": 108.52000001907349,
+      "end": 108.77999977111817
+    },
+    {
+      "word": " a",
+      "start": 108.77999977111817,
+      "end": 108.98000005722047
+    },
+    {
+      "word": " government",
+      "start": 108.98000005722047,
+      "end": 109.19999984741212
+    },
+    {
+      "word": " agency",
+      "start": 109.19999984741212,
+      "end": 109.57999996185303
+    },
+    {
+      "word": " for",
+      "start": 109.57999996185303,
+      "end": 109.90000013351441
+    },
+    {
+      "word": " about",
+      "start": 109.90000013351441,
+      "end": 110.05999998092652
+    },
+    {
+      "word": " 10",
+      "start": 110.05999998092652,
+      "end": 110.25999979019166
+    },
+    {
+      "word": " years.",
+      "start": 110.25999979019166,
+      "end": 110.65999940872193
+    },
+    {
+      "word": " And",
+      "start": 110.92000011444092,
+      "end": 111.02000001907349
+    },
+    {
+      "word": " back",
+      "start": 111.02000001907349,
+      "end": 111.21999982833863
+    },
+    {
+      "word": " then",
+      "start": 111.21999982833863,
+      "end": 111.40000013351441
+    },
+    {
+      "word": " we",
+      "start": 111.40000013351441,
+      "end": 111.54
+    },
+    {
+      "word": " were",
+      "start": 111.54,
+      "end": 111.69999984741212
+    },
+    {
+      "word": " doing,",
+      "start": 111.69999984741212,
+      "end": 112.02000001907349
+    },
+    {
+      "word": " you'll",
+      "start": 112.02000001907349,
+      "end": 112.18000034332276
+    },
+    {
+      "word": " remember",
+      "start": 112.18000034332276,
+      "end": 112.39999965667725
+    },
+    {
+      "word": " this",
+      "start": 112.39999965667725,
+      "end": 112.65999988555909
+    },
+    {
+      "word": " phrase,",
+      "start": 112.65999988555909,
+      "end": 113.06000045776368
+    }
+  ]
+}

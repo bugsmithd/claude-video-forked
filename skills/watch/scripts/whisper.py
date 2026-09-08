@@ -860,18 +860,29 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
                              and median > COARSE_MEDIAN_SECONDS))):
         regrouped = segments_from_words(data["words"])
         if regrouped:
-            _, _, rebuilt_covered = segment_shape(regrouped)
-            if out and covered - rebuilt_covered > WORD_COVERAGE_SLACK_SECONDS:
+            # AT THE TAIL, NOT ACROSS THE WHOLE SPAN. A truncated word array
+            # stops early; it does not start late. Comparing `segment_shape`'s
+            # span on both sides also charges the rebuild for leading
+            # non-speech, and measured 2026-09-08 that is not hypothetical:
+            # YPKV-UCLLd0 chunk 1 was refused four times running because its
+            # first segment is 14.88s of the show's music glyph holding no
+            # words, while the two renderings' last stamps differ by 0.08s.
+            # `tests/fixtures/openrouter/music-intro.json` is that response.
+            # `out` may be empty here: a response can carry words and no
+            # segments at all, and then there is no served rendering to fall
+            # short of.
+            shortfall = (out[-1]["end"] - regrouped[-1]["end"]) if out else 0.0
+            if shortfall > WORD_COVERAGE_SLACK_SECONDS:
                 # NEITHER RENDERING IS USABLE, so this refuses instead of
                 # choosing. The segments are too coarse to anchor and the words
                 # do not reach the end of what they would replace; silently
                 # taking the shorter one is the exact failure this file exists
                 # to prevent, moved inside a chunk where no gate can see it.
                 raise SystemExit(
-                    f"the response's word timestamps cover only "
-                    f"{rebuilt_covered:.0f}s of the {covered:.0f}s its own "
-                    f"segments cover, so rebuilding from them would drop "
-                    f"{covered - rebuilt_covered:.0f}s of speech while still "
+                    f"the response's word timestamps stop at "
+                    f"{regrouped[-1]['end']:.0f}s while its own segments run "
+                    f"to {out[-1]['end']:.0f}s, so rebuilding from them would "
+                    f"drop {shortfall:.0f}s of speech off the end while still "
                     f"reporting a segment count. The segments are too coarse "
                     f"to anchor (a typical {median:.0f}s), so this chunk is "
                     f"refused rather than written.")

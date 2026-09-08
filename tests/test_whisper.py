@@ -1165,7 +1165,8 @@ class TestWordCoverage:
         with pytest.raises(SystemExit) as caught:
             whisper._segments_from_response(short, allow_untimed=False)
         message = str(caught.value)
-        assert "word timestamps cover only" in message
+        assert "word timestamps stop at" in message
+        assert "off the end" in message
         assert "refused" in message
 
     def test_a_word_array_reaching_the_end_is_still_rebuilt(self):
@@ -1179,6 +1180,28 @@ class TestWordCoverage:
         segments = whisper._segments_from_response(_fixture("words-only"),
                                                    allow_untimed=False)
         assert segments
+
+    def test_a_music_intro_is_not_a_shortfall(self):
+        """Fails if leading non-speech is counted as dropped speech.
+
+        Found in the corpus build, 2026-09-08. `YPKV-UCLLd0` was refused four
+        times running with identical numbers -- words covering 526s of the 541s
+        the segments cover -- and `temperature: 0` is why re-drawing changed
+        nothing. Probing the chunk showed the 15s sits entirely at the START:
+        segment 1 runs 0.00-14.88 carrying the show's music glyph and no words,
+        and the first word starts at 14.86, while the tail differs by 0.08s.
+
+        Coverage is `last_end - first_start` (`whisper.segment_shape`), so a
+        music intro reads as a shortfall. A truncated word array stops EARLY;
+        it does not start late. Comparing the two renderings at the tail is
+        what the guard was for, and comparing whole spans refuses a healthy
+        chunk over an interval that never held a word.
+        """
+        data = _fixture("music-intro")
+        assert data["_derived"]["first_word_start"] > 14.0, "intro is the point"
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert segments, "the chunk must be rebuilt, not refused"
+        assert whisper.segment_shape(segments)[0] < whisper.COARSE_MEDIAN_SECONDS
 
 
 class TestWindowContributesNothing:

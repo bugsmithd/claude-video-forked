@@ -138,3 +138,73 @@ The live verification — two runs of `FIhj0yb9KPI` against the real router — 
 deliberately absent. It is environment-sensitive and is run by the operator, not
 by the lane that wrote this file. Nothing here is evidence about the live route;
 every run above is offline.
+
+## Round 3, 2026-09-08 — the coverage check was comparing the wrong thing
+
+Found by running the fix, not by reading it. The corpus build of 2026-09-08 put
+30 videos through this path. 29 came back clean. `YPKV-UCLLd0` was refused four
+times running with identical numbers — words covering 526s of the 541s its own
+segments cover, at a typical 25s — and `"temperature": 0` in the request is why
+re-drawing changed nothing.
+
+Probing the refused chunk settled it. The 15s sits entirely at the START:
+
+| measure | value |
+|---|---|
+| first segment | `0.00 -> 14.88`, text `'🎵'`, **0 words inside it** |
+| first word | starts `14.86` |
+| last segment end | `540.57` |
+| last word end | `540.49` |
+| tail difference | **0.08s** |
+| loudness of `0 -> 14.86` | `mean_volume: -11.1 dB` — the show's music bed |
+
+`segment_shape` measures coverage as `last_end - first_start`, so a music intro
+that produces a segment and no words reads as 15s of dropped speech. A truncated
+word array stops EARLY; it does not start late. The guard now compares the two
+renderings at the tail.
+
+Raw responses kept outside this repo at
+`~/rung4-corpus/_driver/diagnose/{chunk_000-full,head-span,disputed-span}.json`;
+the trimmed capture is committed as
+`tests/fixtures/openrouter/music-intro.json`.
+
+| # | mutation | tests that went red | verdict |
+|---|---|---|---|
+| 19 | restore the span comparison (`covered - rebuilt_covered`) | `test_a_music_intro_is_not_a_shortfall` | PINNED |
+
+Run by hand with `~/rung4-corpus/_driver/mutate19.py`: restore byte-identical by
+sha256, pytest exit 1, `1 failed, 104 passed`.
+
+### Verification
+
+| command | result | exit |
+|---|---|---|
+| `python3 -m pytest tests/test_whisper.py -k music_intro -q` (before the code) | `1 failed` — refused at `whisper.py:870` for the predicted reason | 1 |
+| `python3 -m pytest tests/test_whisper.py tests/test_watch.py -q` (after) | `129 passed in 3.32s` | 0 |
+| `python3 ~/rung4-corpus/_driver/mutate19.py` | row 19 PINNED, restore byte-identical | 0 |
+
+### Live, and it is two runs this time
+
+Both against the real router, `--no-captions`, on this change:
+
+| measure | run 1 | run 2 |
+|---|---|---|
+| exit | 0 | 0 |
+| chunks kept | 9 of 9 | 9 of 9 |
+| `ABSENT` lines | 0 | 0 |
+| segments | 1317 | 1689 |
+
+The segment counts differ and that is the granularity lottery doing what it
+does: each draw is served a different rendering, so the rebuild produces a
+different number of anchors from the same audio. The measures that decide
+whether audio was lost — exit code, chunks kept, ABSENT lines — match.
+
+### What this round does NOT prove
+
+No test covers the case the old check was built for arriving at the same time as
+a music intro, because no such response has been captured. A word array that
+both starts late AND stops early would now be caught only on its tail.
+
+**This change has had no independent review.** It was written, tested and run by
+the same session that found the defect, which is the thing every other round
+here was careful not to do.
