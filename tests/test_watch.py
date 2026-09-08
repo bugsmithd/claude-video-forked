@@ -200,8 +200,16 @@ def test_a_url_run_records_the_caption_file_its_segments_came_from(
     assert Path(transcript["subtitle_path"]).name == "video.en.vtt"
 
 
-def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str):
-    """Drive watch.main() with yt-dlp, ffprobe and Whisper all stubbed."""
+def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str,
+                 credential: tuple = ("openrouter", "sk")):
+    """Drive watch.main() with yt-dlp, ffprobe and Whisper all stubbed.
+
+    `credential` is what `load_api_key` returns, and it is a PARAMETER rather
+    than something a caller patches beforehand: this helper patches the same
+    name, so the last write wins and a caller's stub was being overwritten.
+    Guarding the default by asking whether the installed `load_api_key` is a
+    lambda works only for as long as every stub happens to be written as one.
+    """
     import io
     import sys as _sys
     from contextlib import redirect_stdout
@@ -218,13 +226,7 @@ def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str):
     monkeypatch.setattr(watch, "get_metadata", lambda *a, **k: {
         "duration_seconds": 600.0, "width": 640, "height": 360,
         "codec": "h264", "size_bytes": 1, "has_audio": True})
-    # A CALLER THAT ALREADY PATCHED `load_api_key` KEEPS ITS OWN. The default
-    # here is a credential that is present, and the missing-credential test
-    # installs its own stub before it gets here; a plain setattr would overwrite
-    # that and hand the run a key it was written to do without.
-    if getattr(watch.load_api_key, "__name__", "") != "<lambda>":
-        monkeypatch.setattr(watch, "load_api_key",
-                            lambda which=None: ("openrouter", "sk"))
+    monkeypatch.setattr(watch, "load_api_key", lambda which=None: credential)
     monkeypatch.setattr(watch, "transcribe_video", transcribe)
     monkeypatch.setattr(_sys, "argv",
                         ["watch.py", "https://example.com/watch?v=vid0000000",
@@ -299,13 +301,11 @@ def test_a_missing_credential_is_a_failed_run(monkeypatch, tmp_path: Path):
     Unlike `--no-whisper`, an absent or mistyped key is not a choice made per
     run — found by the failure-paths review, 2026-09-08.
     """
-    import sys as _sys
-    _sys.path.insert(0, str(WATCH.parent))
-    import watch
+    def never_called(*a, **k):
+        raise AssertionError("transcribe_video ran without a credential")
 
-    monkeypatch.setattr(watch, "load_api_key", lambda which=None: (None, None))
-    code, out = _whisper_run(monkeypatch, tmp_path,
-                             lambda *a, **k: ([], "openrouter"))
+    code, out = _whisper_run(monkeypatch, tmp_path, never_called,
+                             credential=(None, None))
     assert code == 1
     assert "Transcription unavailable" in out
 
