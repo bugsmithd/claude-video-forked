@@ -1143,3 +1143,114 @@ class TestGappedTranscriptIsRefused:
             "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
         assert backend == "openrouter"
         assert segments
+
+
+class TestWordCoverage:
+    """A rebuild that covers less audio than the rendering it replaces is a loss.
+
+    Found by the grouping review, 2026-09-08: cutting a captured response's word
+    array to the words ending by 30.0s made `_segments_from_response` return 9
+    segments covering 29.65s in place of a rendering covering 284.00s, print
+    "rebuilding 9 segments from 119 word timestamps", pass `check_granularity`
+    at a 3.64s median, and record nothing anywhere. That is the failure this
+    whole change exists to remove, moved from between chunks to inside one.
+    """
+
+    def test_a_word_array_that_stops_early_refuses_the_chunk(self):
+        """Fails if the rebuild is accepted: 254s of speech vanish silently."""
+        data = _fixture("coarse-reconstructed")
+        short = dict(data, words=[w for w in data["words"]
+                                  if float(w["end"]) <= 30.0])
+        assert 100 < len(short["words"]) < len(data["words"]), len(short["words"])
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(short, allow_untimed=False)
+        message = str(caught.value)
+        assert "word timestamps cover only" in message
+        assert "refused" in message
+
+    def test_a_word_array_reaching_the_end_is_still_rebuilt(self):
+        """Fails if the slack is too tight: every captured response is refused."""
+        segments = whisper._segments_from_response(
+            _fixture("coarse-reconstructed"), allow_untimed=False)
+        assert whisper.segment_shape(segments)[0] < whisper.COARSE_MEDIAN_SECONDS
+
+    def test_a_response_with_no_segments_has_nothing_to_fall_short_of(self):
+        """Fails if the check runs when there is no served rendering to compare."""
+        segments = whisper._segments_from_response(_fixture("words-only"),
+                                                   allow_untimed=False)
+        assert segments
+
+
+class TestWindowContributesNothing:
+    """What a window CONTRIBUTES, not what its decoder returned.
+
+    Found by the failure-paths review, 2026-09-08. `whisper.py` has carried the
+    comment "one that decoded 90 and kept 0 is a boundary bug" since before this
+    fix; the fix printed that number and acted on the other one.
+    """
+
+    def test_a_window_that_keeps_nothing_is_recorded_as_lost(self, tmp_path):
+        """Fails if the record reads chunk_segments: three minutes vanish, exit 0.
+
+        The window decodes 90 segments, every one of them inside its leading
+        context, so `trim_to_keep` keeps none.
+        """
+        chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 150.0)]
+        keeps = [(0.0, 180.0), (180.0, 360.0)]
+
+        def transcribe_one(path):
+            if path.name == "c1.mp3":
+                return [{"start": i * 0.3, "end": i * 0.3 + 0.2, "text": f"w{i}"}
+                        for i in range(90)]
+            return [{"start": 0.0, "end": 2.0, "text": "kept"}]
+
+        dropped = []
+        whisper.transcribe_chunks(chunks, transcribe_one, keeps=keeps,
+                                  dropped=dropped)
+        assert dropped == [(180.0, 360.0, "failed")]
+
+    def test_a_window_that_decoded_nothing_is_still_only_silence(self, tmp_path):
+        """Fails if every empty window becomes `failed`: silence refuses runs."""
+        chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 150.0)]
+        keeps = [(0.0, 180.0), (180.0, 360.0)]
+        dropped = []
+        whisper.transcribe_chunks(
+            chunks,
+            lambda p: [] if p.name == "c1.mp3"
+            else [{"start": 0.0, "end": 2.0, "text": "kept"}],
+            keeps=keeps, dropped=dropped)
+        assert dropped == [(180.0, 360.0, "empty")]
+
+    def test_the_recorded_span_is_the_kept_span_not_the_decode_offset(self):
+        """Fails if the span reads the decode offset: it names audio that is present.
+
+        `plan_windows` decodes from `keep_from - overlap`, so on this path the
+        decode offset sits 30s before the audio the window is responsible for.
+        A reader who checks the named stretch finds it in the transcript and
+        concludes the warning is wrong, while the missing stretch is unnamed.
+        """
+        chunks = [(object(), 0.0), (object(), 150.0), (object(), 390.0)]
+        keeps = [(0.0, 180.0), (180.0, 420.0), (420.0, 600.0)]
+        assert whisper._chunk_span(chunks, 1, keeps) == (180.0, 420.0)
+        assert whisper._chunk_span(chunks, 1, None) == (150.0, 390.0)
+        assert whisper._chunk_span(chunks, 2, None) == (390.0, None)
+
+
+class TestRetryMustCarrySomething:
+    def test_an_empty_retry_never_replaces_a_looping_window(self, tmp_path,
+                                                            capsys):
+        """Fails if `alternative is not None` gates it: empty wins by construction.
+
+        `longest_identical_run([])` is 0, which is less than any looping run, so
+        an empty re-decode is always "better". A looping window is at least
+        visible in the transcript; silence is not.
+        """
+        chunks = [(tmp_path / "c0.mp3", 0.0)]
+        looping = [{"start": float(i), "end": i + 1.0, "text": "same"}
+                   for i in range(whisper.LOOP_RUN + 2)]
+        dropped = []
+        segments = whisper.transcribe_chunks(
+            chunks, lambda p: looping, retry_window=lambda index: [],
+            dropped=dropped)
+        assert segments == looping
+        assert dropped == []

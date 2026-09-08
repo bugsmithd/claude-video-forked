@@ -62,6 +62,76 @@ $ git status --porcelain                   # after reverting every mutation
 The two suite runs bracket the twelve mutations: the same 1,996 tests pass
 before and after, so nothing in the mutation pass leaked into the tree.
 
+## Round 2, 2026-09-08 — the repairs the three review lanes asked for
+
+Six more mutations, one per repair, applied the same way: alone, to an otherwise
+clean tree, with the observing node set re-run and the file restored before the
+next row. The restore is from the bytes read immediately before the mutation
+rather than from `git checkout --`, because these repairs were not committed yet
+when the rows were run and a checkout would have reverted the fix along with the
+mutation; every row's restore was checked by sha256 and all six matched.
+
+The node set is wider than the row's own prediction on purpose: every test the
+round-2 repairs added, plus `TestDroppedChunks`, `TestGappedTranscriptIsRefused`,
+`TestWordGrouping` and the five `test_watch.py` exit-status tests. Running the
+whole set per row is what makes "no mutation killed a test it was not predicted
+to kill" checkable rather than assumed.
+
+| # | mutation | tests that went red | verdict |
+|---|---|---|---|
+| 13 | `WORD_COVERAGE_SLACK_SECONDS = 100000.0` | `test_a_word_array_that_stops_early_refuses_the_chunk` | PINNED |
+| 14 | record from `chunk_segments` instead of `shifted` | `test_a_window_that_keeps_nothing_is_recorded_as_lost` | PINNED |
+| 15 | `_chunk_span` ignores `keeps` | `test_the_recorded_span_is_the_kept_span_not_the_decode_offset`, `test_a_window_that_keeps_nothing_is_recorded_as_lost`, `test_a_window_that_decoded_nothing_is_still_only_silence` | PINNED |
+| 16 | `if alternative is not None:` restored | `test_an_empty_retry_never_replaces_a_looping_window` | PINNED |
+| 17 | drop `or whisper_unavailable` | `test_a_missing_credential_is_a_failed_run` | PINNED |
+| 18 | record every empty window as `failed` | `test_a_window_that_decoded_nothing_is_still_only_silence`, `test_a_chunk_that_returns_nothing_is_recorded_as_empty`, `test_a_silent_chunk_is_named_but_does_not_refuse` | PINNED |
+
+Six rows, six PINNED, and every row's predicted test is in its own red set. Two
+rows went red wider than predicted, and both widenings are the same fact seen
+twice rather than a surprise:
+
+- Row 15 also kills the two `dropped` tests on the windowed path, because a
+  `_chunk_span` that ignores `keeps` reports the decode offset for every window,
+  which is exactly the span those two assert on.
+- Row 18 also kills the Task 4 empty-chunk test and the silent-chunk test in
+  `transcribe_video`, because calling silence `failed` is what makes a healthy
+  video with a quiet stretch refuse the run — the defect the `empty`/`failed`
+  split exists to prevent.
+
+How the rows were applied, where the wording and the edit differ:
+
+- Row 14 is `if not shifted:` changed to `if not chunk_segments:`, which is what
+  "record from `chunk_segments`" means at the only line where the two differ.
+- Row 15 is `if keeps:` changed to `if False:` inside `_chunk_span`, so the
+  `keeps` branch is unreachable while the surrounding lines stay put.
+- Row 18 replaces the whole conditional `"empty" if not chunk_segments else
+  "failed"` with the literal `"failed"`.
+
+```
+$ python3 -m pytest tests/test_whisper.py tests/test_watch.py -q   # before row 13
+128 passed in 3.30s                                        exit 0
+
+$ python3 -m pytest tests/test_whisper.py tests/test_watch.py -q   # after row 18
+128 passed in 3.25s                                        exit 0
+
+$ git status --porcelain                   # after reverting every mutation
+ M skills/watch/scripts/watch.py
+ M skills/watch/scripts/whisper.py
+ M tests/test_watch.py
+ M tests/test_whisper.py
+?? .lane-briefs/
+```
+
+The four modified files are the round-2 repairs themselves, uncommitted at the
+time the rows ran and committed in the same commit as this section.
+
+**The full suite was NOT re-run for this round.** `python3 -m pytest -q` was
+started and killed by the operator at 25% after 23 minutes: this machine was at
+a load average above 16 from unrelated processes, which projects the 11-minute
+suite past three hours. That is starvation rather than a failure, and it is
+deferred as `DEFER:yt_notes-bnag`. The evidence above is the two touched test
+files, which is narrower than the previous section's evidence.
+
 ## Scope this record does not cover
 
 The live verification — two runs of `FIhj0yb9KPI` against the real router — is

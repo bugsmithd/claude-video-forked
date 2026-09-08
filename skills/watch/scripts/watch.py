@@ -337,6 +337,7 @@ def main() -> int:
     # returned nothing" on a transcript that was complete.
     whisper_attempted = False
     whisper_returned_segments = False
+    whisper_unavailable = False
     if not transcript_segments and not args.no_whisper and video_path and meta.get("has_audio"):
         backend, api_key = load_api_key(args.whisper)
         if backend and api_key:
@@ -364,6 +365,7 @@ def main() -> int:
                 except SystemExit as exc:
                     print(f"[watch] whisper ({attempt_backend}) failed: {exc}", file=sys.stderr)
         else:
+            whisper_unavailable = True
             hint = (
                 f"--whisper {args.whisper} was set but the matching API key is missing"
                 if args.whisper else
@@ -528,8 +530,19 @@ def main() -> int:
     # failure; and it does not read `transcript_segments`, because an empty
     # FOCUS WINDOW over a complete transcript is the correct answer to the
     # question that was asked.
-    transcription_failed = whisper_attempted and not whisper_returned_segments
-    if transcription_failed:
+    transcription_failed = ((whisper_attempted and not whisper_returned_segments)
+                            or whisper_unavailable)
+    if whisper_unavailable:
+        print()
+        print(
+            "> **Transcription unavailable.** This video had no captions and "
+            "no Whisper credential was configured, so nothing was transcribed. "
+            "The exit status is 1: unlike `--no-whisper`, a key that is absent "
+            "or mistyped is not a choice made per run, and a batch must not "
+            "record thirty videos as done because one environment variable "
+            "went missing."
+        )
+    elif transcription_failed:
         print()
         print(
             "> **Transcription failed.** Whisper ran and returned no usable "

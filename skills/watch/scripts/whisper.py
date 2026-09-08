@@ -135,8 +135,9 @@ COARSE_MIN_SECONDS = 30.0
 # fixture, 62 came from the cap, 17 from a silence and none from punctuation,
 # because a redacted fixture carries no punctuation. On real text the sentence
 # rule fires too, and it can only ever split a group the cap would have split
-# later. A cap of 8.0s also passes the guard, at a 7.8s median -- 2.2s of
-# margin under a threshold that one rounding change would move across.
+# later. A cap of 8.0s also passes the guard, at a median of 6.75s and 7.51s on
+# the two captures -- 2.49s of margin on the tighter one, under a threshold that
+# one rounding change would move across. 4.0s leaves 6.24s and 6.36s.
 WORD_SEGMENT_MAX_SECONDS = 4.0
 # A silence at least this long ends a segment. The typical word on this route
 # spans 0.20s, so half a second of nothing is a clause boundary rather than a
@@ -145,6 +146,17 @@ WORD_SEGMENT_GAP_SECONDS = 0.5
 # A sentence end does not split a segment shorter than this. Without it "Yes."
 # becomes its own segment and puts a citable anchor on an interjection.
 WORD_SEGMENT_MIN_SECONDS = 1.0
+
+# HOW MUCH OF THE SERVED RENDERING THE WORDS MUST COVER before a rebuild may
+# replace it. Measured 2026-09-07 across the four captured responses: every word
+# array reached the end of its chunk, 284.05-284.25s against a 284.29s chunk, so
+# each rebuild covered at least as much audio as the segments it replaced. A word
+# array that stops early is therefore unmeasured rather than impossible -- and
+# this endpoint's response shape varies per request by construction, which is the
+# premise of the whole change. Five seconds is wider than any difference ever
+# measured here and far narrower than the 254s a truncated array would discard
+# while printing a segment count.
+WORD_COVERAGE_SLACK_SECONDS = 5.0
 
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
@@ -848,6 +860,21 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
                              and median > COARSE_MEDIAN_SECONDS))):
         regrouped = segments_from_words(data["words"])
         if regrouped:
+            _, _, rebuilt_covered = segment_shape(regrouped)
+            if out and covered - rebuilt_covered > WORD_COVERAGE_SLACK_SECONDS:
+                # NEITHER RENDERING IS USABLE, so this refuses instead of
+                # choosing. The segments are too coarse to anchor and the words
+                # do not reach the end of what they would replace; silently
+                # taking the shorter one is the exact failure this file exists
+                # to prevent, moved inside a chunk where no gate can see it.
+                raise SystemExit(
+                    f"the response's word timestamps cover only "
+                    f"{rebuilt_covered:.0f}s of the {covered:.0f}s its own "
+                    f"segments cover, so rebuilding from them would drop "
+                    f"{covered - rebuilt_covered:.0f}s of speech while still "
+                    f"reporting a segment count. The segments are too coarse "
+                    f"to anchor (a typical {median:.0f}s), so this chunk is "
+                    f"refused rather than written.")
             print(f"[watch] the response carried {len(out)} segment(s) at a "
                   f"typical {median:.0f}s, which cannot be anchored — "
                   f"rebuilding {len(regrouped)} segments from "
@@ -954,26 +981,16 @@ def transcribe_chunks(
             chunk_segments = transcribe_one(path)
         except SystemExit as exc:
             failures += 1
-            following = chunks[index + 1][1] if index + 1 < len(chunks) else None
+            lost_from, lost_to = _chunk_span(chunks, index, keeps)
             if dropped is not None:
-                dropped.append((offset, following, "failed"))
+                dropped.append((lost_from, lost_to, "failed"))
             print(
                 f"[watch] chunk {index + 1}/{len(chunks)} failed — skipping "
-                f"({exc}); {_format_span(offset, following)} of audio is now "
+                f"({exc}); {_format_span(lost_from, lost_to)} of audio is now "
                 f"ABSENT from the transcript",
                 file=sys.stderr,
             )
             continue
-
-        if not chunk_segments:
-            # THE SECOND WAY A CHUNK CONTRIBUTES NOTHING, and it takes the
-            # success path: no exception, no failure count, nothing in the log
-            # but a zero. Recorded as `empty` rather than `failed` because the
-            # audio may simply hold no speech, and the caller must be able to
-            # tell "we lost this" from "there was nothing here".
-            following = chunks[index + 1][1] if index + 1 < len(chunks) else None
-            if dropped is not None:
-                dropped.append((offset, following, "empty"))
 
         run = longest_identical_run(chunk_segments)
         if retry_window and run >= LOOP_RUN:
@@ -984,7 +1001,12 @@ def transcribe_chunks(
             except SystemExit as exc:
                 print(f"[watch] the retry failed too ({exc})", file=sys.stderr)
                 alternative = None
-            if alternative is not None:
+            if alternative:
+                # NOT `is not None`. `longest_identical_run([])` is 0, which is
+                # smaller than any looping run, so an empty re-decode would win
+                # by construction — the metric's own floor. A looping window is
+                # at least visible in the transcript as repetition; replacing it
+                # with silence hides the same audio behind a clean-looking run.
                 alternative_run = longest_identical_run(alternative)
                 print(f"[watch] retry looped {alternative_run}x vs {run}x — "
                       f"{'keeping the retry' if alternative_run < run else 'keeping the first'}",
@@ -1003,6 +1025,17 @@ def transcribe_chunks(
             shifted = trim_to_keep(shifted, lower, keep_to,
                                    index == len(chunks) - 1)
             shifted = drop_seam_repeats(segments, shifted)
+        if not shifted:
+            # WHAT THE WINDOW CONTRIBUTES, not what its decoder returned. A
+            # window can decode ninety segments and keep none of them — the
+            # comment below has named that boundary bug for longer than this
+            # fix has existed, and printing the number is not the same as
+            # acting on it. Decoded nothing: silence, which is legitimate.
+            # Decoded something and kept none of it: audio that went missing.
+            lost_from, lost_to = _chunk_span(chunks, index, keeps)
+            if dropped is not None:
+                dropped.append((lost_from, lost_to,
+                                "empty" if not chunk_segments else "failed"))
         segments.extend(shifted)
         # Both numbers: decoded, then kept. A window that decoded 90 and kept 60
         # is working as intended; one that decoded 90 and kept 0 is a boundary
@@ -1192,6 +1225,26 @@ def _format_span(start: float, end: float | None) -> str:
     if end is None:
         return f"{clock(start)} to the end"
     return f"{clock(start)}–{clock(end)}"
+
+
+def _chunk_span(chunks: list, index: int,
+                keeps: list[tuple[float, float]] | None = None
+                ) -> tuple[float, float | None]:
+    """The span of audio a chunk was RESPONSIBLE for, not the span it decoded.
+
+    On the byte-split and seconds-split paths those are the same: a chunk's
+    offset is where its audio starts and the next chunk's offset is where it
+    ends. On the windowed local path they are not. `plan_windows` decodes from
+    `keep_from - overlap`, so a window's decode offset sits up to
+    DECODE_OVERLAP_SECONDS before the audio it keeps, and reporting the decode
+    offset names a stretch that IS in the transcript while leaving the stretch
+    that is missing unnamed. A reader who checks the named seconds finds them
+    present and concludes the warning is wrong.
+    """
+    if keeps:
+        return keeps[index]
+    following = chunks[index + 1][1] if index + 1 < len(chunks) else None
+    return chunks[index][1], following
 
 
 def check_granularity(segments: list[dict], model: str | None,

@@ -218,8 +218,13 @@ def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str):
     monkeypatch.setattr(watch, "get_metadata", lambda *a, **k: {
         "duration_seconds": 600.0, "width": 640, "height": 360,
         "codec": "h264", "size_bytes": 1, "has_audio": True})
-    monkeypatch.setattr(watch, "load_api_key",
-                        lambda which=None: ("openrouter", "sk"))
+    # A CALLER THAT ALREADY PATCHED `load_api_key` KEEPS ITS OWN. The default
+    # here is a credential that is present, and the missing-credential test
+    # installs its own stub before it gets here; a plain setattr would overwrite
+    # that and hand the run a key it was written to do without.
+    if getattr(watch.load_api_key, "__name__", "") != "<lambda>":
+        monkeypatch.setattr(watch, "load_api_key",
+                            lambda which=None: ("openrouter", "sk"))
     monkeypatch.setattr(watch, "transcribe_video", transcribe)
     monkeypatch.setattr(_sys, "argv",
                         ["watch.py", "https://example.com/watch?v=vid0000000",
@@ -285,3 +290,36 @@ def test_a_failed_transcription_still_writes_its_run_record(
     runs = sorted((tmp_path / "runs").rglob("run.json"))
     assert len(runs) == 1, runs
     assert json.loads(runs[0].read_text(encoding="utf-8"))["transcript"]["segments"] == 0
+
+
+def test_a_missing_credential_is_a_failed_run(monkeypatch, tmp_path: Path):
+    """Fails if it exits 0: a batch against an environment with no key
+    records every video as a success with no transcript.
+
+    Unlike `--no-whisper`, an absent or mistyped key is not a choice made per
+    run — found by the failure-paths review, 2026-09-08.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(WATCH.parent))
+    import watch
+
+    monkeypatch.setattr(watch, "load_api_key", lambda which=None: (None, None))
+    code, out = _whisper_run(monkeypatch, tmp_path,
+                             lambda *a, **k: ([], "openrouter"))
+    assert code == 1
+    assert "Transcription unavailable" in out
+
+
+def test_a_video_with_no_speech_is_a_failed_run(monkeypatch, tmp_path: Path):
+    """Pins the operator's ruling of 2026-09-08: exit 1, deliberately.
+
+    A silent video yields no transcript and is useless for a note, so the batch
+    stops on it rather than recording it as done. Fails if someone later
+    'repairs' this back to exit 0 on the grounds that nothing was lost.
+    """
+    def silent(*a, **k):
+        raise SystemExit("Whisper returned no transcript segments")
+
+    code, out = _whisper_run(monkeypatch, tmp_path, silent)
+    assert code == 1
+    assert "Transcription failed" in out
