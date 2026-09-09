@@ -155,7 +155,7 @@ Probing the refused chunk settled it. The 15s sits entirely at the START:
 | first word | starts `14.86` |
 | last segment end | `540.57` |
 | last word end | `540.49` |
-| tail difference | **0.08s** |
+| tail difference | **0.08s** — on the LIVE chunk only; see the correction below |
 | loudness of `0 -> 14.86` | `mean_volume: -11.1 dB` — the show's music bed |
 
 `segment_shape` measures coverage as `last_end - first_start`, so a music intro
@@ -167,6 +167,33 @@ Raw responses kept outside this repo at
 `~/rung4-corpus/_driver/diagnose/{chunk_000-full,head-span,disputed-span}.json`;
 the trimmed capture is committed as
 `tests/fixtures/openrouter/music-intro.json`.
+
+**CORRECTED 2026-09-10, three numbers in this section that a reader cannot
+reproduce from the repository.** The refutation of `15393c8` measured all three.
+
+1. **The 0.08s tail difference belongs to the live chunk, which is not
+   committed.** On `tests/fixtures/openrouter/music-intro.json` — the artifact a
+   reader can open — the tail difference is **1.06s**: `seg_last_end` 114.12
+   against `word_last_end` 113.06. Margin against the 5.0s slack in force at the
+   time was 3.94s on the fixture, not 4.92s.
+2. **The fixture is trimmed AND added to, not "trimmed, nothing edited".** It
+   carries two top-level blocks the response never had, `_derived` and
+   `_provenance`, and `_derived["first_word_start"]` is read by
+   `test_a_music_intro_is_not_a_shortfall`, so the block is load-bearing rather
+   than decoration. The trim also cut the word array short of the last segment's
+   text — last word `" phrase,"` at 113.06, while that segment's text runs on to
+   `"computerization."` at 114.12 — which is what produces the 1.06s above.
+3. **One test file was touched, not two.** `tests/test_whisper.py` alone; 108
+   test definitions at `15393c8` and `python3 -m pytest -q tests/test_whisper.py`
+   → `109 passed`, exit 0. The 129 in the verification table below is
+   `test_whisper.py` + `test_watch.py`, which is a real number attributed to the
+   wrong file set.
+
+**SUPERSEDED 2026-09-10.** "The guard now compares the two renderings at the
+tail" describes the guard as `15393c8` left it. A tail comparison accepts a word
+array missing its HEAD and, like the span form before it, cannot
+see a hole in the MIDDLE. The guard reads interior coverage now; the record of
+that round is `.lane-briefs/2026-09-10-fix-15393c8.md`.
 
 | # | mutation | tests that went red | verdict |
 |---|---|---|---|

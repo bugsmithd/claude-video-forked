@@ -782,6 +782,33 @@ def _fixture(name: str) -> dict:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
+def _words_covering(start: float, end: float,
+                    step: float = 0.25) -> list[dict]:
+    """Word timestamps at this route's measured pace, 0.20-0.24s apiece."""
+    count = int(round((end - start) / step))
+    return [{"word": "x",
+             "start": round(start + i * step, 2),
+             "end": round(start + (i + 1) * step, 2)}
+            for i in range(count)]
+
+
+def _coarse_chunk(segment_spans: list[tuple[float, float]],
+                  words: list[dict]) -> dict:
+    """A response the coarseness guard refuses, plus whatever words it carries.
+
+    The segments are deliberately 100s apiece so `_segments_from_response`
+    takes the rebuild branch; what the test varies is which audio the WORDS
+    reach.
+    """
+    return {
+        "segments": [{"start": start, "end": end,
+                      "text": f"served {start:.0f}-{end:.0f}"}
+                     for start, end in segment_spans],
+        "words": words,
+        "text": "served",
+    }
+
+
 class TestWordGrouping:
     """Segments are a lottery on this route; words are not.
 
@@ -1165,8 +1192,13 @@ class TestWordCoverage:
         with pytest.raises(SystemExit) as caught:
             whisper._segments_from_response(short, allow_untimed=False)
         message = str(caught.value)
-        assert "word timestamps stop at" in message
-        assert "off the end" in message
+        # The refusal names the loss and where it starts. It stopped saying
+        # "off the end" on 2026-09-10, when the guard stopped reading endpoints
+        # and started reading the interior: a hole is a hole wherever it sits,
+        # and this one runs from 0:30 to the end of the chunk.
+        assert "no word in them" in message
+        assert "254s" in message
+        assert "0:30" in message
         assert "refused" in message
 
     def test_a_word_array_reaching_the_end_is_still_rebuilt(self):
@@ -1201,6 +1233,114 @@ class TestWordCoverage:
         assert data["_derived"]["first_word_start"] > 14.0, "intro is the point"
         segments = whisper._segments_from_response(data, allow_untimed=False)
         assert segments, "the chunk must be rebuilt, not refused"
+        assert whisper.segment_shape(segments)[0] < whisper.COARSE_MEDIAN_SECONDS
+
+    def test_a_word_array_missing_its_head_refuses_the_chunk(self):
+        """Fails while the guard compares the two renderings at the TAIL only.
+
+        Shape C of the 2026-09-10 refutation: the served segments claim speech
+        across 0-300s and the words reach only 200-300s. Both renderings end at
+        300s, so a tail comparison reads 0.0s of loss and 200 seconds of audio
+        leave the transcript with exit 0 and a printed segment count.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(200.0, 300.0))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        message = str(caught.value)
+        assert "no word in them" in message, message
+        assert "refused" in message, message
+
+    def test_a_word_array_that_starts_a_minute_late_refuses_the_chunk(self):
+        """Fails on the same tail comparison, at the narrowest margin measured.
+
+        Shape C2: one minute of head missing rather than three. It is the
+        smallest of the refutation's shapes and so the one a slack widened past
+        its evidence would swallow first.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(60.0, 300.0))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+    def test_one_word_at_the_end_does_not_pass_a_whole_chunk(self):
+        """Fails while a tail comparison decides it: 299.6s vanish, exit 0.
+
+        Shape E2, the worst instance of the head hole. A single word landing at
+        299.6-300.0 of a 300s chunk ends where the segments end, so the tail
+        difference is 0.0 and a 0.4-second transcript replaces five minutes of
+        audio. The same lone word at 150s is refused, which means survival
+        depends on WHERE the surviving word sits.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             [{"word": "x", "start": 299.6, "end": 300.0}])
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+    def test_a_hole_in_the_middle_refuses_the_chunk(self):
+        """Fails for both endpoint forms: the shape that destroyed a file.
+
+        Shape B: words covering 0-30s and 270-300s of a 300s chunk. Both ends
+        line up exactly, so every comparison built from endpoints reads healthy
+        while 240 seconds in the middle carry no word at all. This is the
+        failure mode the 2026-08-18 measurement names -- a single-pass large-v3
+        decode losing 83% of a two-hour file -- and the guard has never seen it.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(0.0, 30.0)
+                             + _words_covering(270.0, 300.0))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        message = str(caught.value)
+        assert "no word in them" in message, message
+        # The hole itself, cited the way this package cites missing audio.
+        assert "0:30" in message and "4:29" in message, message
+
+    def test_a_blank_trailing_segment_claims_no_speech(self):
+        """Pins the deliberate reading of an empty segment; it is not a fix.
+
+        Shape I. A provider that pads the tail with a blank segment claiming
+        40-300s is claiming no speech there, so the guard measures against 40s
+        and passes the chunk. The cost is real and bounded: a blank segment is
+        the one way a response can still hide audio from this check. Making
+        blank text count instead would refuse every response whose provider
+        pads the tail, which is the false refusal this guard has a history of.
+        """
+        data = _coarse_chunk([(0.0, 40.0)], _words_covering(0.0, 40.0))
+        data["segments"].append({"start": 40.0, "end": 300.0, "text": "   "})
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert segments, "the chunk is rebuilt, not refused"
+        assert segments[-1]["end"] <= 40.0, segments[-1]
+
+
+class TestSegmentSpanIgnoresListOrder:
+    """A response's own span, measured from its times rather than its order.
+
+    Shape H of the 2026-09-10 refutation. `segment_shape` read
+    `segments[0]["start"]` and `segments[-1]["end"]`, so a response listing a
+    300s segment before a 20s one measured its span as 20s, fell under
+    COARSE_MIN_SECONDS, and skipped the coarseness gate entirely -- the one
+    gate standing between a 30s-median rendering and a transcript nothing
+    downstream can anchor.
+    """
+
+    def test_an_out_of_order_response_reports_the_span_it_covers(self):
+        """Fails while the span is `segments[-1]` minus `segments[0]`."""
+        segments = [{"start": 0.0, "end": 300.0, "text": "long"},
+                    {"start": 10.0, "end": 20.0, "text": "short"}]
+        assert whisper.segment_shape(segments)[2] == 300.0
+
+    def test_an_out_of_order_response_still_faces_the_coarseness_gate(self):
+        """Fails if the mis-measured span drops the response under the floor.
+
+        Listed in this order the response's span reads 100s rather than 300s,
+        and everything the rebuild branch does is gated on that number.
+        """
+        data = _coarse_chunk([(200.0, 300.0), (0.0, 100.0), (100.0, 200.0)],
+                             _words_covering(0.0, 300.0))
+        segments = whisper._segments_from_response(data, allow_untimed=False)
         assert whisper.segment_shape(segments)[0] < whisper.COARSE_MEDIAN_SECONDS
 
 

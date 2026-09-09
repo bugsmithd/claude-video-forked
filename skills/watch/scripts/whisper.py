@@ -148,15 +148,33 @@ WORD_SEGMENT_GAP_SECONDS = 0.5
 WORD_SEGMENT_MIN_SECONDS = 1.0
 
 # HOW MUCH OF THE SERVED RENDERING THE WORDS MUST COVER before a rebuild may
-# replace it. Measured 2026-09-07 across the four captured responses: every word
-# array reached the end of its chunk, 284.05-284.25s against a 284.29s chunk, so
-# each rebuild covered at least as much audio as the segments it replaced. A word
-# array that stops early is therefore unmeasured rather than impossible -- and
-# this endpoint's response shape varies per request by construction, which is the
-# premise of the whole change. Five seconds is wider than any difference ever
-# measured here and far narrower than the 254s a truncated array would discard
-# while printing a segment count.
-WORD_COVERAGE_SLACK_SECONDS = 5.0
+# replace it, measured INSIDE the rendering rather than at its ends.
+#
+# RE-DERIVED 2026-09-10. The number this replaces was derived for a comparison
+# of the two renderings' spans, and a span is two numbers: it cannot see a hole
+# between them. Three shapes passed the old slack while losing most of a chunk
+# -- words reaching only 200-300s of a 300s chunk, a single word at 299.6s, and
+# words covering 0-30s and 270-300s with 240s of nothing in the middle.
+#
+# The measurement, run over every captured response on this machine that still
+# holds BOTH a segment array and a word array -- the four in
+# `tests/fixtures/openrouter/` and the three the 2026-09-08 corpus build kept in
+# `_driver/diagnose/` -- reading uncovered seconds as `word_coverage_holes`
+# computes them:
+#
+#   speech throughout            0.02s, 0.04s, 0.12s, 0.22s uncovered
+#   the YPKV-UCLLd0 music intro  14.36s, 14.92s, 14.97s uncovered
+#
+# Three responses, one hole each, all of it the same interval: 0.0-14.36, the
+# show's music glyph. That is the false refusal `15393c8` removed, and 14.97s is
+# the largest value any captured response produces. Twenty seconds keeps it with
+# 5.03s to spare and is three times narrower than the smallest of the shapes
+# above (59.5s), so nothing measured sits between the two.
+#
+# NOT DERIVED FROM THE FULL 2026-09-08 CORPUS: that build kept renderings, not
+# raw responses, so 27 of its 30 videos retain no word array to measure. Widening
+# the derivation needs a capture pass that keeps them (DEFER:yt_notes-66wk).
+WORD_COVERAGE_SLACK_SECONDS = 20.0
 
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
@@ -860,32 +878,47 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
                              and median > COARSE_MEDIAN_SECONDS))):
         regrouped = segments_from_words(data["words"])
         if regrouped:
-            # AT THE TAIL, NOT ACROSS THE WHOLE SPAN. A truncated word array
-            # stops early; it does not start late. Comparing `segment_shape`'s
-            # span on both sides also charges the rebuild for leading
-            # non-speech, and measured 2026-09-08 that is not hypothetical:
-            # YPKV-UCLLd0 chunk 1 was refused four times running because its
-            # first segment is 14.88s of the show's music glyph holding no
-            # words, while the two renderings' last stamps differ by 0.08s.
-            # `tests/fixtures/openrouter/music-intro.json` is that response.
+            # INSIDE THE RENDERING, NOT AT ITS ENDS. Both endpoint forms this
+            # guard has worn read two numbers off each rendering, and two
+            # numbers cannot say whether the middle is there: a word array
+            # covering 0-30s and 270-300s of a 300s chunk agrees with the
+            # segments at both ends while 240s of it hold no word, which is the
+            # shape that cost 83% of a two-hour file on 2026-08-18. Comparing
+            # the tail alone additionally accepted a word array missing its
+            # HEAD -- one word at 299.6s replacing a 300s chunk, measured
+            # 2026-09-10. What the guard wants is interior coverage: every
+            # stretch the served rendering CLAIMS as speech holds a word.
+            #
+            # Stated that way it also keeps the case the tail form was written
+            # for. YPKV-UCLLd0 chunk 1 opens on 14.88s of the show's music
+            # glyph and its first word lands at 14.86: 14.92s uncovered in all,
+            # 14.36s of it that one intro, inside a slack derived from that
+            # response and its two siblings
+            # (`tests/fixtures/openrouter/music-intro.json`).
+            #
             # `out` may be empty here: a response can carry words and no
-            # segments at all, and then there is no served rendering to fall
-            # short of.
-            shortfall = (out[-1]["end"] - regrouped[-1]["end"]) if out else 0.0
-            if shortfall > WORD_COVERAGE_SLACK_SECONDS:
+            # segments at all, and then there is nothing claiming speech to
+            # fall short of. A segment with blank text claims no speech either,
+            # so it never reaches this check -- which is the one way a response
+            # can still hide audio from it, pinned by
+            # `test_a_blank_trailing_segment_claims_no_speech`.
+            holes = word_coverage_holes(out, regrouped)
+            uncovered = sum(end - start for start, end in holes)
+            if uncovered > WORD_COVERAGE_SLACK_SECONDS:
                 # NEITHER RENDERING IS USABLE, so this refuses instead of
                 # choosing. The segments are too coarse to anchor and the words
-                # do not reach the end of what they would replace; silently
+                # do not reach audio the segments say is speech; silently
                 # taking the shorter one is the exact failure this file exists
                 # to prevent, moved inside a chunk where no gate can see it.
+                worst = max(holes, key=lambda hole: hole[1] - hole[0])
                 raise SystemExit(
-                    f"the response's word timestamps stop at "
-                    f"{regrouped[-1]['end']:.0f}s while its own segments run "
-                    f"to {out[-1]['end']:.0f}s, so rebuilding from them would "
-                    f"drop {shortfall:.0f}s of speech off the end while still "
-                    f"reporting a segment count. The segments are too coarse "
-                    f"to anchor (a typical {median:.0f}s), so this chunk is "
-                    f"refused rather than written.")
+                    f"the response's word timestamps leave {uncovered:.0f}s of "
+                    f"its own segments with no word in them, the longest run "
+                    f"{_format_span(*worst)}, so rebuilding from them would "
+                    f"drop that speech while still reporting a segment count. "
+                    f"The segments are too coarse to anchor (a typical "
+                    f"{median:.0f}s), so this chunk is refused rather than "
+                    f"written.")
             print(f"[watch] the response carried {len(out)} segment(s) at a "
                   f"typical {median:.0f}s, which cannot be anchored — "
                   f"rebuilding {len(regrouped)} segments from "
@@ -907,6 +940,58 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             out.append({"start": 0.0, "end": 0.0, "text": full})
 
     return out
+
+
+def _merge_spans(spans) -> list[tuple[float, float]]:
+    """Sorted, non-overlapping `(start, end)` pairs. Empty spans are dropped."""
+    merged: list[list[float]] = []
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [(start, end) for start, end in merged]
+
+
+def word_coverage_holes(served: list[dict],
+                        rebuilt: list[dict]) -> list[tuple[float, float]]:
+    """Stretches the served rendering calls speech that the rebuild has no word for.
+
+    A word is a point in time and speech is continuous, so a word only ever
+    covers the silence around itself. Each rebuilt segment is therefore widened
+    by WORD_SEGMENT_GAP_SECONDS at each end -- the same silence that ends a
+    segment on the way in, so a gap this rule treats as inside a phrase is not
+    read as a hole on the way back out. That number is what makes the two
+    populations separate: measured 2026-09-10 over the seven captured responses
+    holding both arrays, widening by 0.0s leaves 12.64-23.12s uncovered on
+    responses that are speech throughout -- indistinguishable from the 14.36s
+    music glyph -- and widening by 0.5s leaves 0.02-0.22s.
+
+    Reported as intervals rather than a total because the refusal has to name
+    WHERE the audio went; a reader checks a clock range against the video.
+    """
+    claimed = _merge_spans((seg["start"], seg["end"]) for seg in served)
+    covered = _merge_spans((seg["start"] - WORD_SEGMENT_GAP_SECONDS,
+                            seg["end"] + WORD_SEGMENT_GAP_SECONDS)
+                           for seg in rebuilt)
+    holes: list[tuple[float, float]] = []
+    for start, end in claimed:
+        cursor = start
+        for cover_start, cover_end in covered:
+            if cover_end <= cursor:
+                continue
+            if cover_start >= end:
+                break
+            if cover_start > cursor:
+                holes.append((cursor, cover_start))
+            cursor = cover_end
+            if cursor >= end:
+                break
+        if cursor < end:
+            holes.append((cursor, end))
+    return holes
 
 
 def segments_from_words(words: list[dict]) -> list[dict]:
@@ -1215,12 +1300,19 @@ def segment_shape(segments: list[dict]) -> tuple[float, float, float]:
 
     The span is measured from the segments themselves rather than from the
     audio, so this needs nothing but what came back.
+
+    FROM THE TIMES, NOT FROM THE LIST ORDER. Reading `segments[0]` and
+    `segments[-1]` assumed a response lists its segments in clock order, and
+    nothing in the API promises that: a response listing a 300s segment before
+    a 20s one measured its own span as 20s, dropped under COARSE_MIN_SECONDS
+    and skipped the coarseness gate entirely -- found 2026-09-10.
     """
     if not segments:
         return 0.0, 0.0, 0.0
     spans = sorted(s["end"] - s["start"] for s in segments)
     return (statistics.median(spans), spans[-1],
-            segments[-1]["end"] - segments[0]["start"])
+            max(s["end"] for s in segments)
+            - min(s["start"] for s in segments))
 
 
 def _format_span(start: float, end: float | None) -> str:
