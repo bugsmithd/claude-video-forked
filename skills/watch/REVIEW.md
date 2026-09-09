@@ -43,7 +43,18 @@ from the recording forward finds exactly that and has no opinion about whether a
 hedge survived. Running one lane and calling it a review buys you its blind
 spot.
 
-## Four rules for dispatching them
+## Five rules for dispatching them
+
+**Every lane runs at `xhigh` reasoning effort.** Not the session default,
+whatever that is — named on the lane, every time. Measured 2026-09-09 over 30
+brand-new unreviewed notes, each read at `low` and at `xhigh` in all three
+lanes: `xhigh` found about four more real defects per note in every lane, and
+the two settings were about equally accurate on what they did report. So `low`
+is not the cheap-and-sloppy option, it is the quiet one — it misses roughly
+three quarters of what is there. A lane at `low` costs about 9,000 output
+tokens and under three minutes; at `xhigh`, about 49,000 and eleven. Pay it.
+Evidence and its limits: `yt_notes`,
+`docs/experiments/model-tier/20260828-133109-rung4-e3-review-effort/RULING-2026-09-09-xhigh-all-lanes.md`.
 
 **One agent per lane, in parallel, each with ONLY its own brief.** A lane that
 can see another lane's findings agrees with them, and three agreeing lanes look
