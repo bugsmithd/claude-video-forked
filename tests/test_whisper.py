@@ -1315,6 +1315,160 @@ class TestWordCoverage:
         assert segments[-1]["end"] <= 40.0, segments[-1]
 
 
+def _thinned(words: list[dict], window: float, period: float) -> list[dict]:
+    """Every `window` seconds out of every `period` deleted from a word array.
+
+    A decode that thins rather than truncates is the shape a sum of uncovered
+    seconds cannot see: the loss arrives as many small holes, each of which the
+    widening in `word_coverage_holes` discounts before the sum.
+    """
+    return [word for word in words
+            if (float(word["start"]) % period) >= window]
+
+
+def _punched(words: list[dict],
+             windows: list[tuple[float, float]]) -> list[dict]:
+    """The same array with every word starting inside one of `windows` gone."""
+    return [word for word in words
+            if not any(start <= float(word["start"]) < end
+                       for start, end in windows)]
+
+
+def _gaps(count: float, width: float = 1.5) -> list[tuple[float, float]]:
+    """`count` windows of `width`, spaced far enough apart never to merge."""
+    return [(10.0 + 25.0 * i, 10.0 + 25.0 * i + width) for i in range(count)]
+
+
+class TestWordCoverageIsTwoTerms:
+    """Half a real response's words can vanish under a single summed slack.
+
+    The 2026-09-10 refutation of `42a8053`: total uncovered seconds does not
+    separate the two populations it is asked to separate. A legitimate music
+    intro is ONE long word-free run and nothing else, while a thinned decode is
+    many short ones, and a sum cannot tell a 15s glyph from fifty scattered
+    seconds of lost speech. So the guard reads two numbers instead -- the
+    longest single run, and the share of the claim left uncovered by every
+    OTHER run.
+    """
+
+    def test_half_a_real_response_thinned_away_refuses_the_chunk(self):
+        """Fails while the guard sums: 52% of a capture's words leave at exit 0.
+
+        `coarse-reconstructed.json` with 0.80s deleted out of every 1.60s loses
+        562 of its 1,085 words and measures 14.13s uncovered -- under the 20.0s
+        sum the commit shipped, so the chunk was rebuilt and written. The loss
+        is 4.38% of the claim spread over 39 runs, none longer than 1.70s.
+        """
+        data = _fixture("coarse-reconstructed")
+        kept = _thinned(data["words"], 0.80, 1.60)
+        assert len(kept) < len(data["words"]) * 0.55, len(kept)
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(dict(data, words=kept),
+                                            allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+    def test_the_refusal_names_the_longest_run_not_the_first(self):
+        """Fails if the message reports `holes[0]`: it promises "the longest run".
+
+        F10 of the 2026-09-10 refutation. A chunk with a four-second hole at
+        0:20 and a ninety-nine-second hole at 1:40 is refused for the second
+        one, and a reader who opens the video at the named clock range has to
+        find the audio that went.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(0.0, 20.0)
+                             + _words_covering(25.0, 100.0)
+                             + _words_covering(200.0, 300.0))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        message = str(caught.value)
+        assert "1:40–3:19" in message, message
+        assert "0:20" not in message, message
+
+    def test_a_backwards_rebuilt_segment_cannot_uncover_more_than_the_claim(self):
+        """Fails without `_merge_spans` dropping empty spans: 301.6s inside 300s.
+
+        F9 of the 2026-09-10 refutation. `segments_from_words` preserves list
+        order, so a single out-of-order word produces a rebuilt segment whose
+        end precedes its start. Merged as written, that span walks the coverage
+        cursor BACKWARDS and the same seconds are reported as a hole twice --
+        an arithmetically impossible measurement feeding a threshold.
+        """
+        served = [{"start": 0.0, "end": 300.0, "text": "served"}]
+        rebuilt = [{"start": 5.0, "end": 1.2, "text": "backwards"},
+                   {"start": 200.0, "end": 200.2, "text": "forwards"}]
+        holes = whisper.word_coverage_holes(served, rebuilt)
+        assert sum(end - start for start, end in holes) <= 300.0, holes
+        assert all(a[1] <= b[0] for a, b in zip(holes, holes[1:])), holes
+
+    def test_a_word_free_run_just_over_the_threshold_refuses(self):
+        """Fails if WORD_COVERAGE_RUN_SECONDS moves up: 25.5s is a lost minute's start.
+
+        The upper pin. 26.5s of words removed from the middle of an otherwise
+        complete array leaves one 25.5s run and nothing else.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _punched(_words_covering(0.0, 300.0),
+                                      [(100.0, 126.5)]))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+    def test_a_word_free_run_just_under_the_threshold_is_rebuilt(self):
+        """Fails if WORD_COVERAGE_RUN_SECONDS moves down: theme songs fail runs.
+
+        The lower pin, and the false refusal this guard has a history of. One
+        24.5s word-free run is a long opening title, and refusing it costs the
+        whole video rather than the chunk.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _punched(_words_covering(0.0, 300.0),
+                                      [(100.0, 125.5)]))
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert segments, "the chunk must be rebuilt, not refused"
+
+    def test_a_coverage_share_just_over_the_threshold_refuses(self):
+        """Fails if WORD_COVERAGE_HOLE_SHARE moves up: scattered loss is invisible.
+
+        The upper pin on the second term. Eleven 0.5s runs is 1.67% of the
+        claim outside the longest, and no single run is anywhere near the run
+        threshold -- the shape a sum discounted to nothing.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _punched(_words_covering(0.0, 300.0),
+                                      _gaps(11)))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+    def test_a_coverage_share_just_under_the_threshold_is_rebuilt(self):
+        """Fails if WORD_COVERAGE_HOLE_SHARE moves down: pauses fail runs.
+
+        The lower pin. Nine 0.5s runs is 1.33% of the claim outside the
+        longest, which is the scale of the breathing room a real capture leaves
+        (0.55% on `music-intro.json`).
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _punched(_words_covering(0.0, 300.0),
+                                      _gaps(9)))
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert segments, "the chunk must be rebuilt, not refused"
+
+    def test_a_repeated_segment_does_not_claim_the_same_seconds_twice(self):
+        """Fails if the share's denominator sums spans instead of merging them.
+
+        A provider that repeats itself doubles the denominator and halves every
+        share, so the second term stops firing on exactly the responses most
+        likely to be broken -- this route's documented failure modes include a
+        decode that repeated one sentence 6,434 times.
+        """
+        data = _coarse_chunk([(0.0, 300.0), (0.0, 300.0)],
+                             _punched(_words_covering(0.0, 300.0), _gaps(11)))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+
 class TestSegmentSpanIgnoresListOrder:
     """A response's own span, measured from its times rather than its order.
 

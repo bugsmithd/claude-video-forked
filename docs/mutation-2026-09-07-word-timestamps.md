@@ -235,3 +235,140 @@ both starts late AND stops early would now be caught only on its tail.
 **This change has had no independent review.** It was written, tested and run by
 the same session that found the defect, which is the thing every other round
 here was careful not to do.
+
+## Round 5, 2026-09-10 — one statistic could not express two failures
+
+Answering `.lane-briefs/2026-09-10-refute-42a8053.md`, which refuted the 20.0s
+slack `42a8053` shipped. The ledger below jumps from row 19 to row 20 with
+nothing in between on purpose: the round that produced `42a8053` recorded its
+five rows in `.lane-briefs/`, which is untracked, so this file has no entry for
+them. That gap is the refutation's F8 and it is not repaired here.
+
+### What was wrong, and it was not the number
+
+`42a8053` summed every word-free second in a chunk and compared the total to one
+slack. The refutation built a defect at ordinary scale out of the same artifact
+that anchors the healthy side, and it landed inside the gap the derivation
+claimed was empty. Reproduced here on the committed fixture, at a slightly
+different deletion phase:
+
+```
+tests/fixtures/openrouter/coarse-reconstructed.json
+  0.80s of every 1.60s of its words deleted -> 562 of 1,085 words gone (51.8%)
+  -> 14.13s uncovered, under the 20.0s slack -> ACCEPTED, chunk rebuilt, exit 0
+```
+
+Half a real capture's words, and the guard reported a number smaller than the
+slack. Meanwhile a theme song five seconds longer than the one in the fixtures
+summed past the same slack and failed the whole video. A threshold that refuses
+the second case while writing the first is not separating two populations.
+
+### The statistic that replaced the sum
+
+Two terms, because the two failures have different SHAPES:
+
+- **the longest single word-free run** — what a music bed or a silent intro
+  produces: one long hole and nothing else;
+- **the share of the claimed speech left word-free by every OTHER run** — what a
+  thinned or truncated word array produces: many holes against the whole chunk.
+
+Either term over its threshold refuses. The share is taken outside the longest
+run because a plain fraction inverts the ordering: measured over the seven
+captured responses holding both arrays, the healthy `music-intro.json` leaves
+**14.62%** of its claim word-free and `head-span.json` **90.31%** — both
+legitimately, both the same music glyph — while a capture with half its words
+thinned away leaves **1.11%**. The longest run is what the first term already
+judges, so the second term reads what is left after it.
+
+### Both thresholds, and what each rests on
+
+Measured over every captured response on this machine holding both a segment
+array and a word array — the four in `tests/fixtures/openrouter/` and the three
+in `~/rung4-corpus/_driver/diagnose/` — and over defect shapes built by deleting
+words from those same captures:
+
+| population | longest run | share outside it |
+|---|---|---|
+| speech throughout (4 responses) | 0.02–0.22s | 0.00% |
+| the `YPKV-UCLLd0` music glyph (3 responses) | 14.36s | 0.00%, 0.12%, **0.55%** |
+| words start a minute late | **59.50s** | 0.00% |
+| words cover only 200–300s of a 300s chunk | 199.50s | 0.00% |
+| one word at the tail of a 300s chunk | 287.60s | 3.70% |
+| `fine.json` thinned 0.80s of every 1.60s | 1.70s | **4.12%** |
+| `coarse-reconstructed.json` thinned the same way | 1.70s | 4.38% |
+| 15 constructed holes of 2.0s | 1.00s | 4.67% |
+
+Each threshold is the **geometric midpoint** of its band — both statistics are
+ratios of durations, so equal multiplicative margin is the honest middle —
+**rounded down**, because the healthy side of each band rests on far fewer
+artifacts than the defect side.
+
+| constant | band | midpoint | shipped | margin |
+|---|---|---|---|---|
+| `WORD_COVERAGE_RUN_SECONDS` | 14.36s … 59.50s | 29.23s | **25.0s** | 1.74× the largest healthy run, 2.38× under the smallest defect |
+| `WORD_COVERAGE_HOLE_SHARE` | 0.55% … 4.12% | 1.51% | **1.5%** | 2.7× either way |
+
+Two things the run band does not hide: its healthy side is **one audio source
+seen three times**, and a single word-free run between 20s and 25s used to fail
+a whole video and now passes. That second one is the false refusal the sum
+created, and removing it is a behaviour change rather than a side effect.
+
+**What still passes and should not.** Word loss that INTERLEAVES rather than
+cuts. Deleting every second word of a real capture leaves the survivors spread
+across the whole chunk — 0.66–1.24% outside the longest run, inside the healthy
+range — so no statistic over time COVERAGE can see it. Catching it needs a
+density rule this file does not have (`DEFER:yt_notes-66wk`).
+
+### The rows
+
+Applied one at a time to an rsync copy of the working tree at `/tmp/fix42/tree`
+with `.git` excluded; `skills/watch/scripts/whisper.py` in the repository under
+test was never opened for writing. The driver asserts the copy is byte-identical
+to the original before each mutation and restores it after, and the copy ends
+the pass at the same `124 passed` it started with. Node set:
+`python3 -m pytest -q tests/test_whisper.py`, the whole file per row, so "no
+mutation killed a test it was not predicted to kill" is checkable rather than
+assumed.
+
+| # | mutation | tests that went red | verdict |
+|---|---|---|---|
+| 20 | `WORD_COVERAGE_RUN_SECONDS = 26.0` | `test_a_word_free_run_just_over_the_threshold_refuses` | PINNED |
+| 21 | `WORD_COVERAGE_RUN_SECONDS = 24.0` | `test_a_word_free_run_just_under_the_threshold_is_rebuilt` | PINNED |
+| 22 | `WORD_COVERAGE_HOLE_SHARE = 0.017` | `test_a_coverage_share_just_over_the_threshold_refuses`, `test_a_repeated_segment_does_not_claim_the_same_seconds_twice` | PINNED |
+| 23 | `WORD_COVERAGE_HOLE_SHARE = 0.013` | `test_a_coverage_share_just_under_the_threshold_is_rebuilt` | PINNED |
+| 24 | drop `if end <= start: continue` from `_merge_spans` | `test_a_backwards_rebuilt_segment_cannot_uncover_more_than_the_claim` | PINNED |
+| 25 | the refusal names `holes[0]` instead of the longest hole | `test_the_refusal_names_the_longest_run_not_the_first` | PINNED |
+| 26 | the run term made unreachable (`if False:`) | `test_a_hole_in_the_middle_refuses_the_chunk`, `test_a_word_array_missing_its_head_refuses_the_chunk`, `test_a_word_array_that_starts_a_minute_late_refuses_the_chunk`, `test_a_word_array_that_stops_early_refuses_the_chunk`, `test_a_word_free_run_just_over_the_threshold_refuses`, `test_one_word_at_the_end_does_not_pass_a_whole_chunk`, `test_the_refusal_names_the_longest_run_not_the_first` | PINNED |
+| 27 | the share term made unreachable (`if False:`) | `test_a_coverage_share_just_over_the_threshold_refuses`, `test_a_repeated_segment_does_not_claim_the_same_seconds_twice`, `test_half_a_real_response_thinned_away_refuses_the_chunk` | PINNED |
+| 28 | the share taken over the WHOLE uncovered total again | `test_a_music_intro_is_not_a_shortfall`, `test_a_word_free_run_just_under_the_threshold_is_rebuilt` | PINNED |
+| 29 | `_claimed_seconds` sums raw spans instead of merging them | `test_a_repeated_segment_does_not_claim_the_same_seconds_twice` | PINNED |
+
+Ten rows, ten PINNED. Rows 20–23 are the answer to the refutation's F11, which
+found that any slack in `[14.92, 59.49]` passed the whole file: each threshold is
+now pinned from BOTH sides, so a later session moving either number by one step
+in either direction turns a test red. Rows 24 and 25 are F9 and F10, two clauses
+`42a8053` added that nothing killed.
+
+Row 28 is the one worth reading twice. Taking the share over the whole uncovered
+total rather than outside the longest run turns `test_a_music_intro_is_not_a_shortfall`
+red — that is the ordering inversion above, reproduced as a mutation.
+
+### Verification
+
+| command | result | exit |
+|---|---|---|
+| `python3 -m pytest -q tests/test_whisper.py -k TestWordCoverageIsTwoTerms` (before the code) | `1 failed` — `DID NOT RAISE SystemExit`, the predicted reason | 1 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 1) | `124 passed in 0.71s` | 0 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 2) | `124 passed in 0.67s` | 0 |
+| `python3 -m pytest -q` (full suite, once) | `2021 passed, 6 skipped in 656.78s` | 0 |
+| `python3 /tmp/fix42/mutate.py` | ten rows, all PINNED, copy restored and re-verified `124 passed` | 0 |
+| `python3 /tmp/fix42/derive.py` | the two population tables above | 0 |
+
+### What this round does NOT prove
+
+No live transcription ran; this route needs network and a key, and the
+two-matching-runs bar for an environment-sensitive route is the operator's.
+Every defect shape above is constructed or built by deleting words from a real
+capture — a truncated or thinned word array has still never been captured from
+this endpoint, in either direction. The healthy side of the run threshold is
+still one audio source.

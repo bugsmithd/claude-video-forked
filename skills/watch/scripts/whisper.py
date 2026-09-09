@@ -148,33 +148,71 @@ WORD_SEGMENT_GAP_SECONDS = 0.5
 WORD_SEGMENT_MIN_SECONDS = 1.0
 
 # HOW MUCH OF THE SERVED RENDERING THE WORDS MUST COVER before a rebuild may
-# replace it, measured INSIDE the rendering rather than at its ends.
+# replace it. TWO numbers, because one statistic cannot express both failures.
 #
-# RE-DERIVED 2026-09-10. The number this replaces was derived for a comparison
-# of the two renderings' spans, and a span is two numbers: it cannot see a hole
-# between them. Three shapes passed the old slack while losing most of a chunk
-# -- words reaching only 200-300s of a 300s chunk, a single word at 299.6s, and
-# words covering 0-30s and 270-300s with 240s of nothing in the middle.
+# RE-DERIVED 2026-09-10, second time in a day. The number this replaces summed
+# every word-free second in the chunk and compared the total to one slack. A sum
+# cannot separate the two populations it is asked to separate, measured rather
+# than argued: `tests/fixtures/openrouter/coarse-reconstructed.json` with 0.80s
+# of every 1.60s of its words deleted loses 562 of 1,085 words and sums to
+# 14.13s -- comfortably under the 20.0s slack, so the chunk was rebuilt and
+# written. Meanwhile a show whose theme runs a few seconds longer than the one
+# in the fixtures summed past the same slack and failed the whole run.
 #
-# The measurement, run over every captured response on this machine that still
-# holds BOTH a segment array and a word array -- the four in
-# `tests/fixtures/openrouter/` and the three the 2026-09-08 corpus build kept in
-# `_driver/diagnose/` -- reading uncovered seconds as `word_coverage_holes`
-# computes them:
+# THE TWO SHAPES ARE DIFFERENT SHAPES, so they get different terms:
 #
-#   speech throughout            0.02s, 0.04s, 0.12s, 0.22s uncovered
-#   the YPKV-UCLLd0 music intro  14.36s, 14.92s, 14.97s uncovered
+#   a music bed or a silent intro  ONE long word-free run and nothing else
+#   a thinned or truncated decode  many runs, or a big one, against the claim
 #
-# Three responses, one hole each, all of it the same interval: 0.0-14.36, the
-# show's music glyph. That is the false refusal `15393c8` removed, and 14.97s is
-# the largest value any captured response produces. Twenty seconds keeps it with
-# 5.03s to spare and is three times narrower than the smallest of the shapes
-# above (59.5s), so nothing measured sits between the two.
+# THE SHARE IS TAKEN OUTSIDE THE LONGEST RUN, and that is forced rather than
+# tidy. Read as a plain fraction of the claim, the healthy responses are the
+# WORST ones on the page -- `music-intro.json` leaves 14.62% of its claim
+# word-free and `head-span.json` 90.31%, both legitimately, both the same music
+# glyph -- while the thinned capture above leaves 1.11%. The ordering inverts.
+# The longest run is what the first term already judges, so the second term
+# reads what is left after it.
+#
+# MEASURED over every captured response on this machine holding BOTH arrays --
+# the four in `tests/fixtures/openrouter/` and the three the 2026-09-08 corpus
+# build kept in `~/rung4-corpus/_driver/diagnose/` -- and over the defect shapes
+# built by deleting words from those same captures:
+#
+#                                          longest run   share outside it
+#   speech throughout (4 responses)        0.02-0.22s    0.00%
+#   the YPKV-UCLLd0 music glyph (3)        14.36s        0.00%, 0.12%, 0.55%
+#   ---------------------------------------------------------------------
+#   words start a minute late              59.50s        0.00%
+#   words cover only 200-300s of 300s     199.50s        0.00%
+#   one word at the tail of a 300s chunk  287.60s        3.70%
+#   `fine.json` thinned 0.8s of 1.6s        1.70s        4.12%
+#   `coarse-reconstructed` thinned so       1.70s        4.38%
+#   15 constructed holes of 2.0s            1.00s        4.67%
+#
+# Each threshold is the GEOMETRIC midpoint of its band -- both statistics are
+# ratios of durations, so equal multiplicative margin is the honest middle --
+# rounded DOWN, because the healthy side of each band rests on far fewer
+# artifacts than the defect side. Run: midpoint of 14.36 and 59.50 is 29.23s,
+# down to 25.0s, which is 1.74x the largest healthy run and 2.38x under the
+# smallest defect. Share: midpoint of 0.55% and 4.12% is 1.51%, down to 1.5%,
+# 2.7x either way.
+#
+# WHAT MOVES: a single word-free run between 20s and 25s used to fail a whole
+# video and now passes, which is the false refusal the sum created. A capture
+# with half its words thinned away now refuses.
+#
+# WHAT STILL PASSES AND SHOULD NOT: word loss that INTERLEAVES rather than
+# cuts. Deleting every second word of a real capture leaves the survivors spread
+# across the whole chunk, 0.66-1.24% outside the longest run, inside the healthy
+# range. No statistic over time coverage can see it, because the time is still
+# covered; catching it needs a density rule this file does not have.
 #
 # NOT DERIVED FROM THE FULL 2026-09-08 CORPUS: that build kept renderings, not
-# raw responses, so 27 of its 30 videos retain no word array to measure. Widening
-# the derivation needs a capture pass that keeps them (DEFER:yt_notes-66wk).
-WORD_COVERAGE_SLACK_SECONDS = 20.0
+# raw responses, so 27 of its 30 videos retain no word array to measure. The
+# healthy side of the run band is ONE audio source seen three times. Widening
+# the derivation needs a capture pass that keeps raw responses AND defective
+# word arrays, not only healthy ones (DEFER:yt_notes-66wk).
+WORD_COVERAGE_RUN_SECONDS = 25.0
+WORD_COVERAGE_HOLE_SHARE = 0.015
 
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
@@ -903,17 +941,32 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             # can still hide audio from it, pinned by
             # `test_a_blank_trailing_segment_claims_no_speech`.
             holes = word_coverage_holes(out, regrouped)
-            uncovered = sum(end - start for start, end in holes)
-            if uncovered > WORD_COVERAGE_SLACK_SECONDS:
-                # NEITHER RENDERING IS USABLE, so this refuses instead of
-                # choosing. The segments are too coarse to anchor and the words
-                # do not reach audio the segments say is speech; silently
-                # taking the shorter one is the exact failure this file exists
-                # to prevent, moved inside a chunk where no gate can see it.
-                worst = max(holes, key=lambda hole: hole[1] - hole[0])
+            # NEITHER RENDERING IS USABLE when either term fires, so this
+            # refuses instead of choosing. The segments are too coarse to
+            # anchor and the words do not reach audio the segments say is
+            # speech; silently taking the shorter one is the exact failure this
+            # file exists to prevent, moved inside a chunk where no gate can
+            # see it.
+            worst = max(holes, key=lambda hole: hole[1] - hole[0],
+                        default=(0.0, 0.0))
+            run = worst[1] - worst[0]
+            claimed = _claimed_seconds(out)
+            rest = sum(end - start for start, end in holes) - run
+            share = (rest / claimed) if claimed else 0.0
+            if run > WORD_COVERAGE_RUN_SECONDS:
                 raise SystemExit(
-                    f"the response's word timestamps leave {uncovered:.0f}s of "
+                    f"the response's word timestamps leave {run:.0f}s of "
                     f"its own segments with no word in them, the longest run "
+                    f"{_format_span(*worst)}, so rebuilding from them would "
+                    f"drop that speech while still reporting a segment count. "
+                    f"The segments are too coarse to anchor (a typical "
+                    f"{median:.0f}s), so this chunk is refused rather than "
+                    f"written.")
+            if share > WORD_COVERAGE_HOLE_SHARE:
+                raise SystemExit(
+                    f"the response's word timestamps leave {share:.1%} of the "
+                    f"seconds its own segments call speech with no word in "
+                    f"them, {len(holes) - 1} runs beside the longest at "
                     f"{_format_span(*worst)}, so rebuilding from them would "
                     f"drop that speech while still reporting a segment count. "
                     f"The segments are too coarse to anchor (a typical "
@@ -953,6 +1006,16 @@ def _merge_spans(spans) -> list[tuple[float, float]]:
         else:
             merged.append([start, end])
     return [(start, end) for start, end in merged]
+
+
+def _claimed_seconds(served: list[dict]) -> float:
+    """Seconds the served rendering calls speech, an overlap counted once.
+
+    The denominator of the coverage share. Merged rather than summed because a
+    provider that overlaps two segments has not claimed those seconds twice.
+    """
+    return sum(end - start for start, end in
+               _merge_spans((seg["start"], seg["end"]) for seg in served))
 
 
 def word_coverage_holes(served: list[dict],
