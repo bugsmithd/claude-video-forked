@@ -211,6 +211,21 @@ WORD_SEGMENT_MIN_SECONDS = 1.0
 # healthy side of the run band is ONE audio source seen three times. Widening
 # the derivation needs a capture pass that keeps raw responses AND defective
 # word arrays, not only healthy ones (DEFER:yt_notes-66wk).
+#
+# THE SHARE IS SCALE-RELATIVE AND STAYS THAT WAY, ruled 2026-09-10 on the
+# measurement rather than on the shape of the rule. `rest / claimed` forgives
+# 4.5s in a five-minute chunk and 9.0s in a ten-minute one, and
+# OPENROUTER_MAX_SECONDS is 600.0, so the shipped route runs at the looser end.
+# Capping the tolerance in seconds as well was measured and dropped: over 522
+# defect rows built by thinning and punching the two real captures that reach
+# this branch, the worst shape escaping all three terms loses 5.61% of its words
+# (82 of 1,462) with 1.09s outside its longest run, so a cap has to fall UNDER
+# 1.09s to move the worst escape at all -- and those same captures measure 0.56s
+# and 0.61s there when healthy. A cap tight enough to bite would sit 1.2x above
+# a real capture, on a healthy side that is one audio source. The word-count
+# term below already bounds that escape at its declared floor. What changed
+# instead is the tests: both pins now run at 600s, the production chunk length,
+# where they used to run at half of it.
 WORD_COVERAGE_RUN_SECONDS = 25.0
 WORD_COVERAGE_HOLE_SHARE = 0.015
 
@@ -924,7 +939,8 @@ def shift_segments(segments: list[dict], offset_seconds: float) -> list[dict]:
     ]
 
 
-def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict]:
+def _segments_from_response(data: dict, allow_untimed: bool = True,
+                            offset_seconds: float = 0.0) -> list[dict]:
     """Convert Whisper verbose_json into our {start, end, text} segment format.
 
     `allow_untimed` decides what happens when the response carries text but no
@@ -933,6 +949,15 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
     every downstream check will grade as if it had times. On a route where an
     untimed response means the request was routed to the wrong provider, that is
     a silent wrong answer, so that route asks for it to be refused instead.
+
+    `offset_seconds` is where this chunk's audio starts in the video, and it is
+    used for one thing: the clock ranges a coverage refusal names. Every time in
+    a response is 0-based inside the chunk that was uploaded, so a hole at 1:40
+    of the second ten-minute request printed bare reads as 1:40 of the video and
+    sends a reader 600 seconds away from the audio that went. `transcribe_chunks`
+    already holds the number -- it is what it shifts the chunk's own segments by
+    -- so it is handed down rather than guessed at. It stays 0.0 for a request
+    that carries the whole file, where the chunk IS the video.
     """
     out: list[dict] = []
     for seg in data.get("segments") or []:
@@ -982,9 +1007,14 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             #
             # `out` may be empty here: a response can carry words and no
             # segments at all, and then there is nothing claiming speech to
-            # fall short of. A segment with blank text claims no speech either,
-            # so it never reaches this check -- which is the one way a response
-            # can still hide audio from it, pinned by
+            # fall short of. All three terms below are then structurally unable
+            # to fire -- no claim, so no holes and no denominator -- and that is
+            # the reading, not an oversight. `words-only.json` is a real capture
+            # taking this door; the inertness is pinned term by term by
+            # `TestTheNoSegmentEntryIsInertOnPurpose` so a later session cannot
+            # arrive at it by accident. A segment with blank text claims no
+            # speech either, so it never reaches this check -- which is the one
+            # way a response can still hide audio from it, pinned by
             # `test_a_blank_trailing_segment_claims_no_speech`.
             holes = word_coverage_holes(out, regrouped)
             # NEITHER RENDERING IS USABLE when either term fires, so this
@@ -995,6 +1025,11 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             # see it.
             worst = max(holes, key=lambda hole: hole[1] - hole[0],
                         default=(0.0, 0.0))
+            # IN VIDEO TIME, because that is the only clock a reader can check.
+            # The holes are measured in the chunk's own frame; `offset_seconds`
+            # is where that frame starts.
+            where = _format_span(worst[0] + offset_seconds,
+                                 worst[1] + offset_seconds)
             run = worst[1] - worst[0]
             claimed = _claimed_seconds(out)
             rest = sum(end - start for start, end in holes) - run
@@ -1003,7 +1038,7 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
                 raise SystemExit(
                     f"the response's word timestamps leave {run:.0f}s of "
                     f"its own segments with no word in them, the longest run "
-                    f"{_format_span(*worst)}, so rebuilding from them would "
+                    f"{where}, so rebuilding from them would "
                     f"drop that speech while still reporting a segment count. "
                     f"The segments are too coarse to anchor (a typical "
                     f"{median:.0f}s), so this chunk is refused rather than "
@@ -1013,7 +1048,7 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
                     f"the response's word timestamps leave {share:.1%} of the "
                     f"seconds its own segments call speech with no word in "
                     f"them, {len(holes) - 1} runs beside the longest at "
-                    f"{_format_span(*worst)}, so rebuilding from them would "
+                    f"{where}, so rebuilding from them would "
                     f"drop that speech while still reporting a segment count. "
                     f"The segments are too coarse to anchor (a typical "
                     f"{median:.0f}s), so this chunk is refused rather than "
@@ -1211,7 +1246,7 @@ def transcribe_chunks(
     failures = 0
     for index, (path, offset) in enumerate(chunks):
         try:
-            chunk_segments = transcribe_one(path)
+            chunk_segments = transcribe_one(path, offset)
         except SystemExit as exc:
             failures += 1
             lost_from, lost_to = _chunk_span(chunks, index, keeps)
@@ -1517,28 +1552,35 @@ def check_granularity(segments: list[dict], model: str | None,
 
 
 def _transcribe_file(backend: str, api_key: str, audio_path: Path,
-                     model_override: str | None = None) -> list[dict]:
+                     model_override: str | None = None,
+                     offset_seconds: float = 0.0) -> list[dict]:
     """Transcribe one audio file and return its 0-based segments.
 
     For cloud backends `api_key` is the API key; for "local" it is the
     whisper.cpp binary path. `model_override` set means this is the SECOND
     decode, which is held to a looser bar -- see `check_granularity`.
+
+    The segments come back 0-based and the caller shifts them; `offset_seconds`
+    says where this file sits in the video so that a refusal, which never
+    reaches the caller's shift, can still name a clock range a reader can check.
     """
     if backend == "groq":
         model = GROQ_MODEL
         segments = _segments_from_response(
-            _post_whisper(GROQ_ENDPOINT, api_key, GROQ_MODEL, audio_path))
+            _post_whisper(GROQ_ENDPOINT, api_key, GROQ_MODEL, audio_path),
+            offset_seconds=offset_seconds)
     elif backend == "openai":
         model = OPENAI_MODEL
         segments = _segments_from_response(
-            _post_whisper(OPENAI_ENDPOINT, api_key, OPENAI_MODEL, audio_path))
+            _post_whisper(OPENAI_ENDPOINT, api_key, OPENAI_MODEL, audio_path),
+            offset_seconds=offset_seconds)
     elif backend == "openrouter":
         model = (model_override or _read_config_value("WATCH_OPENROUTER_MODEL")
                  or OPENROUTER_MODEL)
         segments = _segments_from_response(
             _post_openrouter(api_key, model, audio_path,
                              _read_config_value("WATCH_OPENROUTER_PROVIDER")),
-            allow_untimed=False)
+            allow_untimed=False, offset_seconds=offset_seconds)
     elif backend == "local":
         model = model_override or _read_config_value("WHISPER_CPP_MODEL")
         segments = _run_whisper_cpp(api_key, audio_path, model_override)
@@ -1713,8 +1755,9 @@ def transcribe_video(
     def decode(model_override: str | None, work_name: str,
                dropped: list[tuple[float, float | None, str]] | None = None
                ) -> list[dict]:
-        def transcribe_one(path: Path) -> list[dict]:
-            return _transcribe_file(backend, api_key, path, model_override)
+        def transcribe_one(path: Path, offset: float = 0.0) -> list[dict]:
+            return _transcribe_file(backend, api_key, path, model_override,
+                                    offset)
 
         # WINDOWED, for the local backend only. The cloud APIs window internally
         # and have not been measured degenerating this way; that is a gap in the
@@ -1761,7 +1804,10 @@ def transcribe_video(
                                     [(start, end - start)])
                 # Returned in the ORIGINAL window's frame, because the caller
                 # shifts by that window's offset and knows nothing of this one.
-                return shift_segments(transcribe_one(again[0][0]), start - offset)
+                # The retry's OWN offset is `start`, not the window's, and that
+                # is what a refusal inside it has to name.
+                return shift_segments(transcribe_one(again[0][0], start),
+                                      start - offset)
 
             return transcribe_chunks(
                 chunks, transcribe_one,

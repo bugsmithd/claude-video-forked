@@ -130,7 +130,7 @@ class TestTranscribeChunks:
     def test_shifts_and_concatenates_each_chunk(self):
         chunks = [(Path("a.mp3"), 0.0), (Path("b.mp3"), 100.0)]
 
-        def fake_transcribe(path: Path) -> list[dict]:
+        def fake_transcribe(path: Path, offset: float = 0.0) -> list[dict]:
             return [{"start": 0.0, "end": 2.0, "text": path.stem}]
 
         out = whisper.transcribe_chunks(chunks, fake_transcribe)
@@ -143,7 +143,7 @@ class TestTranscribeChunks:
     def test_keeps_successful_chunks_when_one_fails(self):
         chunks = [(Path("a.mp3"), 0.0), (Path("b.mp3"), 100.0)]
 
-        def flaky(path: Path) -> list[dict]:
+        def flaky(path: Path, offset: float = 0.0) -> list[dict]:
             if path.stem == "b":
                 raise SystemExit("chunk b failed")
             return [{"start": 1.0, "end": 2.0, "text": "a"}]
@@ -155,7 +155,7 @@ class TestTranscribeChunks:
     def test_raises_when_every_chunk_fails(self):
         chunks = [(Path("a.mp3"), 0.0), (Path("b.mp3"), 100.0)]
 
-        def always_fail(path: Path) -> list[dict]:
+        def always_fail(path: Path, offset: float = 0.0) -> list[dict]:
             raise SystemExit("boom")
 
         with pytest.raises(SystemExit):
@@ -277,7 +277,7 @@ class TestLoopRetry:
         clean = [{"start": 0.0, "end": 1.0, "text": "what was actually said"}]
         calls = []
 
-        def transcribe(path: Path) -> list[dict]:
+        def transcribe(path: Path, offset: float = 0.0) -> list[dict]:
             return self._looping(9)
 
         def retry(index: int) -> list[dict]:
@@ -293,7 +293,7 @@ class TestLoopRetry:
     def test_a_worse_retry_is_discarded(self):
         first = self._looping(5)
 
-        def transcribe(path: Path) -> list[dict]:
+        def transcribe(path: Path, offset: float = 0.0) -> list[dict]:
             return first
 
         out = whisper.transcribe_chunks(
@@ -305,7 +305,7 @@ class TestLoopRetry:
     def test_a_clean_window_is_never_retried(self):
         calls = []
 
-        def transcribe(path: Path) -> list[dict]:
+        def transcribe(path: Path, offset: float = 0.0) -> list[dict]:
             return [{"start": 0.0, "end": 1.0, "text": "fine"}]
 
         whisper.transcribe_chunks([(Path("w0.mp3"), 0.0)], transcribe,
@@ -320,7 +320,7 @@ class TestLoopRetry:
             raise SystemExit("the retry died")
 
         out = whisper.transcribe_chunks(
-            [(Path("w0.mp3"), 0.0)], lambda path: first,
+            [(Path("w0.mp3"), 0.0)], lambda path, offset=0.0: first,
             retry_window=failing_retry)
 
         assert len(out) == len(first)
@@ -348,7 +348,7 @@ class TestTranscribeChunksWithKeeps:
     def test_overlapping_windows_do_not_duplicate_a_sentence(self):
         chunks = [(Path("w0.mp3"), 0.0), (Path("w1.mp3"), 150.0)]
 
-        def fake_transcribe(path: Path) -> list[dict]:
+        def fake_transcribe(path: Path, offset: float = 0.0) -> list[dict]:
             if path.stem == "w0":
                 return [{"start": 100.0, "end": 101.0, "text": "once"}]
             # w1 starts at 150 and re-decodes that same sentence as context.
@@ -363,7 +363,7 @@ class TestTranscribeChunksWithKeeps:
     def test_without_keeps_every_segment_survives(self):
         chunks = [(Path("a.mp3"), 0.0)]
 
-        def fake_transcribe(path: Path) -> list[dict]:
+        def fake_transcribe(path: Path, offset: float = 0.0) -> list[dict]:
             return [{"start": 0.0, "end": 1.0, "text": "kept"}]
 
         assert whisper.transcribe_chunks(chunks, fake_transcribe) == [
@@ -519,7 +519,8 @@ class TestBackendOverrideCarriesItsOwnKey:
         monkeypatch.setattr(whisper, "extract_audio", lambda v, o: Path(o))
         monkeypatch.setattr(whisper, "audio_duration", lambda p: 10.0)
 
-        def fake_transcribe(backend, api_key, path, model_override=None):
+        def fake_transcribe(backend, api_key, path, model_override=None,
+                            offset=0.0):
             seen["backend"], seen["key"] = backend, api_key
             return [{"start": 0.0, "end": 1.0, "text": "hi"}]
 
@@ -1009,7 +1010,7 @@ class TestDroppedChunks:
         chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 568.0),
                   (tmp_path / "c2.mp3", 1136.0)]
 
-        def transcribe_one(path):
+        def transcribe_one(path, offset=0.0):
             if path.name == "c1.mp3":
                 raise SystemExit("too coarse to anchor")
             return [{"start": 0.0, "end": 2.0, "text": "kept"}]
@@ -1025,7 +1026,7 @@ class TestDroppedChunks:
         """Fails if the code indexes chunks[index + 1] unguarded: IndexError."""
         chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 600.0)]
 
-        def transcribe_one(path):
+        def transcribe_one(path, offset=0.0):
             if path.name == "c1.mp3":
                 raise SystemExit("nope")
             return [{"start": 0.0, "end": 2.0, "text": "kept"}]
@@ -1047,7 +1048,7 @@ class TestDroppedChunks:
         dropped = []
         whisper.transcribe_chunks(
             chunks,
-            lambda p: [] if p.name == "c1.mp3"
+            lambda p, offset=0.0: [] if p.name == "c1.mp3"
             else [{"start": 0.0, "end": 2.0, "text": "kept"}],
             dropped=dropped)
         assert dropped == [(568.0, 1136.0, "empty")]
@@ -1057,7 +1058,7 @@ class TestDroppedChunks:
         chunks = [(tmp_path / "c0.mp3", 0.0)]
         dropped = []
         whisper.transcribe_chunks(
-            chunks, lambda p: [{"start": 0.0, "end": 1.0, "text": "x"}],
+            chunks, lambda p, offset=0.0: [{"start": 0.0, "end": 1.0, "text": "x"}],
             dropped=dropped)
         assert dropped == []
 
@@ -1070,7 +1071,7 @@ class TestDroppedChunks:
         """Fails if `dropped` becomes required: every existing caller breaks."""
         chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 10.0)]
 
-        def transcribe_one(path):
+        def transcribe_one(path, offset=0.0):
             if path.name == "c1.mp3":
                 raise SystemExit("nope")
             return [{"start": 0.0, "end": 2.0, "text": "kept"}]
@@ -1094,13 +1095,13 @@ class TestGappedTranscriptIsRefused:
         monkeypatch.setattr(whisper, "second_model", lambda backend: None)
         monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
 
-        def transcribe_one(path):
+        def transcribe_one(path, offset=0.0):
             if path.name == "c1.mp3":
                 raise SystemExit("too coarse to anchor")
             return [{"start": 0.0, "end": 2.0, "text": "kept"}]
 
         monkeypatch.setattr(whisper, "_transcribe_file",
-                            lambda backend, key, path, override=None:
+                            lambda backend, key, path, override=None, offset=0.0:
                             transcribe_one(path))
 
         with pytest.raises(SystemExit) as caught:
@@ -1131,7 +1132,7 @@ class TestGappedTranscriptIsRefused:
         monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
         monkeypatch.setattr(
             whisper, "_transcribe_file",
-            lambda backend, key, path, override=None:
+            lambda backend, key, path, override=None, offset=0.0:
             [] if path.name == "c1.mp3"
             else [{"start": 0.0, "end": 2.0, "text": "kept"}])
 
@@ -1157,7 +1158,7 @@ class TestGappedTranscriptIsRefused:
         monkeypatch.setattr(
             whisper, "_read_config_value",
             lambda name: "1" if name == "WATCH_ALLOW_TRANSCRIPT_GAPS" else None)
-        def refuse_one(backend, key, path, override=None):
+        def refuse_one(backend, key, path, override=None, offset=0.0):
             # The SAME failure as the test above -- the flag decides what the
             # run does about it, not whether it happened.
             if path.name == "c1.mp3":
@@ -1430,13 +1431,16 @@ class TestWordCoverageIsTwoTerms:
     def test_a_coverage_share_just_over_the_threshold_refuses(self):
         """Fails if WORD_COVERAGE_HOLE_SHARE moves up: scattered loss is invisible.
 
-        The upper pin on the second term. Eleven 0.5s runs is 1.67% of the
-        claim outside the longest, and no single run is anywhere near the run
-        threshold -- the shape a sum discounted to nothing.
+        The upper pin on the second term, taken AT THE PRODUCTION CHUNK LENGTH.
+        `OPENROUTER_MAX_SECONDS` is 600.0, so a ten-minute chunk is what the
+        shipped route hands this guard; pinning at 300s measured the constant at
+        twice the strictness the route runs at. Twenty 0.5s runs is 1.58% of a
+        600s claim outside the longest, and no single run is anywhere near the
+        run threshold -- the shape a sum discounted to nothing.
         """
-        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
-                             _punched(_words_covering(0.0, 300.0),
-                                      _gaps(11)))
+        data = _coarse_chunk([(i * 100.0, (i + 1) * 100.0) for i in range(6)],
+                             _punched(_words_covering(0.0, 600.0),
+                                      _gaps(20)))
         with pytest.raises(SystemExit) as caught:
             whisper._segments_from_response(data, allow_untimed=False)
         assert "no word in them" in str(caught.value), caught.value
@@ -1444,15 +1448,45 @@ class TestWordCoverageIsTwoTerms:
     def test_a_coverage_share_just_under_the_threshold_is_rebuilt(self):
         """Fails if WORD_COVERAGE_HOLE_SHARE moves down: pauses fail runs.
 
-        The lower pin. Nine 0.5s runs is 1.33% of the claim outside the
-        longest, which is the scale of the breathing room a real capture leaves
-        (0.55% on `music-intro.json`).
+        The lower pin, at the same 600s chunk. Eighteen 0.5s runs is 1.42% of
+        the claim outside the longest, which is the scale of the breathing room
+        a real capture leaves (0.55% on `music-intro.json`).
         """
-        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
-                             _punched(_words_covering(0.0, 300.0),
-                                      _gaps(9)))
+        data = _coarse_chunk([(i * 100.0, (i + 1) * 100.0) for i in range(6)],
+                             _punched(_words_covering(0.0, 600.0),
+                                      _gaps(18)))
         segments = whisper._segments_from_response(data, allow_untimed=False)
         assert segments, "the chunk must be rebuilt, not refused"
+
+    def test_the_same_lost_seconds_are_refused_at_300s_and_written_at_600s(self):
+        """Pins the scale-relativity as a measured choice, not an oversight.
+
+        The share is a fraction of the claim, so the seconds it forgives grow
+        with the chunk: 1.5% is 4.5s at 300s and 9.0s at 600s. Eleven 0.5s runs
+        -- 5.0s of scattered speech, the SAME absolute loss both times -- is
+        refused in a five-minute chunk and written in a ten-minute one.
+
+        Measured 2026-09-10 before this was left standing: capping the tolerance
+        in seconds as well buys nothing at any margin the captures support. The
+        worst escape on the two real captures that reach this branch is 5.61% of
+        their words (82 of 1,462) at 1.09s outside the longest run, so a cap has
+        to fall under 1.09s to move it at all -- and the healthy captures
+        themselves measure 0.56s and 0.61s there. A cap tight enough to bite
+        sits 1.2x above a real capture, on a healthy side that is one audio
+        source. The word-count term already bounds that escape at its declared
+        floor. Anyone adding the cap anyway has to delete this test.
+        """
+        loss = _gaps(11)
+        short = _coarse_chunk([(i * 100.0, (i + 1) * 100.0) for i in range(3)],
+                              _punched(_words_covering(0.0, 300.0), loss))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(short, allow_untimed=False)
+        assert "no word in them" in str(caught.value), caught.value
+
+        long = _coarse_chunk([(i * 100.0, (i + 1) * 100.0) for i in range(6)],
+                             _punched(_words_covering(0.0, 600.0), loss))
+        assert whisper._segments_from_response(long, allow_untimed=False), \
+            "the same 5.0s is inside a 600s chunk's tolerance"
 
     def test_a_repeated_segment_does_not_claim_the_same_seconds_twice(self):
         """Fails if the share's denominator sums spans instead of merging them.
@@ -1467,6 +1501,171 @@ class TestWordCoverageIsTwoTerms:
         with pytest.raises(SystemExit) as caught:
             whisper._segments_from_response(data, allow_untimed=False)
         assert "no word in them" in str(caught.value), caught.value
+
+
+class TestTheNoSegmentEntryIsInertOnPurpose:
+    """The rebuild branch has two doors and the guard only works behind one.
+
+    `_segments_from_response` rebuilds when the served rendering is too coarse
+    to anchor OR when the response carried no segments at all. Behind the second
+    door there is no served rendering, and all three coverage terms read one:
+    the claim is 0.0s, so the share falls to its own fallback; nothing claims
+    speech, so there are no holes and the longest run is 0.0s; and the served
+    text holds no words, so the count has no denominator. Every term is
+    structurally unable to fire, and `words-only.json` -- a real captured
+    response -- takes that door.
+
+    That is the intended reading, not an oversight: a response that claimed
+    nothing cannot have fallen short of it. It is pinned here so a later session
+    cannot arrive at it by accident, and so anyone who makes a term fire on this
+    path has to delete a test that says why it does not.
+    """
+
+    def test_no_served_segments_leaves_every_term_with_nothing_to_grade(self):
+        """Fails if any coverage term is given a claim it can refuse.
+
+        Each assertion is one term. Read them as the three conditions in
+        `_segments_from_response`, evaluated on the inputs this door supplies.
+        """
+        data = _fixture("words-only")
+        served = [seg for seg in data.get("segments") or []
+                  if (seg.get("text") or "").strip()]
+        assert not served, "the fixture must take the no-segments door"
+
+        rebuilt = whisper.segments_from_words(data["words"])
+        assert rebuilt, "and it must still have words to rebuild from"
+        # The longest-run term and the share term, in that order.
+        assert whisper.word_coverage_holes(served, rebuilt) == []
+        assert whisper._claimed_seconds(served) == 0.0
+        # And the word-count term, whose denominator is the served text.
+        assert sum(len(seg["text"].split()) for seg in served) == 0
+
+        assert whisper._segments_from_response(
+            data, allow_untimed=False) == rebuilt
+
+    def test_three_words_and_no_segments_are_still_written(self):
+        """Fails if the word-count term is given a denominator to invent.
+
+        The same door with the word array cut to three entries. Against any
+        real rendering that is a total loss; against no rendering at all there
+        is nothing to have lost, and the chunk is written.
+        """
+        data = _fixture("words-only")
+        thin = dict(data, words=data["words"][:3])
+        segments = whisper._segments_from_response(thin, allow_untimed=False)
+        assert segments, "the chunk must be rebuilt, not refused"
+
+
+class TestTheRefusalNamesVideoTime:
+    """A refusal cites a clock range, and the reader checks it against the video.
+
+    The word arrays a chunk is graded on are 0-based in that chunk, so every
+    second this guard measures is an offset inside the chunk. Printed bare, a
+    hole at 1:40 of the second ten-minute request reads as 1:40 of the video and
+    sends the reader 600 seconds away from the audio that went. `transcribe_chunks`
+    holds each chunk's offset already -- it is the number it shifts the chunk's
+    own segments by a few lines later -- so the guard is handed it rather than
+    left to guess.
+    """
+
+    def test_a_refusal_in_a_later_chunk_names_video_time(self, capsys):
+        """Fails while the message reads chunk-local seconds: 1:40 is really 11:40.
+
+        The same 99s hole as `test_the_refusal_names_the_longest_run_not_the_first`,
+        in a chunk starting ten minutes into the video.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(0.0, 20.0)
+                             + _words_covering(25.0, 100.0)
+                             + _words_covering(200.0, 300.0))
+
+        def transcribe_one(path, offset=0.0):
+            return whisper._segments_from_response(data, allow_untimed=False,
+                                                   offset_seconds=offset)
+
+        with pytest.raises(SystemExit):
+            whisper.transcribe_chunks([(Path("b.mp3"), 600.0)], transcribe_one)
+        printed = capsys.readouterr().err
+        assert "11:40–13:19" in printed, printed
+        assert "1:40–3:19" not in printed, printed
+
+    def test_the_openrouter_arm_carries_the_offset_to_the_guard(self,
+                                                                monkeypatch):
+        """Fails if the backend arm drops the offset between the two frames.
+
+        The offset reaches `_transcribe_file` and has to survive the one line
+        that hands the response to the guard. Dropping it there is silent: the
+        chunk is still refused, at a clock range 600 seconds off.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(0.0, 20.0)
+                             + _words_covering(25.0, 100.0)
+                             + _words_covering(200.0, 300.0))
+        monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
+        monkeypatch.setattr(whisper, "_post_openrouter",
+                            lambda key, model, path, provider: data)
+        with pytest.raises(SystemExit) as caught:
+            whisper._transcribe_file("openrouter", "sk", Path("c1.mp3"),
+                                     None, 600.0)
+        assert "11:40–13:19" in str(caught.value), caught.value
+
+    def test_a_retried_window_is_told_its_own_offset(self, monkeypatch,
+                                                     tmp_path):
+        """Fails if the retry inherits the window's offset: 150s, not 120s.
+
+        A retry re-decodes the same window from a different second, so its
+        audio starts BEFORE the window's own offset and its times are 0-based
+        there. Handing it the window's offset would name a clock range 30s off
+        -- the one number in this whole change that has two plausible values.
+        """
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        duration = 3.0 * whisper.DECODE_WINDOW_SECONDS
+        windows = whisper.plan_windows(duration, whisper.DECODE_WINDOW_SECONDS,
+                                       whisper.DECODE_OVERLAP_SECONDS)
+        looping, retried = windows[1][0], windows[1][0] - whisper.DECODE_OVERLAP_SECONDS
+        assert retried not in [offset for offset, *_rest in windows], windows
+
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: duration)
+        monkeypatch.setattr(whisper, "second_model", lambda backend: None)
+        monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
+        monkeypatch.setattr(whisper, "split_audio",
+                            lambda a, d, plan: [(tmp_path / f"w{off}.mp3", off)
+                                                for off, _len in plan])
+        keeps = {offset: keep_from for offset, _len, keep_from, _to in windows}
+        seen = []
+
+        def fake(backend, key, path, override=None, offset=0.0):
+            seen.append(offset)
+            if offset == looping:
+                return [{"start": i, "end": i + 0.5, "text": "same"}
+                        for i in range(whisper.LOOP_RUN + 1)]
+            if offset not in keeps:                       # the retry itself
+                return [{"start": 65.0, "end": 66.0, "text": "retry"}]
+            at = keeps[offset] - offset + 5.0
+            return [{"start": at, "end": at + 1.0, "text": f"clean {offset:.0f}"}]
+
+        monkeypatch.setattr(whisper, "_transcribe_file", fake)
+        segments, _backend = whisper.transcribe_video(
+            "v.mp4", tmp_path / "audio.mp3", backend="local", api_key="/bin/true")
+
+        assert retried in seen, seen
+        assert any(seg["text"] == "retry" for seg in segments), segments
+
+    def test_a_whole_file_request_still_reads_from_zero(self):
+        """Fails if the offset defaults to anything but the start of the audio.
+
+        One request covering the whole video is its own chunk at offset 0, and
+        the range it names is already video time.
+        """
+        data = _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                             _words_covering(0.0, 20.0)
+                             + _words_covering(25.0, 100.0)
+                             + _words_covering(200.0, 300.0))
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "1:40–3:19" in str(caught.value), caught.value
 
 
 def _served_words(data: dict) -> int:
@@ -1665,7 +1864,7 @@ class TestWindowContributesNothing:
         chunks = [(tmp_path / "c0.mp3", 0.0), (tmp_path / "c1.mp3", 150.0)]
         keeps = [(0.0, 180.0), (180.0, 360.0)]
 
-        def transcribe_one(path):
+        def transcribe_one(path, offset=0.0):
             if path.name == "c1.mp3":
                 return [{"start": i * 0.3, "end": i * 0.3 + 0.2, "text": f"w{i}"}
                         for i in range(90)]
@@ -1683,7 +1882,7 @@ class TestWindowContributesNothing:
         dropped = []
         whisper.transcribe_chunks(
             chunks,
-            lambda p: [] if p.name == "c1.mp3"
+            lambda p, offset=0.0: [] if p.name == "c1.mp3"
             else [{"start": 0.0, "end": 2.0, "text": "kept"}],
             keeps=keeps, dropped=dropped)
         assert dropped == [(180.0, 360.0, "empty")]
@@ -1717,7 +1916,7 @@ class TestRetryMustCarrySomething:
                    for i in range(whisper.LOOP_RUN + 2)]
         dropped = []
         segments = whisper.transcribe_chunks(
-            chunks, lambda p: looping, retry_window=lambda index: [],
+            chunks, lambda p, offset=0.0: looping, retry_window=lambda index: [],
             dropped=dropped)
         assert segments == looping
         assert dropped == []

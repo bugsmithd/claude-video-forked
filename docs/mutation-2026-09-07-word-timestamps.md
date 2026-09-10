@@ -564,3 +564,117 @@ nulled, entries repeated — are all constructed; no capture on this machine
 carries a text-less or time-less entry, measured 0 of 5,843 entries across nine
 artifacts. The rebuilder's own docstring says the shape is expected in the wild,
 which is why it is repaired rather than argued with.
+
+## Round 8, 2026-09-10 — four filed findings, two repaired and two answered
+
+Four beads against the same guard, worked in one pass because they live in one file:
+`yt_notes-p070` (chunk-local seconds printed as video time), `yt_notes-bq7u` (the second entry
+condition is inert and nothing says so), `yt_notes-we6l` (the share term is scale-relative), and
+`yt_notes-o182` (a looping decode is invisible to every term).
+
+Full report, with the bands, the sweeps and the by-hand regression check:
+`.lane-briefs/2026-09-10-fix-watch-beads.md`.
+
+### The defect, and it was a reader's defect rather than a guard's
+
+Every coverage refusal prints a clock range so a reader can check it against the video. The word
+arrays a chunk is graded on are 0-based inside that chunk, and the guard runs before
+`shift_segments` moves anything into video time, so a hole at 100.5–199.5 seconds of the second
+ten-minute request printed `1:40–3:19`. The audio it names is at `11:40–13:19`. A reader who opens
+the video at the printed range finds speech there and concludes the refusal is wrong.
+
+The offset was already computed: it is the second half of each `(path, offset)` pair
+`transcribe_chunks` iterates, and the number it shifts that chunk's own segments by a few lines
+later. It sits one frame above the `transcribe_one(path)` callable, so carrying it in widened that
+callable's contract.
+
+### The repair
+
+`offset_seconds` is threaded `transcribe_chunks` → `transcribe_one` → `_transcribe_file` →
+`_segments_from_response`, defaulting to `0.0`, and used for one thing: the two time-term refusals
+format `worst[0] + offset_seconds, worst[1] + offset_seconds`. No threshold reads it and no
+segment's times change.
+
+`retry_window` passes **`start`, not the window's own `offset`**. A retry re-decodes the same window
+from up to `DECODE_OVERLAP_SECONDS` earlier, so its times are 0-based there: on the shipped
+constants, 120.0s where the window reads 150.0s. That is the one number in this change with two
+plausible values, and it has its own test.
+
+Twenty-one test stubs took a defaulted second parameter. No assertion was weakened; a missed stub
+fails loudly with `TypeError`.
+
+### The second bead adds a test and no behaviour
+
+The rebuild branch has two doors and the guard only works behind one. With no served segments the
+claim is `0.0s`, so the share falls to its own fallback; nothing claims speech, so there are no holes
+and the longest run is `0.0s`; and the served text holds no words, so the count has no denominator.
+`words-only.json`, a real capture, takes that door. That is the intended reading — a response that
+claimed nothing cannot have fallen short of it — and it now has a test naming each of the three
+inputs, so a later session cannot arrive at it by accident.
+
+### What this round does NOT repair, and both are answered rather than filed away
+
+**The share term stays scale-relative.** `rest / claimed` forgives 4.5s in a 300s chunk and 9.0s in a
+600s one, and `OPENROUTER_MAX_SECONDS` is 600.0. Capping the tolerance in seconds as well was
+measured over 522 defect rows built from the two real captures that reach the branch: the worst shape
+escaping all three terms loses 5.61% of its words while leaving 1.090s outside its longest run, so a
+cap has to fall under 1.090s to move the worst escape at all — and the healthy captures measure
+0.560s and 0.610s there. A cap tight enough to bite sits 1.2x above a real capture. Dropped. What
+changed instead is that both share pins now run at 600s, where they used to run at half of it, plus
+a third test that shows the same 5.0s of scattered speech refused in a 300s chunk and written in a
+600s one.
+
+**A looping decode stays invisible.** Measured rather than argued: a 5-gram repeat rate over the
+rebuilt text puts real speech at 0.00000–0.09007 across 43 chunk-sized windows, and constructed
+loops start at 0.05559 with 74 of 1,462 words replaced. The bands touch, and both edges are real —
+the healthy edge is a speaker saying *"and that's the key and that's the key"* nine times. Song-shaped
+content built from real words reaches 0.396, inside the loop band, so any threshold that catches the
+defect refuses a music video, and one refused chunk fails the whole run. Nothing was built.
+`yt_notes-o182` stays open with the measurements.
+
+### The rows
+
+Driver `/tmp/wmutate/mutate.py`, `PYTHONDONTWRITEBYTECODE=1`. The product file is edited in place and
+restored from bytes held in memory inside a `try/finally`; its sha256 is asserted equal to
+`3708c83de6c4754e037874864d48a4e760f957fc9bb8d4539e77da0a0e37bcf7` after every row, and the pass
+opens and closes at `exit 0, red none`. Node set: `python3 -m pytest -q tests/test_whisper.py`.
+
+| # | mutation | tests that went red | verdict |
+|---|---|---|---|
+| 36 | the offset dropped from the two refusal spans | `test_a_refusal_in_a_later_chunk_names_video_time`, `test_the_openrouter_arm_carries_the_offset_to_the_guard` | PINNED |
+| 37 | `transcribe_chunks` stops handing the offset down | those two, plus `test_a_retried_window_is_told_its_own_offset` | PINNED |
+| 38 | the retry named the window's offset instead of its own | `test_a_retried_window_is_told_its_own_offset` | PINNED |
+| 39 | the openrouter arm stops passing the offset on | `test_the_openrouter_arm_carries_the_offset_to_the_guard` | PINNED |
+| 40 | `_transcribe_file` stops passing the offset it was handed | `test_a_retried_window_is_told_its_own_offset` | PINNED |
+| 41 | the no-segments door made to fire (`… if claimed else 1.0`) | `test_no_served_segments_leaves_every_term_with_nothing_to_grade`, `test_three_words_and_no_segments_are_still_written`, and the two older no-segment tests | PINNED |
+| 42 | `WORD_COVERAGE_HOLE_SHARE = 0.017` | `test_a_coverage_share_just_over_the_threshold_refuses`, `test_the_same_lost_seconds_are_refused_at_300s_and_written_at_600s`, `test_a_repeated_segment_does_not_claim_the_same_seconds_twice` | PINNED |
+| 43 | `WORD_COVERAGE_HOLE_SHARE = 0.013` | `test_a_coverage_share_just_under_the_threshold_is_rebuilt` | PINNED |
+
+Rows 39 and 40 exist because the first pass of this table returned row 39 UNASSERTED: the offset
+survived `_transcribe_file` with nothing testing that it did.
+`test_the_openrouter_arm_carries_the_offset_to_the_guard` was written for it, and it is the third
+time in this document that a clause reached a table before it reached a test.
+
+### Verification
+
+| command | result | exit |
+|---|---|---|
+| `python3 -m pytest -q tests/test_whisper.py` (baseline, before any edit) | `130 passed in 0.71s` | 0 |
+| `BUGPROOF=CONFIRMED_BUG python3 -m pytest -q tests/test_whisper.py -k test_a_refusal_in_a_later_chunk_names_video_time` (test written, code not) | red: `TypeError: _segments_from_response() got an unexpected keyword argument 'offset_seconds'` | 1 |
+| `python3 -m pytest -q tests/test_whisper.py -k TestTheNoSegmentEntryIsInertOnPurpose` under the `else 1.0` mutation | `2 failed` | 1 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 1) | `137 passed in 0.77s` | 0 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 2) | `137 passed in 0.75s` | 0 |
+| `python3 /tmp/wmutate/mutate.py` | eight rows, all PINNED, file restored and re-verified `exit 0, red none` | 0 |
+| `python3 -m pytest -q` (full suite, once) | `2034 passed, 6 skipped in 637.45s` | 0 |
+
+Product-code diff: 60 lines added, 14 removed, against a budget of 200.
+
+### What this round does NOT prove
+
+No live transcription ran. Item 4's healthy band is 43 chunk-sized windows over roughly eight
+distinct videos, all English talk — no music, chant or list is captured on this machine, and the
+song-shaped counter-examples are built from real words rather than captured. The two real looping
+decodes on this machine survive only as renderings and carry no word array, so the defect side of any
+word-level statistic is still constructed. Four of the six word arrays in `tests/fixtures/openrouter/`
+are redacted to the literal token `word`, which is correct for a public fork and means no text-level
+term can ever be regression-tested against them.
