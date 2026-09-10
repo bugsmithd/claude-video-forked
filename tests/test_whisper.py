@@ -1593,6 +1593,31 @@ class TestWordCountAgainstServedText:
         segments = whisper._segments_from_response(data, allow_untimed=False)
         assert segments, "the chunk must be rebuilt, not refused"
 
+    def test_entries_the_rebuild_discards_do_not_count_toward_the_line(self):
+        """Fails if the count comes from the array rather than the rebuild.
+
+        `segments_from_words` drops an entry carrying no text, deliberately,
+        so one malformed word never costs the chunk it sits in. An array
+        padded with such entries therefore reads full length at this line
+        while the transcript comes out short by every one of them, and the
+        time terms see nothing because each dropped word's neighbours still
+        cover its second. Here 1,200 entries against 1,260 words of served
+        text clear 0.95, 150 of them carry no text, and 1,050 words reach the
+        transcript where the response transcribed 1,200.
+        """
+        data = _padded_text(
+            _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                          _words_covering(0.0, 300.0)), 1260)
+        for i in range(150):
+            at = i * len(data["words"]) // 150
+            data["words"][at] = dict(data["words"][at], word="")
+        assert (len(data["words"]) / _served_words(data)
+                >= whisper.WORD_COVERAGE_MIN_WORD_RATIO), \
+            "the array must still read full, or this proves nothing"
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "own text holds" in str(caught.value), caught.value
+
 
 class TestSegmentSpanIgnoresListOrder:
     """A response's own span, measured from its times rather than its order.

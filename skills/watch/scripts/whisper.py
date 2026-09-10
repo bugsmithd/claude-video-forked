@@ -1025,17 +1025,27 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
             # WORD_COVERAGE_MIN_WORD_RATIO. `served_words` is 0 when the
             # response carried no segments at all, and then there is no count
             # to grade against.
+            #
+            # COUNT WHAT THE REBUILD WRITES, NOT WHAT THE ARRAY CARRIES.
+            # `segments_from_words` drops an entry with no text or no usable
+            # times on purpose, so one malformed word never costs the chunk it
+            # sits in. Counting `data["words"]` here read those dropped entries
+            # as delivered speech: 1,200 entries against 1,260 words of served
+            # text clears this line while 150 of them carry no text and only
+            # 1,050 words reach the transcript, each dropped word's second
+            # still covered by its neighbours so no time term fires either.
             served_words = sum(len(seg["text"].split()) for seg in out)
-            if served_words and len(data["words"]) < (
+            rebuilt_words = sum(len(seg["text"].split()) for seg in regrouped)
+            if served_words and rebuilt_words < (
                     WORD_COVERAGE_MIN_WORD_RATIO * served_words):
                 raise SystemExit(
-                    f"the response carried {len(data['words'])} word "
-                    f"timestamps for a rendering whose own text holds "
-                    f"{served_words} words, so rebuilding from them would "
-                    f"drop speech the response itself transcribed while still "
-                    f"reporting a segment count. The segments are too coarse "
-                    f"to anchor (a typical {median:.0f}s), so this chunk is "
-                    f"refused rather than written.")
+                    f"rebuilding the response's word timestamps would write "
+                    f"{rebuilt_words} words for a rendering whose own text "
+                    f"holds {served_words} words, so it would drop speech the "
+                    f"response itself transcribed while still reporting a "
+                    f"segment count. The segments are too coarse to anchor (a "
+                    f"typical {median:.0f}s), so this chunk is refused rather "
+                    f"than written.")
             print(f"[watch] the response carried {len(out)} segment(s) at a "
                   f"typical {median:.0f}s, which cannot be anchored — "
                   f"rebuilding {len(regrouped)} segments from "

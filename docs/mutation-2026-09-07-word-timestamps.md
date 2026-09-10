@@ -489,3 +489,78 @@ reads segment TEXT.** Its text is twelve identical 60-token placeholder blocks
 and its words belong to a different chunk. A real coarse response with its text
 intact is worth more than another threshold: `DEFER:yt_notes-66wk`, widened to
 save the served text and not only the word array.
+
+## Round 7, 2026-09-10 — the term counted entries the rebuild throws away
+
+A refutation of round 6 confirmed the finding it was pointed at, on a real
+capture rather than a construction. Report:
+`.lane-briefs/2026-09-10-refute-32fd8ae.md`, finding A.
+
+### What was wrong
+
+The new term's numerator was `len(data["words"])` — the length of the array the
+response carried. `segments_from_words` drops an entry with no text or no usable
+times, deliberately and by its own docstring, so one malformed word never costs
+the chunk it sits in. The term never saw that drop.
+
+So an array padded with droppable entries read full length at the line while the
+transcript came out short by every one of them, and the two time terms saw
+nothing either, because each dropped word's second is still covered by its
+neighbours once spans are widened. On `~/rung4-corpus/_driver/diagnose/chunk_000-full.json`
+— a real capture, 1,462 entries against 1,450 words of served text — 85 blanked
+entries, 5.81% and above that capture's own 5.78% declared floor, were accepted
+and 1,377 words written. It was not bounded by the floor: 292 entries (19.97%)
+and 731 entries (50.00%) were accepted too.
+
+### The repair
+
+Count what the rebuild writes rather than what the array carries:
+`rebuilt_words = sum(len(seg["text"].split()) for seg in regrouped)`. `regrouped`
+is computed ten lines above the guard and is what the function returns, so the
+count now measures the transcript that will be written. The threshold did not
+move and the design was not reopened.
+
+Verified against the same real capture, read-only: 85, 292 and 731 blanked
+entries all REFUSE, each naming the word count it would have written.
+
+### What this round does NOT repair, and it is filed rather than fixed
+
+**A looping decode.** Every entry valid, the array length unchanged, the times
+still covering every second the segments claim, and real speech replaced by
+repeats of its neighbours: 731 of 1,462 words replaced is accepted and 1,462
+words are written. All three terms measure DELIVERY, not distinctness, so none of
+them can see substitution. Detecting it needs a different signal. Filed as
+`yt_notes-o182`.
+
+### The rows
+
+Same driver and same discipline as round 6, on an rsync copy at `/tmp/r4/tree7`
+with `.git` excluded, `PYTHONDONTWRITEBYTECODE=1`, the copy asserted
+byte-identical before each row and restored after it. Node set:
+`python3 -m pytest -q tests/test_whisper.py`.
+
+| # | mutation | tests that went red | verdict |
+|---|---|---|---|
+| 34 | numerator back to `len(data["words"])` | `test_entries_the_rebuild_discards_do_not_count_toward_the_line` | PINNED |
+| 35 | the whole word-count clause deleted | that one plus `test_a_capture_thinned_one_window_further_refuses_the_chunk`, `test_a_single_stamp_spanning_the_chunk_refuses_it`, `test_a_word_count_just_under_the_line_refuses` | PINNED |
+
+Row 34 is the one that matters: it is the defect this round repairs, and before
+the repair the suite was green with it in place.
+
+### Verification
+
+| command | result | exit |
+|---|---|---|
+| `python3 -m pytest -q tests/test_whisper.py -k entries_the_rebuild_discards` (test written, code not) | `1 failed` — `DID NOT RAISE SystemExit` | 1 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 1) | `130 passed in 0.66s` | 0 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 2) | `130 passed in 0.65s` | 0 |
+| `python3 -m pytest -q` (full suite, once) | `2027 passed, 6 skipped in 642.01s` | 0 |
+| `python3 /tmp/r4/mutate_round7.py` | two rows, both PINNED, copy restored and re-verified `130 passed` | 0 |
+
+### What this round does NOT prove
+
+No live transcription ran. The three shapes finding A used — text blanked, start
+nulled, entries repeated — are all constructed; no capture on this machine
+carries a text-less or time-less entry, measured 0 of 5,843 entries across nine
+artifacts. The rebuilder's own docstring says the shape is expected in the wild,
+which is why it is repaired rather than argued with.
