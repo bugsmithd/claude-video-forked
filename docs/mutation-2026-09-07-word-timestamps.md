@@ -372,3 +372,120 @@ Every defect shape above is constructed or built by deleting words from a real
 capture — a truncated or thinned word array has still never been captured from
 this endpoint, in either direction. The healthy side of the run threshold is
 still one audio source.
+
+## Round 6, 2026-09-10 — both terms read time, so a third reads words
+
+Implementing the design frozen at user FINAL SAY on 2026-09-10 and recorded in
+the project ADR under `DECISION 2026-09-10`. The measurements behind it are
+`.lane-briefs/2026-09-10-design-coverage-statistic.md`, sections
+`WHAT I RECOMMEND` and `DETECTION FLOOR`. This round adds one term; it replaces
+nothing.
+
+### What was wrong, and again it was not the number
+
+Round 5 split one summed slack into a longest word-free run and a share of the
+claim outside it. Both terms read TIME. A decode that THINS rather than
+truncates keeps the time covered while the words go, so moving round 5's own
+deletion window one step walks straight past both:
+
+```
+tests/fixtures/openrouter/coarse-reconstructed.json
+  0.80s of every 1.60s deleted -> 562 of 1,085 words gone
+     -> run 1.70s, share 4.38%  -> REFUSED   (round 5's regression test)
+  0.60s of every 1.60s deleted -> 423 of 1,085 words gone
+     -> run 1.45s, share 1.25%  -> ACCEPTED, 142 segments written
+```
+
+Three rounds in a row now, the shipped guard has refused the case its own test
+names and accepted the same shape one window away from it.
+
+### The term this round adds
+
+A rendering too coarse to ANCHOR still says how many words it HEARD, in its own
+text. So the word array is graded against that count and not against the clock:
+
+> Refuse the rebuild when `len(data["words"]) < 0.95 × sum(len(seg["text"].split())
+> for seg in out)`.
+
+Both inputs were already in hand at the call site. The run term and the share
+term are kept, because the run term catches the late-start shape the ratio
+cannot see — `coarse-reconstructed.json` with its first minute of words removed
+leaves 844 words at a ratio of 1.1722, which the ratio accepts and the run term
+refuses. Verified by hand this round, not inferred from a test name.
+
+**It is a filter, not a separator, and that is written beside the constant.** A
+design lane measured 23 candidate statistics over 828 constructed defect rows
+and found every band touching; three of the seven captures holding both arrays
+share one audio source, so the healthy side was never a population. 0.95 is the
+last setting whose false-positive margin (5.72% on the real `music-intro.json`
+capture) still exceeds its own detection floor (5.78%).
+
+### The declared floor
+
+| capture reaching the branch | baseline | blind below | in words | in seconds |
+|---|---|---|---|---|
+| `diagnose/chunk_000-full` (1,462 words of served text, 502.0s claimed) | 1.0083 | 5.78% of words | 85 | 29.0s |
+| `fixtures/music-intro` (229 words of served text, 102.1s claimed) | 1.0044 | 5.41% of words | 12 | 5.5s |
+
+Below that, the term sees nothing, and a defect constructed underneath it is the
+design working as written rather than a refutation of it. What round 5 shipped
+has a floor of 32.1% — 469 words.
+
+### The rows
+
+Applied one at a time to an rsync copy of the working tree at `/tmp/fix95/tree`
+with `.git` excluded; `skills/watch/scripts/whisper.py` in the repository under
+test was never opened for writing. The copy is asserted byte-identical to the
+original before each row and restored after it, and the pass ends at the same
+`129 passed` it started with. Node set: `python3 -m pytest -q tests/test_whisper.py`.
+
+| # | mutation | tests that went red | verdict |
+|---|---|---|---|
+| 30 | `WORD_COVERAGE_MIN_WORD_RATIO = 0.97` | `test_a_word_count_just_over_the_line_is_rebuilt` | PINNED |
+| 31 | `WORD_COVERAGE_MIN_WORD_RATIO = 0.93` | `test_a_word_count_just_under_the_line_refuses` | PINNED |
+| 32 | the word-count term made unreachable (`if False and …`) | `test_a_capture_thinned_one_window_further_refuses_the_chunk`, `test_a_single_stamp_spanning_the_chunk_refuses_it`, `test_a_word_count_just_under_the_line_refuses` | PINNED |
+| 33 | the whole clause deleted, comment and all | the same three | PINNED |
+
+Four rows, four PINNED. Rows 30 and 31 are the both-sides pin the GATE asks for:
+a later session moving the constant one step in either direction turns a test
+red. Row 33 is the GATE's own check — a clause whose deletion leaves the suite
+green is not done, and three such clauses shipped in this file a week ago.
+
+**A mutation driver that reuses `.pyc` files reports the previous row's
+verdict.** Two settings of the same constant differ by neither file size nor,
+inside one second, mtime, so CPython served row 31 the module it compiled for
+row 30 and the pass printed row 30's red test twice. The driver now runs with
+`PYTHONDONTWRITEBYTECODE=1`. Any future pass over a numeric constant needs the
+same.
+
+### Verification
+
+| command | result | exit |
+|---|---|---|
+| `python3 -m pytest -q tests/test_whisper.py` (before the code) | `124 passed` | 0 |
+| `python3 -m pytest -q tests/test_whisper.py::TestWordCountAgainstServedText` (tests written, code not) | `5 failed` — three `DID NOT RAISE SystemExit`, two `AttributeError: module 'whisper' has no attribute 'WORD_COVERAGE_MIN_WORD_RATIO'` | 1 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 1) | `129 passed in 0.59s` | 0 |
+| `python3 -m pytest -q tests/test_whisper.py` (GATE, run 2) | `129 passed in 0.57s` | 0 |
+| `python3 -m pytest -q` (full suite, once) | `2026 passed, 6 skipped in 565.14s` | 0 |
+| `python3 /tmp/fix95/mutate.py` | four rows, all PINNED, copy restored and re-verified `129 passed` | 0 |
+
+### What this round does NOT prove
+
+No live transcription ran. Every defect shape is still constructed or built by
+deleting words from a real capture, so the defect population remains
+hypothetical exactly as it was in rounds 3 and 5.
+
+**One test the frozen design asked for is not here, and the reason is
+arithmetic.** The brief named `coarse-reconstructed.json` thinned at 0.45s of
+every 1.60s — 321 of 1,085 words gone — as a case that must REFUSE. It does not,
+and cannot at 0.95. That fixture is a RECONSTRUCTION whose placeholder segment
+text holds 720 words against 1,085 stamps, a baseline of 1.5069, so the term is
+blind there to any loss under 37% — 401 words. 321 is under it; 423 (the case
+above) is over it, which is why the test that ships is the one that ships. The
+design report states this blind spot itself. The threshold was not moved.
+
+**`coarse-reconstructed.json` should not be the fixture pinning a term that
+reads segment TEXT.** Its text is twelve identical 60-token placeholder blocks
+and its words belong to a different chunk. A real coarse response with its text
+intact is worth more than another threshold: `DEFER:yt_notes-66wk`, widened to
+save the served text and not only the word array.

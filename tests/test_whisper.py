@@ -1469,6 +1469,131 @@ class TestWordCoverageIsTwoTerms:
         assert "no word in them" in str(caught.value), caught.value
 
 
+def _served_words(data: dict) -> int:
+    """Words in the served rendering's own text, the way the guard counts them."""
+    return sum(len(seg["text"].split()) for seg in data["segments"]
+               if seg["text"].strip())
+
+
+def _padded_text(data: dict, token_count: int) -> dict:
+    """The same response with its served text padded to `token_count` words.
+
+    The two-sided pin needs a denominator it can place either side of the
+    line, and no captured response sits close enough to 0.95 to do that.
+    Every segment keeps its times, so the coverage terms read exactly what
+    they read before.
+    """
+    per, extra = divmod(token_count, len(data["segments"]))
+    for index, seg in enumerate(data["segments"]):
+        seg["text"] = " ".join(["word"] * (per + (1 if index < extra else 0)))
+    return data
+
+
+class TestWordCountAgainstServedText:
+    """The words are counted against the served rendering's own TEXT.
+
+    The 2026-09-10 refutation of `ce12038`: both coverage terms read TIME, and
+    a decode that thins rather than truncates keeps the time covered while the
+    words go. Moving the deletion window one step -- 0.60s out of every 1.60s
+    rather than 0.80s -- dropped 423 of a capture's 1,085 words and both terms
+    passed it. A third term reads the one number the response supplies about
+    itself: a rendering too coarse to anchor still says how many words it
+    heard, and a word array a tenth that size did not hear them.
+
+    Not a separator, and it is not shipped as one. The design lane measured 23
+    candidate statistics over 828 defect rows and found every band touching
+    (`.lane-briefs/2026-09-10-design-coverage-statistic.md`). This is a filter
+    priced for what it costs an attacker, with a floor written beside the
+    constant.
+    """
+
+    def test_a_capture_thinned_one_window_further_refuses_the_chunk(self):
+        """Fails while the guard reads time only: 423 real words leave at exit 0.
+
+        The defect that forced this round. `coarse-reconstructed.json` with
+        0.60s deleted out of every 1.60s keeps 662 of 1,085 words, leaves a
+        longest run of 1.45s and 1.25% of the claim outside it -- under both
+        shipped thresholds -- and is written. Against the served text's 720
+        words it is 0.9194, under the 0.95 line.
+        """
+        data = _fixture("coarse-reconstructed")
+        kept = _thinned(data["words"], 0.60, 1.60)
+        assert len(data["words"]) - len(kept) == 423, len(kept)
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(dict(data, words=kept),
+                                            allow_untimed=False)
+        assert "own text holds" in str(caught.value), caught.value
+
+    def test_a_single_stamp_spanning_the_chunk_refuses_it(self):
+        """Fails for both time terms: one malformed stamp hides 254s of audio.
+
+        Shape F5, carried open through two refutations. A word stamped
+        0.10-299.90 groups alone, covers every second the served rendering
+        claims, and takes the longest run to 0.00s and the share to 0.000%
+        while the real words reach only 0-30s. Counting words instead reads
+        121 against 720: 0.1681.
+        """
+        data = _fixture("coarse-reconstructed")
+        head = [word for word in data["words"] if float(word["start"]) <= 30.0]
+        words = head + [{"word": "x", "start": 0.10, "end": 299.90}]
+        rebuilt = whisper.segments_from_words(words)
+        holes = whisper.word_coverage_holes(
+            [{"start": round(float(seg["start"]), 2),
+              "end": round(float(seg["end"]), 2), "text": seg["text"]}
+             for seg in data["segments"]], rebuilt)
+        assert not holes, "the stamp must hide the hole, or this proves nothing"
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(dict(data, words=words),
+                                            allow_untimed=False)
+        assert "own text holds" in str(caught.value), caught.value
+
+    def test_the_music_intro_capture_clears_the_word_count_line(self):
+        """Fails if the ratio rises past 1.0044: a real capture is refused.
+
+        The false positive that costs the most. `music-intro.json` is a real
+        response, 230 words against 229 words of served text, and it clears
+        0.95 by 5.72%. Every capture on this machine clears it; this is the
+        narrowest of them and so the one that goes first.
+        """
+        data = _fixture("music-intro")
+        margin = len(data["words"]) / _served_words(data)
+        assert margin == pytest.approx(1.0044, abs=0.0001), margin
+        assert whisper.WORD_COVERAGE_MIN_WORD_RATIO <= margin, margin
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert segments, "the chunk must be rebuilt, not refused"
+
+    def test_a_word_count_just_under_the_line_refuses(self):
+        """Fails if WORD_COVERAGE_MIN_WORD_RATIO moves down: thinning is invisible.
+
+        The lower pin. 1,200 words against 1,264 words of served text is
+        0.9494, and the words cover every second the segments claim, so
+        neither time term fires and this ratio is the only thing that can.
+        """
+        data = _padded_text(
+            _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                          _words_covering(0.0, 300.0)), 1264)
+        assert len(data["words"]) / _served_words(data) < 0.95
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "own text holds" in str(caught.value), caught.value
+
+    def test_a_word_count_just_over_the_line_is_rebuilt(self):
+        """Fails if WORD_COVERAGE_MIN_WORD_RATIO moves up: real captures refuse.
+
+        The upper pin, four words of served text away from the lower one.
+        1,200 against 1,260 is 0.9524, and a rendering whose words are all
+        there must not be refused for a rounding difference in how a provider
+        splits its own text.
+        """
+        data = _padded_text(
+            _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                          _words_covering(0.0, 300.0)), 1260)
+        ratio = len(data["words"]) / _served_words(data)
+        assert whisper.WORD_COVERAGE_MIN_WORD_RATIO <= ratio < 0.96, ratio
+        segments = whisper._segments_from_response(data, allow_untimed=False)
+        assert segments, "the chunk must be rebuilt, not refused"
+
+
 class TestSegmentSpanIgnoresListOrder:
     """A response's own span, measured from its times rather than its order.
 

@@ -214,6 +214,52 @@ WORD_SEGMENT_MIN_SECONDS = 1.0
 WORD_COVERAGE_RUN_SECONDS = 25.0
 WORD_COVERAGE_HOLE_SHARE = 0.015
 
+# THE THIRD TERM READS WORDS, NOT SECONDS, and it exists because both terms
+# above read TIME. A decode that THINS rather than truncates keeps the time
+# covered while the words go: `coarse-reconstructed.json` with 0.60s deleted
+# out of every 1.60s loses 423 of its 1,085 words and leaves a longest run of
+# 1.45s and 1.25% of the claim outside it -- inside both thresholds, written
+# without a word of complaint. Moving that window one step (0.80s of 1.60s) is
+# the case the pair DOES catch, which is how three rounds of tuning each
+# shipped a defect one window away from its own regression test.
+#
+# A rendering too coarse to anchor still says how many words it heard, in its
+# own text. So the words are graded against that count rather than against the
+# clock: fewer than 0.95 word stamps per word of served text and the rebuild is
+# refused.
+#
+# SAY PLAINLY WHAT THIS IS. It is a FILTER, chosen for what it costs an
+# attacker, and it is NOT a separator. Measured 2026-09-10 over 23 candidate
+# statistics and 828 constructed defect rows, NO statistic over these two
+# arrays separates a healthy capture from a thinned one on the artifacts this
+# machine holds -- every candidate's band touches, and three of the seven
+# captures share one audio source, so the healthy side was never a population
+# (`.lane-briefs/2026-09-10-design-coverage-statistic.md`). A later session
+# must not read 0.95 as a proven boundary.
+#
+# THE DECLARED FLOOR IS PART OF THE DESIGN, not a defect awaiting another
+# round. The ratio of a thinned array is `baseline x (1 - loss)`, so this term
+# is blind to every loss under `1 - 0.95/baseline`. On the real capture that
+# reaches this branch (1,462 words of served text, 502.0s claimed, baseline
+# 1.0083) that is 5.78% OF A CHUNK'S WORDS -- 85 words and 29.0s of claimed
+# speech in a ten-minute chunk. Underneath that, this term sees nothing. What
+# ships without it has a floor of 32.1%, 469 words.
+#
+# 0.95 IS THE LAST SETTING WHOSE FALSE-POSITIVE MARGIN STILL EXCEEDS ITS OWN
+# FLOOR: `music-intro.json`, a real capture, clears it by 5.72% against a floor
+# of 5.78%. 0.90 buys an 11.60% margin for a 10.7% floor; past 1.004 the music
+# intro is refused outright. Every capture on this machine is accepted, so the
+# false-positive cost measured here is zero chunks.
+#
+# VALID ONLY WHILE THE SERVED TEXT IS COMPLETE. It assumes a provider whose
+# segment TIMES are too coarse to anchor still returns whole text. Four real
+# captures support that (1.0000-1.0091); `coarse-reconstructed.json` is a
+# RECONSTRUCTION whose placeholder text runs 1.5069, and on that baseline the
+# floor is 37% -- 401 words. That is the reason this is a filter and not a
+# separator, and closing it needs a capture pass that saves the served TEXT and
+# not only the word array (DEFER:yt_notes-66wk).
+WORD_COVERAGE_MIN_WORD_RATIO = 0.95
+
 # Both Groq's free tier and OpenAI whisper-1 cap uploads at 25 MB. We target a
 # margin under that so multipart framing overhead never pushes a chunk over.
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
@@ -972,6 +1018,24 @@ def _segments_from_response(data: dict, allow_untimed: bool = True) -> list[dict
                     f"The segments are too coarse to anchor (a typical "
                     f"{median:.0f}s), so this chunk is refused rather than "
                     f"written.")
+            # AND THE SAME QUESTION ASKED IN WORDS. Both terms above read
+            # time, and a decode that thins rather than truncates keeps the
+            # time covered while the words go. A filter with a declared floor,
+            # not a separator -- the reasoning is beside
+            # WORD_COVERAGE_MIN_WORD_RATIO. `served_words` is 0 when the
+            # response carried no segments at all, and then there is no count
+            # to grade against.
+            served_words = sum(len(seg["text"].split()) for seg in out)
+            if served_words and len(data["words"]) < (
+                    WORD_COVERAGE_MIN_WORD_RATIO * served_words):
+                raise SystemExit(
+                    f"the response carried {len(data['words'])} word "
+                    f"timestamps for a rendering whose own text holds "
+                    f"{served_words} words, so rebuilding from them would "
+                    f"drop speech the response itself transcribed while still "
+                    f"reporting a segment count. The segments are too coarse "
+                    f"to anchor (a typical {median:.0f}s), so this chunk is "
+                    f"refused rather than written.")
             print(f"[watch] the response carried {len(out)} segment(s) at a "
                   f"typical {median:.0f}s, which cannot be anchored — "
                   f"rebuilding {len(regrouped)} segments from "
