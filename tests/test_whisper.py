@@ -1842,6 +1842,11 @@ class TestWordCountAgainstServedText:
         with pytest.raises(SystemExit) as caught:
             whisper._segments_from_response(data, allow_untimed=False)
         assert "own text holds" in str(caught.value), caught.value
+        # The refusal alone passes for any count under 1,197, so a claim window
+        # widened to let some outside words in would still refuse here. Pin the
+        # count the docstring derives: 1,000 inside plus the two at the edge.
+        assert "would write 1002 words inside" in str(caught.value), caught.value
+        assert "holds 1260 words" in str(caught.value), caught.value
 
 
 class TestSegmentSpanIgnoresListOrder:
