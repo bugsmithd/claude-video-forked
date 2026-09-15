@@ -1069,13 +1069,20 @@ def _segments_from_response(data: dict, allow_untimed: bool = True,
             # text clears this line while 150 of them carry no text and only
             # 1,050 words reach the transcript, each dropped word's second
             # still covered by its neighbours so no time term fires either.
+            #
+            # AND COUNT IT OVER THE SAME SECONDS THE DENOMINATOR DESCRIBES.
+            # The served text speaks for the stretches its segments claim and
+            # nothing else, so a word stamped outside them answers for nothing
+            # here: 260 words after a 300s claim lifted 1,000 real ones to
+            # 1,260 against 1,260 (yt_notes-3y4c).
             served_words = sum(len(seg["text"].split()) for seg in out)
-            rebuilt_words = sum(len(seg["text"].split()) for seg in regrouped)
+            rebuilt_words = words_inside_claim(out, usable_words(data["words"]))
             if served_words and rebuilt_words < (
                     WORD_COVERAGE_MIN_WORD_RATIO * served_words):
                 raise SystemExit(
                     f"rebuilding the response's word timestamps would write "
-                    f"{rebuilt_words} words for a rendering whose own text "
+                    f"{rebuilt_words} words inside the seconds its segments "
+                    f"call speech, for a rendering whose own text "
                     f"holds {served_words} words, so it would drop speech the "
                     f"response itself transcribed while still reporting a "
                     f"segment count. The segments are too coarse to anchor (a "
@@ -1166,6 +1173,46 @@ def word_coverage_holes(served: list[dict],
     return holes
 
 
+def usable_words(words: list[dict]) -> list[dict]:
+    """The word entries a rebuild keeps, as `{start, end, text}`, in order.
+
+    One home for the rule `segments_from_words` applies: an entry with no
+    text or no usable times is dropped, so one malformed word never costs
+    the chunk it sits in. The word-count guard reads the same list, so the
+    two can never disagree about which entries are speech.
+    """
+    kept: list[dict] = []
+    for word in words:
+        text = (word.get("word") or word.get("text") or "").strip()
+        if not text:
+            continue
+        try:
+            start = float(word["start"])
+            end = float(word["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        kept.append({"start": start, "end": end, "text": text})
+    return kept
+
+
+def words_inside_claim(served: list[dict], words: list[dict]) -> int:
+    """Words the rebuild keeps that fall inside the stretches `served` calls speech.
+
+    The word-count line grades against the served rendering's own text, and
+    that text describes only the seconds its segments claim. Counting every
+    rebuilt word read words from outside the claim as delivered speech: 1,000
+    words over a 300s claim plus 260 stamped after it reached 1,260 against
+    1,260 and cleared the line. A word counts when its stamp overlaps a
+    claimed stretch widened by WORD_SEGMENT_GAP_SECONDS, the same silence
+    `word_coverage_holes` grants a rebuilt segment at each end.
+    """
+    claimed = _merge_spans((seg["start"], seg["end"]) for seg in served)
+    return sum(len(word["text"].split()) for word in words
+               if any(word["start"] < end + WORD_SEGMENT_GAP_SECONDS
+                      and word["end"] > start - WORD_SEGMENT_GAP_SECONDS
+                      for start, end in claimed))
+
+
 def segments_from_words(words: list[dict]) -> list[dict]:
     """Group word-level timestamps into segments this pipeline can anchor.
 
@@ -1178,15 +1225,8 @@ def segments_from_words(words: list[dict]) -> list[dict]:
     """
     groups: list[list[dict]] = []
     current: list[dict] = []
-    for word in words:
-        text = (word.get("word") or word.get("text") or "").strip()
-        if not text:
-            continue
-        try:
-            start = float(word["start"])
-            end = float(word["end"])
-        except (KeyError, TypeError, ValueError):
-            continue
+    for word in usable_words(words):
+        start, end = word["start"], word["end"]
         if current:
             opened = current[0]["start"]
             previous = current[-1]
@@ -1196,7 +1236,7 @@ def segments_from_words(words: list[dict]) -> list[dict]:
                         and previous["end"] - opened >= WORD_SEGMENT_MIN_SECONDS)):
                 groups.append(current)
                 current = []
-        current.append({"start": start, "end": end, "text": text})
+        current.append(word)
     if current:
         groups.append(current)
 

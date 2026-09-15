@@ -1817,6 +1817,32 @@ class TestWordCountAgainstServedText:
             whisper._segments_from_response(data, allow_untimed=False)
         assert "own text holds" in str(caught.value), caught.value
 
+    def test_words_stamped_outside_the_claim_do_not_count_toward_the_line(self):
+        """Fails while the count reads the whole rebuild instead of the claim.
+
+        The served text describes 0-300s, so only words inside that claim
+        can answer for it. 1,000 words cover 0-300s -- 0.7952 of 1,260 served
+        words once the two words touching the 0.5s edge are counted -- and
+        260 more are stamped 300-365s, where no segment claims speech.
+        Counted whole, the rebuild writes 1,260 and clears 0.95, and neither
+        time term fires because the 1,000 words touch every claimed second.
+        """
+        inside = _words_covering(0.0, 300.0, step=0.3)
+        outside = _words_covering(300.0, 365.0)
+        assert (len(inside), len(outside)) == (1000, 260), (len(inside), len(outside))
+        data = _padded_text(
+            _coarse_chunk([(0.0, 100.0), (100.0, 200.0), (200.0, 300.0)],
+                          inside + outside), 1260)
+        assert (len(data["words"]) / _served_words(data)
+                >= whisper.WORD_COVERAGE_MIN_WORD_RATIO), \
+            "the whole rebuild must read full, or this proves nothing"
+        assert not whisper.word_coverage_holes(
+            data["segments"], whisper.segments_from_words(inside)), \
+            "the inside words must leave no hole, or a time term answers instead"
+        with pytest.raises(SystemExit) as caught:
+            whisper._segments_from_response(data, allow_untimed=False)
+        assert "own text holds" in str(caught.value), caught.value
+
 
 class TestSegmentSpanIgnoresListOrder:
     """A response's own span, measured from its times rather than its order.
