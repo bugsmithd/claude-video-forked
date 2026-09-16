@@ -1,7 +1,7 @@
 ---
 name: watch
-version: "0.7.1"
-description: Watch a video (URL or local path) and answer questions about it, or write a keepable note from it. Downloads with yt-dlp, samples second-stamped frames with ffmpeg, and transcribes from captions or Whisper (OpenRouter, Groq, OpenAI, local whisper.cpp). Use `--detail transcript` for no frames, `--no-captions` to decode the audio instead of trusting a caption track, `--whisper openrouter` to pick the backend by name, and `--make-note` for a durable run with a `run.json` a note's claims can be checked against. Fork of bradautomates/claude-video.
+version: "0.7.2"
+description: Watch a video (URL or local path) and answer questions about it, or write a keepable note from it. Downloads with yt-dlp, samples second-stamped frames with ffmpeg, and transcribes from captions or Whisper (OpenRouter, Groq, OpenAI, local whisper.cpp). Use `--detail transcript` for no frames, `--no-captions` to decode the audio instead of trusting a caption track, `--whisper openrouter` to pick the backend by name, and `--make-note` for a durable run with a `run.json` a note's claims can be checked against. A `--make-note` note is not finished until `watch-audit` passes it and the three review lanes in `REVIEW.md` — facts, quality, coverage — have each run at `xhigh` reasoning effort; that is part of building the note, not an optional extra. Fork of bradautomates/claude-video.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read, AskUserQuestion
 homepage: https://github.com/bugsmithd/claude-video-forked

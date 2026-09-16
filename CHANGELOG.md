@@ -6,6 +6,17 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.2] — 2026-09-16
+
+### Fixed
+- **The description named the flags but not the rule that governs them.** A
+  reader deciding whether to run `--make-note` saw the durable run and the
+  `run.json` and nothing saying the note is unfinished until `watch-audit`
+  passes and the three lanes of `REVIEW.md` have each run at `xhigh`. That rule
+  is already in `NOTE.md:99`, `SKILL.md` and `REVIEW.md`; it now also survives
+  the one line most readers stop at, which is where a cheap reading of the cost
+  used to win.
+
 ## [0.7.1] — 2026-09-16
 
 ### Fixed
