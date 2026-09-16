@@ -6,6 +6,28 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.3] — 2026-09-16
+
+watch-quality 0.5.1.
+
+### Fixed
+- **`E-WIN-OVERFULL` refused honest recordings for talking faster.** The check
+  compared the biggest window's segment count against twice an even split, so a
+  6.6-hour course with one 2.1x-dense stretch and a 38-minute talk with a dense
+  cold open were both reported as unsplit plans although both split in time. It
+  now refuses by what density cannot move: more than half of a window's members
+  spanning longer than a window, one window holding over 90% of segments within
+  half the recording, or members whose stamps claim more than three times the
+  seconds they reach. A replay of 998 corrupted transcripts the old rule refused
+  accepts none of them, and 400 honest plans are refused by none. Below six
+  stacked segments in a window the third arm sees nothing; that floor is
+  declared, not a defect.
+- **Stacked-stamp refusals now say what is wrong** — the stamps overlap —
+  instead of claiming the plan did not split.
+- **Two real video ids in tracked prose** (comments, docstrings, fixture
+  provenance, one doc) failed the repository's own corpus scan; they now read
+  "video A" and "video B".
+
 ## [0.7.2] — 2026-09-16
 
 ### Fixed
