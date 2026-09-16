@@ -6,6 +6,18 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.1] — 2026-09-16
+
+### Fixed
+- **The skill's own frontmatter was three releases stale**, so the one line a
+  reader sees before invoking `/watch` still described captions and a Whisper
+  fallback and nothing else: no note mode, no transcript-only detail, no way to
+  name the backend. `version:` also read `0.2.0` while the plugin read `0.7.0`,
+  and `homepage`, `repository` and `author` still pointed at upstream rather
+  than this fork. The description now names `--detail transcript`,
+  `--no-captions`, `--whisper openrouter` and `--make-note`, which is where a
+  reader looks for them.
+
 ## [0.7.0] — 2026-09-16
 
 ### Added

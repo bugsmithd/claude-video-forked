@@ -1,12 +1,12 @@
 ---
 name: watch
-version: "0.2.0"
-description: Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or Whisper API fallback), and hands the result to Claude so it can answer questions about what's in the video.
+version: "0.7.1"
+description: Watch a video (URL or local path) and answer questions about it, or write a keepable note from it. Downloads with yt-dlp, samples second-stamped frames with ffmpeg, and transcribes from captions or Whisper (OpenRouter, Groq, OpenAI, local whisper.cpp). Use `--detail transcript` for no frames, `--no-captions` to decode the audio instead of trusting a caption track, `--whisper openrouter` to pick the backend by name, and `--make-note` for a durable run with a `run.json` a note's claims can be checked against. Fork of bradautomates/claude-video.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read, AskUserQuestion
-homepage: https://github.com/bradautomates/claude-video
-repository: https://github.com/bradautomates/claude-video
-author: bradautomates
+homepage: https://github.com/bugsmithd/claude-video-forked
+repository: https://github.com/bugsmithd/claude-video-forked
+author: Divyanshu Rathore
 license: MIT
 user-invocable: true
 ---
