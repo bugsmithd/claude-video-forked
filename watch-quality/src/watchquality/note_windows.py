@@ -54,37 +54,52 @@ WINDOW_SECONDS = 600.0
 # windows and reconciled at merge. Below about a minute a sentence can begin in
 # one window and land its point in the next with neither having both halves.
 OVERLAP_SECONDS = 90.0
-# One window holding more than its share of a multi-window plan means the split
-# did not happen. An adversarial lane produced it by setting every segment's
-# start to zero: window 1 took all 360 segments over a full hour, which is
-# exactly the single overloaded context the windows exist to prevent, reported
-# as a clean plan of seven windows.
+# One window holding speech that is not its own means the split did not happen.
+# An adversarial lane produced it by setting every segment's start to zero:
+# window 1 took all 360 segments over a full hour, which is exactly the single
+# overloaded context the windows exist to prevent, reported as a clean plan of
+# seven windows.
 #
-# WHAT A WINDOW HOLDS is the quantity that costs an agent its context, and two
-# earlier versions of this rule measured something else. A flat half over the
-# member count fired on a recording whose middle simply talks faster, because
-# windows overlap by design and the shares of a three-window plan sum to about
-# 115% while the arithmetic floor for the largest of three is already 33%
-# (V2-3a). Counting only what a window owns ALONE fixed that and opened a
-# hole a lane walked straight through: where every window holds every segment,
-# no window owns anything alone, so seven windows each holding 96% of an hour
-# passed (round-14 F3), and a recording with a quiet middle failed for having
-# a window whose exclusive stretch was silent (round-14 F6).
+# THREE EARLIER VERSIONS OF THIS RULE COUNTED SEGMENTS, and how many segments a
+# window holds moves with how fast somebody talks. A flat half over the member
+# count fired on a recording whose middle simply talks faster (V2-3a).
+# Counting only what a window owns ALONE passed seven windows each holding 96%
+# of an hour, because where every window holds every segment none owns anything
+# alone (round-14 F3), and failed a quiet middle whose exclusive stretch was
+# silent (round-14 F6). Twice an even split's share refused two real plans that
+# had split: a 6.6-hour course whose densest window held 236 of 4,399 segments
+# at 2.1 times the average density, and a dense cold open holding 175 of 345.
 #
-# So the share is compared against what an EVEN split of this plan would give.
-# A segment lands in at most two windows, so an even split puts about
-# `(1 + overlap/stride) / windows` of them in each; twice that is the ceiling,
-# and OVERFULL_CEILING caps it so a two-window plan is not left unguarded.
-OVERFULL_SLACK = 2.0
+# SO THE RULE READS A SEGMENT'S OWN SPAN, which density cannot move: faster
+# speech makes more segments and shorter ones, never one longer than a window.
+# A segment stamped across more than `--window` seconds is SPREAD -- no window
+# can hold it locally -- and a window whose members are mostly spread holds
+# speech that is not its own. It counts everything the window HOLDS, not what
+# it owns alone (round-14 F3). No segment in the 14 rung-4 renderings runs past
+# 34 seconds.
+#
+# ONE DENSITY REFUSAL IS KEPT ON PURPOSE: a window holding more than
+# OVERFULL_CEILING of all segments inside at most half of the recording. That
+# is nine times the density of the rest of the recording or more, which neither
+# corpus case comes near (2.2 and 2.9) and a recording that front-loads 500 of
+# its 540 segments into eight minutes does (64) -- a known false positive, kept
+# and bounded by that floor.
 OVERFULL_CEILING = 0.9
-
-
-def overfull_share(windows: int, window_seconds: float,
-                   overlap_seconds: float) -> float:
-    """The share of segments one window may hold before the split is a fiction."""
-    stride = max(window_seconds - overlap_seconds, 1e-9)
-    even = (1.0 + overlap_seconds / stride) / max(windows, 1)
-    return min(even * OVERFULL_SLACK, OVERFULL_CEILING)
+# COUNTING SPREAD MEMBERS MISSED STACKED ONES. Seventy segments stamped
+# `[10i, 700]` are mostly shorter than a window. So were the members of 76
+# corrupted transcripts (pushed ends, zeroed starts) out of 1,440 in a seeded
+# replay, which the density rule refused and the count passed.
+#
+# SO THE RULE ALSO ADDS UP THE SECONDS a window's members claim, and compares
+# them with the seconds those members reach, first start to last end. Speech
+# tiles time: faster speech makes more segments and shorter ones, and the sum
+# stays at or under the reach whatever the density. It is 1.0 or under on
+# every window planned over the 11 rung-4 renderings long enough to split and
+# 355 caption files on this machine, and one segment stamped across the whole
+# reach adds at most 1.0 more. In the biggest window of every replayed
+# corruption the density rule refused, the members claimed 14 times their
+# reach or more. Above STACKED_CEILING they sit on top of each other.
+STACKED_CEILING = 3.0
 
 
 # Orphans printed one by one before the rest are counted. Ten names the problem;
@@ -510,17 +525,8 @@ def main(argv: list[str] | None = None) -> int:
             f"[00:00] E-WIN-TIMELESS {distinct_starts} distinct start time(s) "
             f"across {len(segments)} segments; this transcript has no usable "
             f"timeline, so any window plan over it is arithmetic on one number")
-    # WHAT A WINDOW OWNS ALONE, not what it holds. Windows overlap by design,
-    # so a member count double-counts every segment at a seam: the shares of a
-    # three-window plan sum to about 115%, and against a flat half that made a
-    # recording whose middle simply talks faster into a plan that "did not
-    # split" -- 22 minutes, three windows, none empty, nothing orphaned, shares
-    # 32/52/31 (V2 finding V2-3a). With three windows the arithmetic floor for
-    # the largest share is already 33%.
-    #
-    # Uniquely-owned segments answer the question the threshold's own comment
-    # describes -- one window holding the whole recording -- and the answer does
-    # not move with the window count or with the overlap.
+    # SPREAD MEMBERS, STACKED SECONDS, then the share; why each, and the three
+    # rules this replaced, are written above OVERFULL_CEILING and STACKED_CEILING.
     # WHY ONE WINDOW IS EXCUSED, since the row that asked called it "the most
     # overloaded context there is". With finite geometry a one-window plan
     # cannot be a plan that failed to split: the nominal windows tile the whole
@@ -529,13 +535,27 @@ def main(argv: list[str] | None = None) -> int:
     # geometries produced no one-window plan covering more than window+overlap.
     # What DID reach one window over an hour was `nan`, refused in `plan` now.
     # Against one window the share test would also be arithmetic on 100%.
-    biggest = max((w["segments"] for w in windows), default=0)
-    if len(windows) > 1 and biggest > len(segments) * overfull_share(
-            len(windows), args.window, args.overlap):
-        defects.append(
-            f"[00:00] E-WIN-OVERFULL one window holds {biggest} of "
-            f"{len(segments)} segments; the plan says it split the video and "
-            f"the numbers say it did not")
+    if segments and len(windows) > 1:
+        biggest = max(windows, key=lambda w: w["segments"])
+        held = biggest["segments"]
+        spread = sum(1 for i in biggest["members"]
+                     if segments[i]["end"] - segments[i]["start"] > args.window)
+        # Both ends of a stamp count, whichever way round they were written.
+        stamps = [(segments[i]["start"], segments[i]["end"])
+                  for i in biggest["members"]]
+        claimed = sum(abs(end - start) for start, end in stamps)
+        spanned = (max((max(p) for p in stamps), default=0.0)
+                   - min((min(p) for p in stamps), default=0.0))
+        total = max(max(s["end"] for s in segments),
+                    max(s["start"] for s in segments), args.duration or 0.0)
+        reach = biggest["end"] - biggest["start"]
+        if (spread * 2 > held or claimed > spanned * STACKED_CEILING
+                or (held > len(segments) * OVERFULL_CEILING
+                    and reach * 2 <= total)):
+            defects.append(
+                f"[00:00] E-WIN-OVERFULL one window holds {held} of "
+                f"{len(segments)} segments; the plan says it split the video "
+                f"and the numbers say it did not")
     for defect in defects:
         print(defect)
     print(f"# {len(windows)} window(s), "

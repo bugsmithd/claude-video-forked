@@ -450,7 +450,7 @@ code = "E-WIN-OVERFULL"
 layer = "evidence"
 owner = "note_windows.main"
 trigger = "a plan of more than one window is counted"
-refuses = "one window holding more than half the segments, because the table says the video was split and the numbers say it was not"
+refuses = "a biggest window whose members are mostly stamped longer than a window, or whose members claim more than three times the seconds they reach, or which holds over 90% of the segments inside half the recording, because the table says the video was split and the numbers say it was not"
 excused_by = []
 exit = 1
 
@@ -469,6 +469,14 @@ kind = "pytest"
 [[rule.neighbour]]
 case = "a front-loaded recording where the first ten minutes carry most of the speech, which is real and refused anyway"
 test = "tests/test_spec_evidence_witness.py::test_a_front_loaded_recording_is_refused_as_an_unsplit_plan"
+kind = "pytest"
+[[rule.neighbour]]
+case = "seventy segments stamped to end on the last second, only ten of them longer than a window, which stack up and are refused"
+test = "tests/test_spec_evidence_witness.py::test_segments_stamped_to_the_last_second_are_an_unsplit_video"
+kind = "pytest"
+[[rule.neighbour]]
+case = "one segment stamped across a whole short recording of back-to-back speech, which must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_one_segment_stamped_across_the_whole_recording_is_not_an_unsplit_video"
 kind = "pytest"
 
 [[rule]]
