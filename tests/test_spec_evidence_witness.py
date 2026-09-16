@@ -1585,6 +1585,138 @@ def test_a_short_recording_with_a_dense_cold_open_is_not_an_unsplit_video(tmp_pa
     assert (code, defects) == (0, [])
 
 
+def spread(segments: list[dict], window: dict, seconds: float = 600.0) -> int:
+    """How many of a window's members are stamped longer than a window."""
+    return sum(1 for i in window["members"]
+               if segments[i]["end"] - segments[i]["start"] > seconds)
+
+
+def test_segments_stamped_to_the_last_second_are_an_unsplit_video(tmp_path):
+    """The loosening the span rule shipped with, kept refused.
+
+    Seventy remarks ten seconds apart, every one stamped to end on the
+    recording's last second. Only the first ten are longer than a window, so
+    counting segments longer than a window finds ten of the seventy the second
+    window holds, and passed the plan. The density rule refused it. Window 2
+    holds all seventy, and their stamps claim 24,850 seconds inside the 700
+    seconds they reach: they are stacked on top of each other.
+
+    Would fail if: the check reads only how many members are longer than a
+    window.
+    """
+    segments = [{"start": 10.0 * i, "end": 700.0,
+                 "text": f"a remark number {i} stamped to the end"} for i in range(70)]
+
+    plan = nw.plan(segments, 600.0, 90.0)
+    code, defects = run_windows(tmp_path, segments)
+
+    assert [w["segments"] for w in plan] == [61, 70]
+    assert spread(segments, plan[1]) == 10
+    overfull = named(defects, "E-WIN-OVERFULL")
+    assert code == 1
+    assert len(overfull) == 1, defects
+    assert "one window holds 70 of 70 segments" in overfull[0]
+
+
+def test_ten_remarks_ending_on_the_last_second_are_an_unsplit_video(tmp_path):
+    """What wrong ends mean when no segment is longer than a window.
+
+    Ten remarks a minute apart from 100 seconds on, every one stamped to end
+    at 690. The longest is 590 seconds, so none is longer than a window, and
+    both windows hold every remark. Their stamps claim 3,200 seconds inside
+    the 590 they reach.
+    """
+    segments = [{"start": 100.0 + 60.0 * j, "end": 690.0,
+                 "text": f"a remark number {j} stamped to the end"} for j in range(10)]
+
+    plan = nw.plan(segments, 600.0, 90.0)
+    code, defects = run_windows(tmp_path, segments)
+
+    assert [w["segments"] for w in plan] == [9, 10]
+    assert max(s["end"] - s["start"] for s in segments) < 600.0
+    overfull = named(defects, "E-WIN-OVERFULL")
+    assert code == 1
+    assert len(overfull) == 1, defects
+    assert "one window holds 10 of 10 segments" in overfull[0]
+
+
+def ends_pushed_to_the_last_second() -> list[dict]:
+    """Every other end moved to the recording's last second, the rest 400 seconds late."""
+    return [{"start": i * 5.4,
+             "end": 1241.0 if i % 2 == 0 else i * 5.4 + 400.0,
+             "text": f"a remark number {i}"} for i in range(230)]
+
+
+def four_in_nine_later_starts_zeroed() -> list[dict]:
+    """Sixty opening remarks, then 130 later ones of which four in nine start at zero."""
+    segments = [{"start": i * 10.0, "end": i * 10.0 + 9.0,
+                 "text": f"an opening remark number {i}"} for i in range(60)]
+    for j in range(130):
+        at = 600.0 + j * 11.2
+        segments.append({"start": 0.0 if j % 9 in (0, 2, 4, 6) else at,
+                         "end": at + 9.0, "text": f"a later remark number {j}"})
+    return segments
+
+
+def ends_pushed_up_to_twenty_minutes_late() -> list[dict]:
+    """One end in four pushed 1,200 seconds late, the rest 599, none past the recording."""
+    return [{"start": i * 11.15,
+             "end": min(i * 11.15 + (1200.0 if i % 4 == 0 else 599.0), 3925.0),
+             "text": f"a remark number {i}"} for i in range(352)]
+
+
+@pytest.mark.parametrize("build, windows, held, spread_members", [
+    (ends_pushed_to_the_last_second, 3, 196, 60),
+    (four_in_nine_later_starts_zeroed, 4, 118, 58),
+    (ends_pushed_up_to_twenty_minutes_late, 8, 122, 33),
+])
+def test_a_plan_whose_stamps_stack_up_is_refused_when_few_are_longer_than_a_window(
+        tmp_path, build, windows, held, spread_members):
+    """Code review, 2026-09-16: three corruptions the span rule passed.
+
+    A replay of corrupted transcripts found plans the density rule refused and
+    the span rule passed, at three, four and eight windows. In each, at most
+    half of the biggest window's members are longer than a window, so that
+    count never fires. These fixtures have the same shape and window count,
+    built here rather than read.
+
+    Would fail if: the check reads only how many members are longer than a
+    window.
+    """
+    segments = build()
+
+    plan = nw.plan(segments, 600.0, 90.0)
+    biggest = max(plan, key=lambda w: w["segments"])
+    code, defects = run_windows(tmp_path, segments)
+
+    assert (len(plan), biggest["segments"]) == (windows, held)
+    assert spread(segments, biggest) == spread_members
+    assert spread_members * 2 <= held
+    overfull = named(defects, "E-WIN-OVERFULL")
+    assert code == 1
+    assert len(overfull) == 1, defects
+    assert f"one window holds {held} of {len(segments)} segments" in overfull[0]
+
+
+def test_one_segment_stamped_across_the_whole_recording_is_not_an_unsplit_video(tmp_path):
+    """One bad stamp is not a plan that failed to split.
+
+    Seventy back-to-back remarks over 700 seconds, plus one segment stamped
+    across all of it. Window 1 holds 62 segments whose stamps claim 1,310
+    seconds inside the 700 they reach: under twice, where the check fires only
+    above three times.
+    """
+    segments = gapless(0.0, 700.0, 70, "a steady") + [
+        {"start": 0.0, "end": 700.0, "text": "one segment stamped across everything"}]
+
+    plan = nw.plan(segments, 600.0, 90.0)
+    code, defects = run_windows(tmp_path, segments)
+
+    assert [w["segments"] for w in plan] == [62, 21]
+    assert named(defects, "E-WIN-OVERFULL") == []
+    assert (code, defects) == (0, [])
+
+
 @pytest.mark.parametrize("bad", ["Infinity", "-Infinity", "NaN"])
 @pytest.mark.parametrize("field", ["start", "end"])
 def test_a_stamp_that_is_not_a_number_of_seconds_is_refused_at_the_reader(

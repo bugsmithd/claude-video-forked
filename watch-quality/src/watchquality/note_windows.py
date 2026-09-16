@@ -85,6 +85,21 @@ OVERLAP_SECONDS = 90.0
 # its 540 segments into eight minutes does (64) -- a known false positive, kept
 # and bounded by that floor.
 OVERFULL_CEILING = 0.9
+# COUNTING SPREAD MEMBERS MISSED STACKED ONES. Seventy segments stamped
+# `[10i, 700]` are mostly shorter than a window. So were the members of 76
+# corrupted transcripts (pushed ends, zeroed starts) out of 1,440 in a seeded
+# replay, which the density rule refused and the count passed.
+#
+# SO THE RULE ALSO ADDS UP THE SECONDS a window's members claim, and compares
+# them with the seconds those members reach, first start to last end. Speech
+# tiles time: faster speech makes more segments and shorter ones, and the sum
+# stays at or under the reach whatever the density. It is 1.0 or under on
+# every window planned over the 11 rung-4 renderings long enough to split and
+# 355 caption files on this machine, and one segment stamped across the whole
+# reach adds at most 1.0 more. In the biggest window of every replayed
+# corruption the density rule refused, the members claimed 14 times their
+# reach or more. Above STACKED_CEILING they sit on top of each other.
+STACKED_CEILING = 3.0
 
 
 # Orphans printed one by one before the rest are counted. Ten names the problem;
@@ -510,8 +525,8 @@ def main(argv: list[str] | None = None) -> int:
             f"[00:00] E-WIN-TIMELESS {distinct_starts} distinct start time(s) "
             f"across {len(segments)} segments; this transcript has no usable "
             f"timeline, so any window plan over it is arithmetic on one number")
-    # SPREAD MEMBERS FIRST, the share second; why each, and the three rules
-    # this replaced, are written above OVERFULL_CEILING.
+    # SPREAD MEMBERS, STACKED SECONDS, then the share; why each, and the three
+    # rules this replaced, are written above OVERFULL_CEILING and STACKED_CEILING.
     # WHY ONE WINDOW IS EXCUSED, since the row that asked called it "the most
     # overloaded context there is". With finite geometry a one-window plan
     # cannot be a plan that failed to split: the nominal windows tile the whole
@@ -525,11 +540,18 @@ def main(argv: list[str] | None = None) -> int:
         held = biggest["segments"]
         spread = sum(1 for i in biggest["members"]
                      if segments[i]["end"] - segments[i]["start"] > args.window)
+        # Both ends of a stamp count, whichever way round they were written.
+        stamps = [(segments[i]["start"], segments[i]["end"])
+                  for i in biggest["members"]]
+        claimed = sum(abs(end - start) for start, end in stamps)
+        spanned = (max((max(p) for p in stamps), default=0.0)
+                   - min((min(p) for p in stamps), default=0.0))
         total = max(max(s["end"] for s in segments),
                     max(s["start"] for s in segments), args.duration or 0.0)
         reach = biggest["end"] - biggest["start"]
-        if spread * 2 > held or (held > len(segments) * OVERFULL_CEILING
-                                 and reach * 2 <= total):
+        if (spread * 2 > held or claimed > spanned * STACKED_CEILING
+                or (held > len(segments) * OVERFULL_CEILING
+                    and reach * 2 <= total)):
             defects.append(
                 f"[00:00] E-WIN-OVERFULL one window holds {held} of "
                 f"{len(segments)} segments; the plan says it split the video "
