@@ -81,7 +81,8 @@ OVERLAP_SECONDS = 90.0
 # ONE DENSITY REFUSAL IS KEPT ON PURPOSE: a window holding more than
 # OVERFULL_CEILING of all segments inside at most half of the recording. That
 # is nine times the density of the rest of the recording or more, which neither
-# corpus case comes near (2.2 and 2.9) and a recording that front-loads 500 of
+# corpus case comes near (2.2 and 2.9 against the rest; the 2.1 above is against
+# the whole recording's average, so the two figures agree) and a recording that front-loads 500 of
 # its 540 segments into eight minutes does (64) -- a known false positive, kept
 # and bounded by that floor.
 OVERFULL_CEILING = 0.9
@@ -549,13 +550,23 @@ def main(argv: list[str] | None = None) -> int:
         total = max(max(s["end"] for s in segments),
                     max(s["start"] for s in segments), args.duration or 0.0)
         reach = biggest["end"] - biggest["start"]
-        if (spread * 2 > held or claimed > spanned * STACKED_CEILING
-                or (held > len(segments) * OVERFULL_CEILING
-                    and reach * 2 <= total)):
+        unsplit = spread * 2 > held or (held > len(segments) * OVERFULL_CEILING
+                                        and reach * 2 <= total)
+        stacked = claimed > spanned * STACKED_CEILING
+        # Stacked stamps get their own diagnosis: the plan may have split the
+        # recording in time, and what is wrong is the stamps inside the window.
+        if unsplit:
             defects.append(
                 f"[00:00] E-WIN-OVERFULL one window holds {held} of "
                 f"{len(segments)} segments; the plan says it split the video "
                 f"and the numbers say it did not")
+        elif stacked:
+            defects.append(
+                f"[00:00] E-WIN-OVERFULL one window holds {held} of "
+                f"{len(segments)} segments whose stamps claim {claimed:.0f} "
+                f"seconds inside the {spanned:.0f} they reach; the stamps are "
+                f"stacked on top of each other, so the window holds speech "
+                f"that is not its own")
     for defect in defects:
         print(defect)
     print(f"# {len(windows)} window(s), "
