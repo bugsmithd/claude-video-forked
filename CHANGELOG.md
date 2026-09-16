@@ -6,6 +6,27 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.5] — 2026-09-16
+
+### Fixed
+- **An OpenRouter chunk could come back in the wrong language and be kept.**
+  Every request was sent without a language, so each chunk detected its own;
+  one chunk of English speech came back as Welsh with timings that still lined
+  up, and the run exited 0. The first successful chunk's detected language is
+  now sent on every later request, and `WATCH_OPENROUTER_LANG` wins over
+  detection when set. A chunk that still comes back in another language is
+  dropped and the run is refused, naming its clock range, unless
+  `WATCH_ALLOW_TRANSCRIPT_GAPS=1` is set. A thinned span's re-request carries
+  the run's language too.
+- **Language names and codes are compared after normalising.** Measured live:
+  `Qwen/Qwen3-ASR-1.7B` through OpenRouter answers `english` where
+  `openai/whisper-large-v3` answers `en`, so a raw comparison refused every
+  second-decode chunk, lost `transcript-2.json`, and quietly turned off the
+  thinning check and the cross-check. A returned language is now mapped to its
+  code with Whisper's language table before it is compared or pinned. A value
+  that cannot be read as a language is neither pinned nor refused, and stderr
+  names it once per run. A `language` that is not a string no longer crashes.
+
 ## [0.7.4] — 2026-09-16
 
 ### Fixed

@@ -31,3 +31,14 @@ Below-the-bar findings from reviews of this repository. Each row is not a blocke
 - `tests/test_whisper.py:1968`: no test tells retry words from second-decode words directly; filling a span from the second decode is caught only by retry counts.
 - ADR mirror `claude-video-forked.md`, TRADEOFFS thinning entry: the ruling says "a shifted start", while the code and CHANGELOG widen both sides; align the wording at the next ADR touch.
 - `skills/watch/scripts/whisper.py:1974`: no live run of the re-cut path yet; the route is environment-sensitive and needs two matching runs.
+
+## One language per OpenRouter run (review of `c56ac3c..cbc6a4d`, 2026-09-16, bead `yt_notes-glea`)
+
+Review minors 3 and 6 are closed by the language-normalising fix and are not listed.
+
+- 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:1726-1728`: a wrong first detection spreads to the whole run, both decodes included, and a chunk with no segments (music) still pins its language. Needs an operator ruling on whether only a chunk with segments may pin.
+- 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:848`: a configured `WATCH_OPENROUTER_LANG` is still sent as typed, with no check that it is a code the endpoint accepts. The detected pin is now normalised to a code; the configured value is not.
+- 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:1938`: no test covers the per-run reset of the pin; removing it passes every test. Older tests leave the pin set, so direct `_transcribe_file` tests can depend on order.
+- 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:2124-2126`: a thin-span retry that comes back in another language counts as a failed cut, so the refusal says "kept too few words" instead of naming the language.
+- 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/setup.py:81-82`: the comment says "the first request's detected language"; the code pins the first successful response that carries a readable language, which may come later.
+- 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:2019`: with a single request and a wrong `WATCH_OPENROUTER_LANG`, the refusal is the raw `LanguageMismatch` text, not the run-level message.

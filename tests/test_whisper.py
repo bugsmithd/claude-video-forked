@@ -1173,6 +1173,251 @@ class TestGappedTranscriptIsRefused:
         assert segments
 
 
+class TestOpenRouterLanguageIsLockedPerRun:
+    """One language per run on the routed path, as the local path already does.
+
+    Measured 2026-09-16 on plugin 0.7.3: request 2 of 7 of an English talk came
+    back as Welsh with segment starts that still lined up, and the run exited 0.
+    Every request was sent with no `language`, so each chunk detected its own.
+    The responses here are the redacted `fine` capture with only `language`
+    changed -- the timings pass the coarseness guard, so the language is the
+    only thing a test can be failing on.
+    """
+
+    def _run(self, monkeypatch, tmp_path, languages, config=None):
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        config = config or {}
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1704.0)
+        monkeypatch.setattr(whisper, "second_model", lambda backend: None)
+        monkeypatch.setattr(whisper, "_read_config_value", config.get)
+
+        def split(a, d, plan):
+            chunks = []
+            for i, (off, _len) in enumerate(plan):
+                path = tmp_path / f"c{i}.mp3"
+                path.write_bytes(b"\x00")
+                chunks.append((path, off))
+            return chunks
+
+        monkeypatch.setattr(whisper, "split_audio", split)
+        sent: list[dict] = []
+        replies = iter(languages)
+
+        class FakeResponse:
+            def __init__(self, language):
+                blob = _fixture("fine")
+                blob["language"] = language
+                self.body = json.dumps(blob).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return self.body
+
+        def fake_urlopen(request, timeout=None, context=None):
+            sent.append(json.loads(request.data))
+            return FakeResponse(next(replies))
+
+        monkeypatch.setattr(whisper, "urlopen", fake_urlopen)
+        return sent, lambda: whisper.transcribe_video(
+            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
+
+    def test_later_requests_carry_the_first_chunks_detected_language(
+            self, monkeypatch, tmp_path):
+        """Fails if every request still detects on its own."""
+        whisper.reset_detected_language()
+        sent, run = self._run(monkeypatch, tmp_path, ["en", "en", "en"])
+        run()
+        assert len(sent) == 3
+        assert "language" not in sent[0]
+        assert [body.get("language") for body in sent[1:]] == ["en", "en"]
+
+    def test_a_configured_language_wins_over_detection(self, monkeypatch,
+                                                      tmp_path):
+        """Fails if WATCH_OPENROUTER_LANG is ignored or detection out-ranks it."""
+        whisper.reset_detected_language()
+        whisper.remember_detected_language("cy")
+        sent, run = self._run(monkeypatch, tmp_path, ["de", "de", "de"],
+                              config={"WATCH_OPENROUTER_LANG": "de"})
+        run()
+        assert [body.get("language") for body in sent] == ["de", "de", "de"]
+
+    def test_a_chunk_in_another_language_refuses_the_run_by_clock_range(
+            self, monkeypatch, tmp_path, capsys):
+        """Fails if a provider that ignores the pin gets its chunk kept."""
+        whisper.reset_detected_language()
+        _sent, run = self._run(monkeypatch, tmp_path, ["en", "cy", "en"])
+        with pytest.raises(SystemExit) as caught:
+            run()
+        message = str(caught.value)
+        assert "9:28–18:56" in message
+        assert "language" in message
+        assert "'cy'" in capsys.readouterr().err
+
+    def test_the_gap_escape_hatch_drops_the_mismatched_chunk(self, monkeypatch,
+                                                             tmp_path):
+        """Fails if the hatch keeps the wrong-language text instead of dropping it."""
+        whisper.reset_detected_language()
+        _sent, run = self._run(monkeypatch, tmp_path, ["en", "cy", "en"],
+                               config={"WATCH_ALLOW_TRANSCRIPT_GAPS": "1"})
+        segments, _backend = run()
+        assert segments
+        assert not [s for s in segments if 568.0 <= s["start"] < 1136.0]
+
+    def test_a_thin_span_retry_carries_the_runs_language(self, monkeypatch,
+                                                         tmp_path):
+        """Fails if a 0.7.4 re-request of a thinned span detects on its own.
+
+        Three requests of 500s over 1500s; the last keeps half the second
+        decode's words, so it is cut again, and that cut is a new request.
+        """
+        whisper.reset_detected_language()
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1500.0)
+        monkeypatch.setattr(whisper, "_read_config_value",
+                            {"WATCH_OPENROUTER_MODEL_2": "second/model"}.get)
+        monkeypatch.setattr(whisper, "split_audio", lambda full, work_dir, plan: [
+            (tmp_path / f"{work_dir.name}-{i}.mp3", offset)
+            for i, (offset, _length) in enumerate(plan)])
+        monkeypatch.setattr(whisper, "align_renderings", lambda *a: None)
+        monkeypatch.setattr(whisper, "check_granularity", lambda *a, **k: None)
+        sent: list[tuple[str, str | None]] = []
+
+        def post(key, model, path, provider=None, language=None):
+            sent.append((path.name, language))
+            return {"language": "en", "name": path.name}
+
+        def segments_from(data, allow_untimed=True, offset_seconds=0.0):
+            name = data["name"]
+            if name.startswith("chunks-thin-"):
+                return _spoken(200, 1000.0 - offset_seconds)
+            index = int(Path(name).stem.rsplit("-", 1)[1])
+            if name.startswith("chunks-2-") or index < 2:
+                return _spoken(200)
+            return _spoken(100)
+
+        monkeypatch.setattr(whisper, "_post_openrouter", post)
+        monkeypatch.setattr(whisper, "_segments_from_response", segments_from)
+        whisper.transcribe_video("v.mp4", audio, backend="openrouter",
+                                 api_key="sk")
+
+        retries = [language for name, language in sent
+                   if name.startswith("chunks-thin-")]
+        assert sent[0] == ("chunks-0.mp3", None)
+        assert retries == ["en"]
+
+
+class TestOpenRouterLanguageNamesAreNormalised:
+    """A language NAME and its code are the same language.
+
+    Measured live 2026-09-16: `Qwen/Qwen3-ASR-1.7B` through OpenRouter returns
+    `language: 'english'` on English speech, with or without `language: "en"`
+    in the request, while `openai/whisper-large-v3` returns `'en'`. Compared
+    raw, every second-decode chunk was refused as a mismatch.
+    """
+
+    def _direct(self, monkeypatch, replies):
+        whisper.reset_detected_language()
+        monkeypatch.setattr(whisper, "_read_config_value", {}.get)
+        monkeypatch.setattr(whisper, "check_granularity", lambda *a, **k: None)
+        monkeypatch.setattr(whisper, "_segments_from_response",
+                            lambda data, allow_untimed=True, offset_seconds=0.0:
+                            _spoken(100))
+        answers = iter(replies)
+        monkeypatch.setattr(
+            whisper, "_post_openrouter",
+            lambda key, model, path, provider=None, language=None:
+            {"language": next(answers), "duration": 57.0})
+
+        def call():
+            return whisper._transcribe_file("openrouter", "sk", Path("a.mp3"),
+                                            None, 542.0)
+        return call
+
+    def test_a_second_decode_that_names_the_pinned_language_is_kept(
+            self, monkeypatch, tmp_path, capsys):
+        """Fails if 'english' against a pin of 'en' drops the second decode."""
+        whisper.reset_detected_language()
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1500.0)
+        monkeypatch.setattr(whisper, "_read_config_value",
+                            {"WATCH_OPENROUTER_MODEL_2": "Qwen/Qwen3-ASR-1.7B"}.get)
+        monkeypatch.setattr(whisper, "split_audio", lambda full, work_dir, plan: [
+            (tmp_path / f"{work_dir.name}-{i}.mp3", offset)
+            for i, (offset, _length) in enumerate(plan)])
+        monkeypatch.setattr(whisper, "align_renderings", lambda *a: None)
+        monkeypatch.setattr(whisper, "check_granularity", lambda *a, **k: None)
+        sent: list[tuple[str, str | None]] = []
+
+        def post(key, model, path, provider=None, language=None):
+            sent.append((model, language))
+            return {"language": "english" if model.startswith("Qwen/") else "en"}
+
+        monkeypatch.setattr(whisper, "_post_openrouter", post)
+        monkeypatch.setattr(whisper, "_segments_from_response",
+                            lambda data, allow_untimed=True, offset_seconds=0.0:
+                            _spoken(200))
+        whisper.transcribe_video("v.mp4", audio, backend="openrouter",
+                                 api_key="sk")
+
+        err = capsys.readouterr().err
+        assert "second decode failed" not in err
+        assert (tmp_path / "transcript-2.json").exists()
+        assert "thinning check:" in err
+        assert [language for model, language in sent
+                if model.startswith("Qwen/")] == ["en", "en", "en"]
+        whisper.reset_detected_language()
+
+    def test_a_pin_is_stored_as_the_code_when_a_name_comes_back_first(
+            self, monkeypatch):
+        """Fails if the name itself is pinned and sent on later requests."""
+        call = self._direct(monkeypatch, ["English"])
+        call()
+        assert whisper.openrouter_language() == "en"
+        whisper.reset_detected_language()
+
+    def test_a_different_language_named_in_full_still_refuses(self,
+                                                              monkeypatch):
+        """Fails if normalising lets a name slip past the mismatch check."""
+        call = self._direct(monkeypatch, ["welsh"])
+        whisper.remember_detected_language("en")
+        with pytest.raises(whisper.LanguageMismatch) as caught:
+            call()
+        assert "'welsh'" in str(caught.value)
+        assert "9:02–9:59" in str(caught.value)
+        whisper.reset_detected_language()
+
+    def test_an_unknown_language_is_neither_pinned_nor_refused_and_named_once(
+            self, monkeypatch, capsys):
+        """Fails if an unrecognised value refuses, pins, or warns per chunk."""
+        call = self._direct(monkeypatch, ["klingon", "klingon"])
+        assert call()
+        whisper.remember_detected_language("en")
+        assert call()
+        assert whisper.openrouter_language() == "en"
+        assert capsys.readouterr().err.count("'klingon'") == 1
+        whisper.reset_detected_language()
+        assert whisper.openrouter_language() is None
+
+    def test_a_language_that_is_not_a_string_does_not_crash(self, monkeypatch):
+        """Fails with AttributeError if `language` is assumed to be a string."""
+        call = self._direct(monkeypatch, [7])
+        whisper.remember_detected_language("en")
+        assert call()
+        assert whisper.openrouter_language() == "en"
+        whisper.reset_detected_language()
+
+
 class TestWordCoverage:
     """A rebuild that covers less audio than the rendering it replaces is a loss.
 
@@ -1603,7 +1848,8 @@ class TestTheRefusalNamesVideoTime:
                              + _words_covering(200.0, 300.0))
         monkeypatch.setattr(whisper, "_read_config_value", lambda name: None)
         monkeypatch.setattr(whisper, "_post_openrouter",
-                            lambda key, model, path, provider: data)
+                            lambda key, model, path, provider, language=None:
+                            data)
         with pytest.raises(SystemExit) as caught:
             whisper._transcribe_file("openrouter", "sk", Path("c1.mp3"),
                                      None, 600.0)
