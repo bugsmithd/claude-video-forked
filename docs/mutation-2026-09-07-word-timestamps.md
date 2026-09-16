@@ -134,7 +134,7 @@ files, which is narrower than the previous section's evidence.
 
 ## Scope this record does not cover
 
-The live verification — two runs of `FIhj0yb9KPI` against the real router — is
+The live verification — two runs of video A against the real router — is
 deliberately absent. It is environment-sensitive and is run by the operator, not
 by the lane that wrote this file. Nothing here is evidence about the live route;
 every run above is offline.
@@ -142,7 +142,7 @@ every run above is offline.
 ## Round 3, 2026-09-08 — the coverage check was comparing the wrong thing
 
 Found by running the fix, not by reading it. The corpus build of 2026-09-08 put
-30 videos through this path. 29 came back clean. `YPKV-UCLLd0` was refused four
+30 videos through this path. 29 came back clean. video B was refused four
 times running with identical numbers — words covering 526s of the 541s its own
 segments cover, at a typical 25s — and `"temperature": 0` in the request is why
 re-drawing changed nothing.
@@ -290,7 +290,7 @@ words from those same captures:
 | population | longest run | share outside it |
 |---|---|---|
 | speech throughout (4 responses) | 0.02–0.22s | 0.00% |
-| the `YPKV-UCLLd0` music glyph (3 responses) | 14.36s | 0.00%, 0.12%, **0.55%** |
+| the video B music glyph (3 responses) | 14.36s | 0.00%, 0.12%, **0.55%** |
 | words start a minute late | **59.50s** | 0.00% |
 | words cover only 200–300s of a 300s chunk | 199.50s | 0.00% |
 | one word at the tail of a 300s chunk | 287.60s | 3.70% |

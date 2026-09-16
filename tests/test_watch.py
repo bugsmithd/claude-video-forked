@@ -241,7 +241,7 @@ def test_a_failed_transcription_exits_non_zero(monkeypatch, tmp_path: Path):
     """Fails if the run still returns 0: a batch driven off exit codes records
     a video with no transcript as a success.
 
-    Run 1 of FIhj0yb9KPI on 2026-09-07 did exactly that -- all six chunks
+    Run 1 of video A on 2026-09-07 did exactly that -- all six chunks
     refused as too coarse, `Transcript: none available`, exit 0.
     """
     def refuse(*a, **k):

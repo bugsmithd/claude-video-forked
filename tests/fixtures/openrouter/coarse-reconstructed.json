@@ -1,8 +1,8 @@
 {
  "_provenance": {
   "captured": "2026-09-07",
-  "kind": "RECONSTRUCTED segments, CAPTURED words. The coarse response itself was not saved when it happened; only the refusal message survived. The segments here reproduce the numbers watch run 2 printed for chunk 3 of FIhj0yb9KPI -- 12 segments, median 30s, 284s covered -- and the words are the captured ones from fine.json.",
-  "reported_by": "watch run 2 of FIhj0yb9KPI, chunk 3 of 6, 2026-09-07"
+  "kind": "RECONSTRUCTED segments, CAPTURED words. The coarse response itself was not saved when it happened; only the refusal message survived. The segments here reproduce the numbers watch run 2 printed for chunk 3 of video A -- 12 segments, median 30s, 284s covered -- and the words are the captured ones from fine.json.",
+  "reported_by": "watch run 2 of video A, chunk 3 of 6, 2026-09-07"
  },
  "_derived": {
   "segments": 12,

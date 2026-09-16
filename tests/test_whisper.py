@@ -813,7 +813,7 @@ def _coarse_chunk(segment_spans: list[tuple[float, float]],
 class TestWordGrouping:
     """Segments are a lottery on this route; words are not.
 
-    Measured 2026-09-07 on one chunk of FIhj0yb9KPI: ten direct probes came
+    Measured 2026-09-07 on one chunk of video A: ten direct probes came
     back at 23-31 segments and a 6.76-9.02s median, and two `watch` runs over
     the same audio and the same payload came back at 11-13 segments and a 30s
     median, which `check_granularity` refuses. Every one of those responses
@@ -999,7 +999,7 @@ class TestWordGrouping:
 class TestDroppedChunks:
     """A skipped chunk is a hole in the evidence, and it used to be invisible.
 
-    Run 2 of FIhj0yb9KPI on 2026-09-07 kept chunks 1, 2, 4, 5 and 6, lost
+    Run 2 of video A on 2026-09-07 kept chunks 1, 2, 4, 5 and 6, lost
     chunk 3, and reported `Transcript: 141 segments (via whisper (openrouter))`
     with no mention that roughly 9:28-14:12 was absent. Every gate downstream
     read that transcript as whole.
@@ -1217,7 +1217,7 @@ class TestWordCoverage:
     def test_a_music_intro_is_not_a_shortfall(self):
         """Fails if leading non-speech is counted as dropped speech.
 
-        Found in the corpus build, 2026-09-08. `YPKV-UCLLd0` was refused four
+        Found in the corpus build, 2026-09-08. video B was refused four
         times running with identical numbers -- words covering 526s of the 541s
         the segments cover -- and `temperature: 0` is why re-drawing changed
         nothing. Probing the chunk showed the 15s sits entirely at the START:
