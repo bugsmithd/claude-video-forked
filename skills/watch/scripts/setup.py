@@ -78,6 +78,9 @@ OPENAI_API_KEY=
 # slot and refused in the one above: a second witness is read for the words it
 # disagrees about, and every stamp comes from the first decode.
 # WATCH_OPENROUTER_MODEL_2=Qwen/Qwen3-ASR-1.7B
+# Optional: spoken language sent on every OpenRouter request (default "auto"
+# sends the first request's detected language on the rest).
+# WATCH_OPENROUTER_LANG=auto
 
 # Fully local, offline transcription via whisper.cpp — no API key, audio never
 # leaves the machine. Point these at a whisper-cli executable and a ggml model

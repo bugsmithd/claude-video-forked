@@ -6,6 +6,19 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.5] — 2026-09-16
+
+### Fixed
+- **An OpenRouter chunk could come back in the wrong language and be kept.**
+  Every request was sent without a language, so each chunk detected its own;
+  one chunk of English speech came back as Welsh with timings that still lined
+  up, and the run exited 0. The first successful chunk's detected language is
+  now sent on every later request, and `WATCH_OPENROUTER_LANG` wins over
+  detection when set. A chunk that still comes back in another language is
+  dropped and the run is refused, naming its clock range, unless
+  `WATCH_ALLOW_TRANSCRIPT_GAPS=1` is set. A thinned span's re-request carries
+  the run's language too.
+
 ## [0.7.4] — 2026-09-16
 
 ### Fixed

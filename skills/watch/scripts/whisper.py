@@ -796,7 +796,8 @@ def _post_whisper(endpoint: str, api_key: str, model: str, audio_path: Path) -> 
 
 
 def _post_openrouter(api_key: str, model: str, audio_path: Path,
-                     provider: str | None = None) -> dict:
+                     provider: str | None = None,
+                     language: str | None = None) -> dict:
     """One transcription request to OpenRouter, on the base64 JSON path.
 
     THE JSON PATH RATHER THAN MULTIPART, because only the JSON body documents a
@@ -843,6 +844,8 @@ def _post_openrouter(api_key: str, model: str, audio_path: Path,
         "provider": {"only": [provider], "order": [provider],
                      "allow_fallbacks": False},
     }
+    if language:
+        payload["language"] = language
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -1291,7 +1294,9 @@ def transcribe_chunks(
             failures += 1
             lost_from, lost_to = _chunk_span(chunks, index, keeps)
             if dropped is not None:
-                dropped.append((lost_from, lost_to, "failed"))
+                dropped.append((lost_from, lost_to,
+                                "language" if isinstance(exc, LanguageMismatch)
+                                else "failed"))
             print(
                 f"[watch] chunk {index + 1}/{len(chunks)} failed — skipping "
                 f"({exc}); {_format_span(lost_from, lost_to)} of audio is now "
@@ -1398,6 +1403,29 @@ def decode_language() -> str:
     if configured and configured != "auto":
         return configured
     return _DETECTED_LANGUAGE or "auto"
+
+
+class LanguageMismatch(SystemExit):
+    """A chunk came back in a language other than the run's.
+
+    Raised by the chunk, recorded by `transcribe_chunks` as reason "language",
+    and refused by `transcribe_video` -- the same chunk-level/run-level split
+    as a failed chunk. Measured 2026-09-16: a chunk of English speech came back
+    as Welsh with segment starts that still lined up, so its timings prove
+    nothing about its words.
+    """
+
+
+def openrouter_language() -> str | None:
+    """`WATCH_OPENROUTER_LANG`, else this run's detected language, else None.
+
+    None sends no `language`, which asks the router to detect. `auto` is a
+    request to detect for the same reason as `WHISPER_CPP_LANG=auto`.
+    """
+    configured = _read_config_value("WATCH_OPENROUTER_LANG")
+    if configured and configured != "auto":
+        return configured
+    return _DETECTED_LANGUAGE
 
 
 def _run_whisper_cpp(bin_path: str, audio_path: Path,
@@ -1617,10 +1645,25 @@ def _transcribe_file(backend: str, api_key: str, audio_path: Path,
     elif backend == "openrouter":
         model = (model_override or _read_config_value("WATCH_OPENROUTER_MODEL")
                  or OPENROUTER_MODEL)
+        # ONE LANGUAGE PER RUN. The first successful chunk's detection is sent
+        # on every later request, and a response in another language is refused
+        # rather than kept, because the router may not honour the field.
+        language = openrouter_language()
+        data = _post_openrouter(api_key, model, audio_path,
+                                _read_config_value("WATCH_OPENROUTER_PROVIDER"),
+                                language)
+        returned = data.get("language")
+        if language and returned and returned.lower() != language.lower():
+            duration = data.get("duration")
+            raise LanguageMismatch(
+                f"asked for language {language!r} and got {returned!r} back "
+                f"for "
+                f"{_format_span(offset_seconds, offset_seconds + duration if duration else None)}"
+                f"; its timings may still line up, but its words are not "
+                f"the run's speech")
         segments = _segments_from_response(
-            _post_openrouter(api_key, model, audio_path,
-                             _read_config_value("WATCH_OPENROUTER_PROVIDER")),
-            allow_untimed=False, offset_seconds=offset_seconds)
+            data, allow_untimed=False, offset_seconds=offset_seconds)
+        remember_detected_language(returned)
     elif backend == "local":
         model = model_override or _read_config_value("WHISPER_CPP_MODEL")
         segments = _run_whisper_cpp(api_key, audio_path, model_override)
@@ -1830,6 +1873,7 @@ def transcribe_video(
         )
 
     print(f"[watch] extracting audio for Whisper ({backend})…", file=sys.stderr)
+    reset_detected_language()
     audio_path = extract_audio(video_path, audio_out)
     audio_bytes = audio_path.stat().st_size
 
@@ -1953,8 +1997,20 @@ def transcribe_video(
             print(f"[watch] {_format_span(start, end)} decoded to no speech — "
                   f"kept as silence, not counted as lost audio", file=sys.stderr)
 
-    lost = [(start, end) for start, end, reason in gaps if reason == "failed"]
     allowed = (_read_config_value("WATCH_ALLOW_TRANSCRIPT_GAPS") or "").lower()
+    foreign = [(start, end) for start, end, reason in gaps
+               if reason == "language"]
+    if foreign and allowed not in ("1", "true", "yes", "on"):
+        spans = ", ".join(_format_span(start, end) for start, end in foreign)
+        raise SystemExit(
+            f"{len(foreign)} chunk(s) came back in a language other than the "
+            f"run's and were dropped: {spans}. Timings that line up do not make "
+            f"the words the speech, so the run is refused rather than written. "
+            f"Set WATCH_OPENROUTER_LANG to the spoken language, or "
+            f"WATCH_ALLOW_TRANSCRIPT_GAPS=1 to keep the partial transcript "
+            f"anyway.")
+
+    lost = [(start, end) for start, end, reason in gaps if reason == "failed"]
     if lost and allowed not in ("1", "true", "yes", "on"):
         spans = ", ".join(_format_span(start, end) for start, end in lost)
         raise SystemExit(
