@@ -42,3 +42,12 @@ Review minors 3 and 6 are closed by the language-normalising fix and are not lis
 - 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:2124-2126`: a thin-span retry that comes back in another language counts as a failed cut, so the refusal says "kept too few words" instead of naming the language.
 - 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/setup.py:81-82`: the comment says "the first request's detected language"; the code pins the first successful response that carries a readable language, which may come later.
 - 2026-09-16, `yt_notes-glea`. `skills/watch/scripts/whisper.py:2019`: with a single request and a wrong `WATCH_OPENROUTER_LANG`, the refusal is the raw `LanguageMismatch` text, not the run-level message.
+
+## Language from video metadata (review of `7d39cf4..2f4e992`, 2026-09-16)
+
+- **CLOSED 2026-09-16, ruled.** The minor above about a wrong first detection spreading to the whole run is settled by 0.7.6: the video's declared language now comes before detection. Whether the local whisper.cpp path should use it too is `yt_notes-vhpz`.
+- 2026-09-16. `skills/watch/scripts/whisper.py:1433-1434`: a macrolanguage subtag collapses to its primary subtag, so `zh-yue` normalises to `zh` for both the seed and the mismatch compare, although Whisper's table lists `yue` separately.
+- 2026-09-16. `skills/watch/scripts/whisper.py:1755-1757`: when every request of the first decode returns an unrecognised label, a later recognised detection still prints "detected by the first request".
+- 2026-09-16. `skills/watch/scripts/whisper.py:1499`: the config source line prints the raw `WATCH_OPENROUTER_LANG` value (`'English'`), while the metadata line prints a normalised code.
+- 2026-09-16. `skills/watch/scripts/whisper.py:1502-1506`: an unreadable metadata value (for example `xx-Nowhere`) falls through to detection without stderr naming the ignored value.
+- 2026-09-16. `tests/test_whisper.py`: `test_no_usable_metadata_falls_back_to_detection` and `test_the_local_path_keeps_its_configured_language_first` were not mutation-checked in review.
