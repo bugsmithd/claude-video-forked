@@ -179,7 +179,7 @@ WORD_SEGMENT_MIN_SECONDS = 1.0
 #
 #                                          longest run   share outside it
 #   speech throughout (4 responses)        0.02-0.22s    0.00%
-#   the YPKV-UCLLd0 music glyph (3)        14.36s        0.00%, 0.12%, 0.55%
+#   the video B music glyph (3)            14.36s        0.00%, 0.12%, 0.55%
 #   ---------------------------------------------------------------------
 #   words start a minute late              59.50s        0.00%
 #   words cover only 200-300s of 300s     199.50s        0.00%
@@ -999,7 +999,7 @@ def _segments_from_response(data: dict, allow_untimed: bool = True,
             # stretch the served rendering CLAIMS as speech holds a word.
             #
             # Stated that way it also keeps the case the tail form was written
-            # for. YPKV-UCLLd0 chunk 1 opens on 14.88s of the show's music
+            # for. video B chunk 1 opens on 14.88s of the show's music
             # glyph and its first word lands at 14.86: 14.92s uncovered in all,
             # 14.36s of it that one intro, inside a slack derived from that
             # response and its two siblings
