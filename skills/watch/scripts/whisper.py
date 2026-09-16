@@ -1420,12 +1420,18 @@ def normalise_language(value: object) -> str | None:
     """The code for a language given as a code or a name, else None.
 
     None covers `auto`, an empty value, a value that is not a string, and a
-    name the table does not hold.
+    name the table does not hold. A tag such as yt-dlp's `en-US` is read by its
+    primary subtag.
     """
     if not isinstance(value, str):
         return None
     key = value.strip().lower()
-    return key if key in WHISPER_LANGUAGES else _LANGUAGE_CODES.get(key)
+    if key in WHISPER_LANGUAGES:
+        return key
+    if key in _LANGUAGE_CODES:
+        return _LANGUAGE_CODES[key]
+    primary, dash, _region = key.replace("_", "-").partition("-")
+    return primary if dash and primary in WHISPER_LANGUAGES else None
 
 
 def reset_detected_language() -> None:
@@ -1477,6 +1483,27 @@ def openrouter_language() -> str | None:
     if configured and configured != "auto":
         return configured
     return _DETECTED_LANGUAGE
+
+
+def seed_openrouter_language(declared: object) -> None:
+    """Pin the run's language before the first request, and say where it came from.
+
+    Precedence, ruled 2026-09-16 for 0.7.6: `WATCH_OPENROUTER_LANG` (not
+    `auto`), then the language the video's metadata declares, then the first
+    request's detection, which `_transcribe_file` announces. A music intro
+    detected as another language used to pin the whole run.
+    """
+    global _DETECTED_LANGUAGE
+    configured = _read_config_value("WATCH_OPENROUTER_LANG")
+    if configured and configured != "auto":
+        print(f"[watch] language {configured!r} set by WATCH_OPENROUTER_LANG",
+              file=sys.stderr)
+        return
+    code = normalise_language(declared)
+    if code:
+        _DETECTED_LANGUAGE = code
+        print(f"[watch] language {code!r} set by the video metadata "
+              f"({declared!r})", file=sys.stderr)
 
 
 def _run_whisper_cpp(bin_path: str, audio_path: Path,
@@ -1725,6 +1752,9 @@ def _transcribe_file(backend: str, api_key: str, audio_path: Path,
                 f"the run's speech")
         segments = _segments_from_response(
             data, allow_untimed=False, offset_seconds=offset_seconds)
+        if language is None and code:
+            print(f"[watch] language {code!r} detected by the first request",
+                  file=sys.stderr)
         remember_detected_language(code)
     elif backend == "local":
         model = model_override or _read_config_value("WHISPER_CPP_MODEL")
@@ -1907,8 +1937,12 @@ def transcribe_video(
     audio_out: Path,
     backend: str | None = None,
     api_key: str | None = None,
+    language_hint: str | None = None,
 ) -> tuple[list[dict], str]:
     """Run the full flow: extract audio → upload → parse segments.
+
+    `language_hint` is the language the video's metadata declares, such as
+    yt-dlp's `en-US`; only the OpenRouter path reads it.
 
     Returns (segments, backend_used). Raises SystemExit on any failure.
     """
@@ -1936,6 +1970,8 @@ def transcribe_video(
 
     print(f"[watch] extracting audio for Whisper ({backend})…", file=sys.stderr)
     reset_detected_language()
+    if backend == "openrouter":
+        seed_openrouter_language(language_hint)
     audio_path = extract_audio(video_path, audio_out)
     audio_bytes = audio_path.stat().st_size
 
