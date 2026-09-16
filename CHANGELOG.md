@@ -6,6 +6,20 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.6] — 2026-09-16
+
+### Fixed
+- **A wrong first detection pinned the whole OpenRouter run.** A music intro
+  detected as another language set the language every later request carried.
+  The language yt-dlp records for the video (`language` in `info.json`, read
+  by its primary subtag, so `en-US` becomes `en`) is now sent from the first
+  request. Precedence is `WATCH_OPENROUTER_LANG` (not `auto`), then that
+  metadata, then the first request's detection as before. A local file, or
+  metadata with no readable language, falls through to detection. stderr
+  names the source that set the language once per run. A chunk that comes back
+  in another language is still refused. The local whisper.cpp path is
+  unchanged and keeps `WHISPER_CPP_LANG` first.
+
 ## [0.7.5] — 2026-09-16
 
 ### Fixed

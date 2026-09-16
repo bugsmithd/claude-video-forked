@@ -1184,7 +1184,7 @@ class TestOpenRouterLanguageIsLockedPerRun:
     only thing a test can be failing on.
     """
 
-    def _run(self, monkeypatch, tmp_path, languages, config=None):
+    def _run(self, monkeypatch, tmp_path, languages, config=None, **hint):
         audio = tmp_path / "audio.mp3"
         audio.write_bytes(b"\x00")
         config = config or {}
@@ -1226,7 +1226,8 @@ class TestOpenRouterLanguageIsLockedPerRun:
 
         monkeypatch.setattr(whisper, "urlopen", fake_urlopen)
         return sent, lambda: whisper.transcribe_video(
-            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
+            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk",
+            **hint)
 
     def test_later_requests_carry_the_first_chunks_detected_language(
             self, monkeypatch, tmp_path):
@@ -1313,6 +1314,98 @@ class TestOpenRouterLanguageIsLockedPerRun:
                    if name.startswith("chunks-thin-")]
         assert sent[0] == ("chunks-0.mp3", None)
         assert retries == ["en"]
+
+
+class TestTheVideosDeclaredLanguageComesBeforeDetection:
+    """Ruled 2026-09-16 for plugin 0.7.6: config, then the video's metadata, then detection.
+
+    A music intro detected as another language pinned the whole 0.7.5 run.
+    yt-dlp already records the language the uploader declared, as a tag such
+    as `en-US`, so the first request can carry it.
+    """
+
+    _run = TestOpenRouterLanguageIsLockedPerRun._run
+
+    def test_the_first_request_already_carries_the_metadata_language(
+            self, monkeypatch, tmp_path, capsys):
+        """Fails if the first request still detects on its own."""
+        whisper.reset_detected_language()
+        sent, run = self._run(monkeypatch, tmp_path, ["en", "en", "en"],
+                              language_hint="en-US")
+        run()
+        assert [body.get("language") for body in sent] == ["en", "en", "en"]
+        err = capsys.readouterr().err
+        assert err.count("video metadata") == 1
+
+    def test_a_chunk_in_another_language_still_refuses(self, monkeypatch,
+                                                       tmp_path):
+        """Fails if a seeded pin stops the mismatch refusal."""
+        whisper.reset_detected_language()
+        _sent, run = self._run(monkeypatch, tmp_path, ["cy", "en", "en"],
+                               language_hint="en-US")
+        with pytest.raises(SystemExit) as caught:
+            run()
+        assert "0:00–9:28" in str(caught.value)
+
+    def test_an_explicit_config_beats_the_metadata(self, monkeypatch, tmp_path,
+                                                   capsys):
+        """Fails if metadata out-ranks WATCH_OPENROUTER_LANG."""
+        whisper.reset_detected_language()
+        sent, run = self._run(monkeypatch, tmp_path, ["de", "de", "de"],
+                              config={"WATCH_OPENROUTER_LANG": "de"},
+                              language_hint="en-US")
+        run()
+        assert [body.get("language") for body in sent] == ["de", "de", "de"]
+        err = capsys.readouterr().err
+        assert err.count("WATCH_OPENROUTER_LANG") == 1
+        assert "video metadata" not in err
+
+    def test_auto_config_uses_the_metadata(self, monkeypatch, tmp_path):
+        """Fails if `auto` is read as a language and blocks the metadata."""
+        whisper.reset_detected_language()
+        sent, run = self._run(monkeypatch, tmp_path, ["fr", "fr", "fr"],
+                              config={"WATCH_OPENROUTER_LANG": "auto"},
+                              language_hint="fr")
+        run()
+        assert [body.get("language") for body in sent] == ["fr", "fr", "fr"]
+
+    @pytest.mark.parametrize("hint", [None, "", "xx-Nowhere"])
+    def test_no_usable_metadata_falls_back_to_detection(self, monkeypatch,
+                                                        tmp_path, capsys, hint):
+        """Fails if a missing or unreadable tag changes 0.7.5's detection."""
+        whisper.reset_detected_language()
+        sent, run = self._run(monkeypatch, tmp_path, ["en", "en", "en"],
+                              language_hint=hint)
+        run()
+        assert "language" not in sent[0]
+        assert [body.get("language") for body in sent[1:]] == ["en", "en"]
+        err = capsys.readouterr().err
+        assert err.count("detected") == 1
+        assert "video metadata" not in err
+
+    def test_the_local_path_keeps_its_configured_language_first(
+            self, monkeypatch, tmp_path):
+        """Fails if the metadata reaches whisper.cpp over WHISPER_CPP_LANG."""
+        whisper.reset_detected_language()
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "second_model", lambda backend: None)
+        monkeypatch.setattr(whisper, "check_granularity", lambda *a, **k: None)
+        monkeypatch.setattr(whisper, "_read_config_value", {
+            "WHISPER_CPP_LANG": "en",
+            "WATCH_DECODE_WINDOW_SECONDS": "0"}.get)
+        asked: list[str] = []
+
+        def fake_cpp(bin_path, audio_path, model_override=None):
+            asked.append(whisper.decode_language())
+            return _spoken(200)
+
+        monkeypatch.setattr(whisper, "_run_whisper_cpp", fake_cpp)
+        whisper.transcribe_video("v.mp4", audio, backend="local",
+                                 api_key="/bin/whisper-cli",
+                                 language_hint="fr-FR")
+        assert asked == ["en"]
 
 
 class TestOpenRouterLanguageNamesAreNormalised:

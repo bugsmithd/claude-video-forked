@@ -356,6 +356,7 @@ def main() -> int:
                         work / "audio.mp3",
                         backend=attempt_backend,
                         api_key=attempt_key,
+                        language_hint=(dl.get("info") or {}).get("language"),
                     )
                     whisper_returned_segments = bool(all_segments)
                     transcript_segments = filter_range(all_segments, start_sec, end_sec) if focused else all_segments

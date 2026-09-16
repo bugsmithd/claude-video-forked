@@ -222,6 +222,7 @@ This holds for `transcript` detail too: even with no frames, produce a **summary
 Default behavior comes from `~/.config/watch/.env`:
 
 - `WATCH_DETAIL=transcript|efficient|balanced|token-burner` (default: `balanced`)
+- `WATCH_OPENROUTER_LANG=<code>|auto` (default: `auto`) — the language every OpenRouter request is pinned to; precedence is this key, then the video's declared metadata language, then the first request's detection.
 
 At `transcript` detail, captions are enough to return a report without downloading video. If captions are missing, the script downloads audio only and tries Whisper. If no transcript can be produced, it reports the limitation clearly; re-run with `--detail balanced` for frames.
 

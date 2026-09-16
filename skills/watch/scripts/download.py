@@ -141,6 +141,8 @@ def _read_info(info_path: Path, url: str) -> dict:
                 "title": raw.get("title"),
                 "uploader": raw.get("uploader") or raw.get("channel"),
                 "duration": raw.get("duration"),
+                # The uploader's declared language, seeding the OpenRouter pin.
+                "language": raw.get("language"),
                 "url": raw.get("webpage_url") or url,
             }
         except Exception as exc:

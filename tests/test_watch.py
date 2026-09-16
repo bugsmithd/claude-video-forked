@@ -201,7 +201,7 @@ def test_a_url_run_records_the_caption_file_its_segments_came_from(
 
 
 def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str,
-                 credential: tuple = ("openrouter", "sk")):
+                 credential: tuple = ("openrouter", "sk"), info: dict | None = None):
     """Drive watch.main() with yt-dlp, ffprobe and Whisper all stubbed.
 
     `credential` is what `load_api_key` returns, and it is a PARAMETER rather
@@ -220,7 +220,8 @@ def _whisper_run(monkeypatch, tmp_path: Path, transcribe, *args: str,
     (tmp_path / "v.mp4").write_bytes(b"\x00")
     fetched = {"subtitle_path": None, "video_path": str(tmp_path / "v.mp4"),
                "downloaded": True,
-               "info": {"title": "A Talk", "duration": 600, "id": "vid0000000"}}
+               "info": info or {"title": "A Talk", "duration": 600,
+                                "id": "vid0000000"}}
     monkeypatch.setattr(watch, "fetch_captions", lambda *a, **k: dict(fetched))
     monkeypatch.setattr(watch, "download", lambda *a, **k: dict(fetched))
     monkeypatch.setattr(watch, "get_metadata", lambda *a, **k: {
@@ -292,6 +293,34 @@ def test_a_failed_transcription_still_writes_its_run_record(
     runs = sorted((tmp_path / "runs").rglob("run.json"))
     assert len(runs) == 1, runs
     assert json.loads(runs[0].read_text(encoding="utf-8"))["transcript"]["segments"] == 0
+
+
+def test_the_videos_declared_language_reaches_the_transcriber(
+        monkeypatch, tmp_path: Path):
+    """Fails if yt-dlp's `language` is dropped by the info.json projection or
+    never handed to `transcribe_video` (plugin 0.7.6 ruling)."""
+    import json
+    import sys as _sys
+
+    _sys.path.insert(0, str(WATCH.parent))
+    import download
+
+    info_path = tmp_path / "video.info.json"
+    info_path.write_text(json.dumps({"id": "vid0000000", "language": "en-US"}),
+                         encoding="utf-8")
+    info = download._read_info(info_path, "https://example.com/v")
+    assert info["language"] == "en-US"
+
+    hints: list = []
+
+    def healthy(*a, **k):
+        hints.append(k.get("language_hint"))
+        return ([{"start": float(i), "end": i + 1.0, "text": f"line {i}"}
+                 for i in range(20)], "openrouter")
+
+    code, _out = _whisper_run(monkeypatch, tmp_path, healthy, info=info)
+    assert code == 0
+    assert hints == ["en-US"]
 
 
 def test_a_missing_credential_is_a_failed_run(monkeypatch, tmp_path: Path):
