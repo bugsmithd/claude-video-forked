@@ -6,6 +6,21 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.4] — 2026-09-16
+
+### Fixed
+- **An OpenRouter request whose first decode lost words was written as whole.**
+  One request kept 1,070 words where the second decode kept 2,005, and the run
+  exited 0: the response was fine-grained, so no word-array guard ran. With
+  `WATCH_OPENROUTER_MODEL_2` set, each request span now counts its words against
+  the second decode. A span under 0.75 of them, where the second decode kept at
+  least 100, is cut again from a wider start up to twice, because re-sending the
+  same bytes returns the same answer. A cut that clears the ratio replaces that
+  span, `transcript-1.json` is rewritten and the alignment runs on it. If none
+  clears it the run is refused, naming the span's clock range, unless
+  `WATCH_ALLOW_TRANSCRIPT_GAPS=1`. The second decode never supplies a word or a
+  second. Without a second decode, thinning cannot be seen, and the run says so.
+
 ## [0.7.3] — 2026-09-16
 
 watch-quality 0.5.1.
