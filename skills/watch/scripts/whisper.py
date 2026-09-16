@@ -1377,19 +1377,70 @@ def transcribe_chunks(
 # explicitly to every decode after it. An explicit `WHISPER_CPP_LANG` still wins
 # over both.
 _DETECTED_LANGUAGE: str | None = None
+_UNKNOWN_LANGUAGES_NAMED: set[str] = set()
+
+# A LANGUAGE IS COMPARED AND PINNED AS ITS CODE, NEVER AS RETURNED. Measured
+# 2026-09-16: through OpenRouter, `Qwen/Qwen3-ASR-1.7B` answers
+# `language: 'english'` on English speech, with or without `language: "en"` in
+# the request, while `openai/whisper-large-v3` answers `'en'`. Compared raw,
+# every second-decode chunk was refused as a mismatch and the second decode was
+# lost. Whisper's own table (`whisper/tokenizer.py`, `LANGUAGES`) is the
+# reference for the names.
+WHISPER_LANGUAGES = {
+    "en": "english", "zh": "chinese", "de": "german", "es": "spanish",
+    "ru": "russian", "ko": "korean", "fr": "french", "ja": "japanese",
+    "pt": "portuguese", "tr": "turkish", "pl": "polish", "ca": "catalan",
+    "nl": "dutch", "ar": "arabic", "sv": "swedish", "it": "italian",
+    "id": "indonesian", "hi": "hindi", "fi": "finnish", "vi": "vietnamese",
+    "he": "hebrew", "uk": "ukrainian", "el": "greek", "ms": "malay",
+    "cs": "czech", "ro": "romanian", "da": "danish", "hu": "hungarian",
+    "ta": "tamil", "no": "norwegian", "th": "thai", "ur": "urdu",
+    "hr": "croatian", "bg": "bulgarian", "lt": "lithuanian", "la": "latin",
+    "mi": "maori", "ml": "malayalam", "cy": "welsh", "sk": "slovak",
+    "te": "telugu", "fa": "persian", "lv": "latvian", "bn": "bengali",
+    "sr": "serbian", "az": "azerbaijani", "sl": "slovenian", "kn": "kannada",
+    "et": "estonian", "mk": "macedonian", "br": "breton", "eu": "basque",
+    "is": "icelandic", "hy": "armenian", "ne": "nepali", "mn": "mongolian",
+    "bs": "bosnian", "kk": "kazakh", "sq": "albanian", "sw": "swahili",
+    "gl": "galician", "mr": "marathi", "pa": "punjabi", "si": "sinhala",
+    "km": "khmer", "sn": "shona", "yo": "yoruba", "so": "somali",
+    "af": "afrikaans", "oc": "occitan", "ka": "georgian", "be": "belarusian",
+    "tg": "tajik", "sd": "sindhi", "gu": "gujarati", "am": "amharic",
+    "yi": "yiddish", "lo": "lao", "uz": "uzbek", "fo": "faroese",
+    "ht": "haitian creole", "ps": "pashto", "tk": "turkmen", "nn": "nynorsk",
+    "mt": "maltese", "sa": "sanskrit", "lb": "luxembourgish", "my": "myanmar",
+    "bo": "tibetan", "tl": "tagalog", "mg": "malagasy", "as": "assamese",
+    "tt": "tatar", "haw": "hawaiian", "ln": "lingala", "ha": "hausa",
+    "ba": "bashkir", "jw": "javanese", "su": "sundanese", "yue": "cantonese",
+}
+_LANGUAGE_CODES = {name: code for code, name in WHISPER_LANGUAGES.items()}
+
+
+def normalise_language(value: object) -> str | None:
+    """The code for a language given as a code or a name, else None.
+
+    None covers `auto`, an empty value, a value that is not a string, and a
+    name the table does not hold.
+    """
+    if not isinstance(value, str):
+        return None
+    key = value.strip().lower()
+    return key if key in WHISPER_LANGUAGES else _LANGUAGE_CODES.get(key)
 
 
 def reset_detected_language() -> None:
     """Forget the pin. One process, one recording; a second video re-detects."""
     global _DETECTED_LANGUAGE
     _DETECTED_LANGUAGE = None
+    _UNKNOWN_LANGUAGES_NAMED.clear()
 
 
-def remember_detected_language(language: str | None) -> None:
-    """Pin the FIRST real detection. Later windows do not move it."""
+def remember_detected_language(language: object) -> None:
+    """Pin the FIRST real detection, as its code. Later windows do not move it."""
     global _DETECTED_LANGUAGE
-    if _DETECTED_LANGUAGE is None and language and language != "auto":
-        _DETECTED_LANGUAGE = language
+    code = normalise_language(language)
+    if _DETECTED_LANGUAGE is None and code:
+        _DETECTED_LANGUAGE = code
 
 
 def decode_language() -> str:
@@ -1653,7 +1704,18 @@ def _transcribe_file(backend: str, api_key: str, audio_path: Path,
                                 _read_config_value("WATCH_OPENROUTER_PROVIDER"),
                                 language)
         returned = data.get("language")
-        if language and returned and returned.lower() != language.lower():
+        code = normalise_language(returned)
+        # A value that cannot be read as a language is neither pinned nor
+        # refused: refusing would fail a healthy run on a label, and pinning
+        # would send the label on every later request.
+        if code is None and returned not in (None, "", "auto"):
+            if repr(returned) not in _UNKNOWN_LANGUAGES_NAMED:
+                _UNKNOWN_LANGUAGES_NAMED.add(repr(returned))
+                print(f"[watch] {model} returned language {returned!r}, which "
+                      f"is not a known language code or name — not pinned and "
+                      f"not compared", file=sys.stderr)
+        elif language and code and code != (normalise_language(language)
+                                             or language.strip().lower()):
             duration = data.get("duration")
             raise LanguageMismatch(
                 f"asked for language {language!r} and got {returned!r} back "
@@ -1663,7 +1725,7 @@ def _transcribe_file(backend: str, api_key: str, audio_path: Path,
                 f"the run's speech")
         segments = _segments_from_response(
             data, allow_untimed=False, offset_seconds=offset_seconds)
-        remember_detected_language(returned)
+        remember_detected_language(code)
     elif backend == "local":
         model = model_override or _read_config_value("WHISPER_CPP_MODEL")
         segments = _run_whisper_cpp(api_key, audio_path, model_override)

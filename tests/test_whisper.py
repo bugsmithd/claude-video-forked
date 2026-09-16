@@ -1315,6 +1315,109 @@ class TestOpenRouterLanguageIsLockedPerRun:
         assert retries == ["en"]
 
 
+class TestOpenRouterLanguageNamesAreNormalised:
+    """A language NAME and its code are the same language.
+
+    Measured live 2026-09-16: `Qwen/Qwen3-ASR-1.7B` through OpenRouter returns
+    `language: 'english'` on English speech, with or without `language: "en"`
+    in the request, while `openai/whisper-large-v3` returns `'en'`. Compared
+    raw, every second-decode chunk was refused as a mismatch.
+    """
+
+    def _direct(self, monkeypatch, replies):
+        whisper.reset_detected_language()
+        monkeypatch.setattr(whisper, "_read_config_value", {}.get)
+        monkeypatch.setattr(whisper, "check_granularity", lambda *a, **k: None)
+        monkeypatch.setattr(whisper, "_segments_from_response",
+                            lambda data, allow_untimed=True, offset_seconds=0.0:
+                            _spoken(100))
+        answers = iter(replies)
+        monkeypatch.setattr(
+            whisper, "_post_openrouter",
+            lambda key, model, path, provider=None, language=None:
+            {"language": next(answers), "duration": 57.0})
+
+        def call():
+            return whisper._transcribe_file("openrouter", "sk", Path("a.mp3"),
+                                            None, 542.0)
+        return call
+
+    def test_a_second_decode_that_names_the_pinned_language_is_kept(
+            self, monkeypatch, tmp_path, capsys):
+        """Fails if 'english' against a pin of 'en' drops the second decode."""
+        whisper.reset_detected_language()
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1500.0)
+        monkeypatch.setattr(whisper, "_read_config_value",
+                            {"WATCH_OPENROUTER_MODEL_2": "Qwen/Qwen3-ASR-1.7B"}.get)
+        monkeypatch.setattr(whisper, "split_audio", lambda full, work_dir, plan: [
+            (tmp_path / f"{work_dir.name}-{i}.mp3", offset)
+            for i, (offset, _length) in enumerate(plan)])
+        monkeypatch.setattr(whisper, "align_renderings", lambda *a: None)
+        monkeypatch.setattr(whisper, "check_granularity", lambda *a, **k: None)
+        sent: list[tuple[str, str | None]] = []
+
+        def post(key, model, path, provider=None, language=None):
+            sent.append((model, language))
+            return {"language": "english" if model.startswith("Qwen/") else "en"}
+
+        monkeypatch.setattr(whisper, "_post_openrouter", post)
+        monkeypatch.setattr(whisper, "_segments_from_response",
+                            lambda data, allow_untimed=True, offset_seconds=0.0:
+                            _spoken(200))
+        whisper.transcribe_video("v.mp4", audio, backend="openrouter",
+                                 api_key="sk")
+
+        err = capsys.readouterr().err
+        assert "second decode failed" not in err
+        assert (tmp_path / "transcript-2.json").exists()
+        assert "thinning check:" in err
+        assert [language for model, language in sent
+                if model.startswith("Qwen/")] == ["en", "en", "en"]
+        whisper.reset_detected_language()
+
+    def test_a_pin_is_stored_as_the_code_when_a_name_comes_back_first(
+            self, monkeypatch):
+        """Fails if the name itself is pinned and sent on later requests."""
+        call = self._direct(monkeypatch, ["English"])
+        call()
+        assert whisper.openrouter_language() == "en"
+        whisper.reset_detected_language()
+
+    def test_a_different_language_named_in_full_still_refuses(self,
+                                                              monkeypatch):
+        """Fails if normalising lets a name slip past the mismatch check."""
+        call = self._direct(monkeypatch, ["welsh"])
+        whisper.remember_detected_language("en")
+        with pytest.raises(whisper.LanguageMismatch) as caught:
+            call()
+        assert "'welsh'" in str(caught.value)
+        assert "9:02–9:59" in str(caught.value)
+        whisper.reset_detected_language()
+
+    def test_an_unknown_language_is_neither_pinned_nor_refused_and_named_once(
+            self, monkeypatch, capsys):
+        """Fails if an unrecognised value refuses, pins, or warns per chunk."""
+        call = self._direct(monkeypatch, ["klingon", "klingon"])
+        assert call()
+        whisper.remember_detected_language("en")
+        assert call()
+        assert whisper.openrouter_language() == "en"
+        assert capsys.readouterr().err.count("'klingon'") == 1
+        whisper.reset_detected_language()
+        assert whisper.openrouter_language() is None
+
+    def test_a_language_that_is_not_a_string_does_not_crash(self, monkeypatch):
+        """Fails with AttributeError if `language` is assumed to be a string."""
+        call = self._direct(monkeypatch, [7])
+        whisper.remember_detected_language("en")
+        assert call()
+        assert whisper.openrouter_language() == "en"
+        whisper.reset_detected_language()
+
+
 class TestWordCoverage:
     """A rebuild that covers less audio than the rendering it replaces is a loss.
 

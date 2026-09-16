@@ -18,6 +18,14 @@ the habit rather than back-filling from memory.
   dropped and the run is refused, naming its clock range, unless
   `WATCH_ALLOW_TRANSCRIPT_GAPS=1` is set. A thinned span's re-request carries
   the run's language too.
+- **Language names and codes are compared after normalising.** Measured live:
+  `Qwen/Qwen3-ASR-1.7B` through OpenRouter answers `english` where
+  `openai/whisper-large-v3` answers `en`, so a raw comparison refused every
+  second-decode chunk, lost `transcript-2.json`, and quietly turned off the
+  thinning check and the cross-check. A returned language is now mapped to its
+  code with Whisper's language table before it is compared or pinned. A value
+  that cannot be read as a language is neither pinned nor refused, and stderr
+  names it once per run. A `language` that is not a string no longer crashes.
 
 ## [0.7.4] — 2026-09-16
 
