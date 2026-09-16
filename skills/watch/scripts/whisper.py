@@ -1990,11 +1990,13 @@ def transcribe_video(
                   f"the second decode kept {heard} — cutting it again",
                   file=sys.stderr)
             replaced = False
+            cuts = 0
             for attempt in (1, 2):
                 cut_from = max(0.0, start - attempt * DECODE_OVERLAP_SECONDS)
                 cut_to = min(duration, span_end + attempt * DECODE_OVERLAP_SECONDS)
                 if (cut_from, cut_to) == (start, span_end):
                     break
+                cuts += 1
                 cut = split_audio(audio_path,
                                   audio_out.parent / f"chunks-thin-{index}-{attempt}",
                                   [(cut_from, cut_to - cut_from)])
@@ -2016,13 +2018,20 @@ def transcribe_video(
                     replaced = True
                     break
             if not replaced:
-                still_thin.append((start, end))
+                still_thin.append((start, end, cuts))
         if still_thin:
-            spans = ", ".join(_format_span(start, end) for start, end in still_thin)
+            spans = ", ".join(_format_span(start, end) for start, end, _ in still_thin)
+            # Only as many cuts as were made: a span that is the whole audio
+            # cannot widen on either side, so it gets none.
+            detail = ", ".join(
+                f"{_format_span(start, end)} after {cuts} new cut{'' if cuts == 1 else 's'}"
+                + (" (one request covers the whole audio, so no different cut "
+                   "exists)" if cuts == 0 else "")
+                for start, end, cuts in still_thin)
             if allowed not in ("1", "true", "yes", "on"):
                 raise SystemExit(
-                    f"{len(still_thin)} request(s) kept too few words after two "
-                    f"new cuts: {spans}. The second decode heard speech there "
+                    f"{len(still_thin)} request(s) kept too few words: "
+                    f"{detail}. The second decode heard speech there "
                     f"that the transcript does not carry, so the run is refused "
                     f"rather than written. Set WATCH_ALLOW_TRANSCRIPT_GAPS=1 to "
                     f"keep the thin transcript anyway.")

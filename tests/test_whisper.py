@@ -1978,7 +1978,7 @@ class TestAThinnedRequestIsReRequested:
     """
 
     def _run(self, monkeypatch, tmp_path, *, first, second, retries=(),
-             config=None, second_fails=False):
+             config=None, second_fails=False, duration=1500.0):
         audio = tmp_path / "audio.mp3"
         audio.write_bytes(b"\x00")
         seen = {"cuts": [], "requests": [], "aligned": []}
@@ -1986,7 +1986,7 @@ class TestAThinnedRequestIsReRequested:
                   "second/model" if second is not None else None,
                   **(config or {})}
         monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
-        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: 1500.0)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: duration)
         monkeypatch.setattr(whisper, "_read_config_value", values.get)
 
         def split(full, work_dir, plan):
@@ -2004,6 +2004,9 @@ class TestAThinnedRequestIsReRequested:
                 lead = ([{"start": 999.0 - offset, "end": 999.5 - offset,
                           "text": "x"}] if offset < 999.0 else [])
                 return lead + _spoken(pending.pop(0), 1000.0 - offset)
+            if path == audio:
+                # A single-request video sends the whole file, both decodes.
+                return _spoken((second if override else first)[0])
             index = int(path.stem.rsplit("-", 1)[1])
             if path.name.startswith("chunks-2-"):
                 if second_fails:
@@ -2059,6 +2062,21 @@ class TestAThinnedRequestIsReRequested:
         message = str(caught.value)
         assert "16:40 to the end" in message
         assert "WATCH_ALLOW_TRANSCRIPT_GAPS" in message
+
+    def test_a_thin_single_request_video_is_refused_without_a_new_cut(
+            self, monkeypatch, tmp_path):
+        """Fails if the refusal claims cuts that were never made on a one-request video."""
+        seen = self._run(monkeypatch, tmp_path, first={0: 100},
+                         second={0: 200}, duration=300.0)
+        with pytest.raises(SystemExit) as caught:
+            whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                     backend="openrouter", api_key="sk")
+        assert self._retries(seen) == []
+        message = str(caught.value)
+        assert "0:00 to the end" in message
+        assert "two new cuts" not in message
+        assert "after 0 new cuts" in message
+        assert "one request covers the whole audio" in message
 
     def test_the_escape_hatch_keeps_a_thin_span(self, monkeypatch, tmp_path,
                                                 capsys):

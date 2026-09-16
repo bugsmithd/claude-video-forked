@@ -14,11 +14,14 @@ the habit rather than back-filling from memory.
   exited 0: the response was fine-grained, so no word-array guard ran. With
   `WATCH_OPENROUTER_MODEL_2` set, each request span now counts its words against
   the second decode. A span under 0.75 of them, where the second decode kept at
-  least 100, is cut again from a wider start up to twice, because re-sending the
-  same bytes returns the same answer. A cut that clears the ratio replaces that
-  span, `transcript-1.json` is rewritten and the alignment runs on it. If none
-  clears it the run is refused, naming the span's clock range, unless
-  `WATCH_ALLOW_TRANSCRIPT_GAPS=1`. The second decode never supplies a word or a
+  least 100, is cut again up to twice, each cut wider than the span, because
+  re-sending the same bytes returns the same answer. A cut widens on both sides
+  where it can; the first span can widen only at its end. A cut that clears the
+  ratio replaces that span, `transcript-1.json` is rewritten and the alignment
+  runs on it. If none clears it the run is refused, naming the span's clock range
+  and how many new cuts were made, unless `WATCH_ALLOW_TRANSCRIPT_GAPS=1`. A
+  single-request video (600 s or less) is refused without a retry: its one span
+  is the whole audio, so no different cut exists. The second decode never supplies a word or a
   second. Without a second decode, thinning cannot be seen, and the run says so.
 
 ## [0.7.3] — 2026-09-16
