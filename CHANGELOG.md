@@ -6,6 +6,125 @@ Entries below 0.5.0 are upstream's. This fork's 0.3.0 and 0.4.0 were released
 without changelog entries and are described only in git history; 0.5.0 restores
 the habit rather than back-filling from memory.
 
+## [0.7.0] — 2026-09-16
+
+### Added
+- **`--make-note` keeps the run instead of throwing it away.** The working
+  directory becomes durable under `WATCH_NOTE_DIR` (default `~/watch-runs`) as
+  `<video_id>/run-NN`, numbered so nothing overwrites an earlier run, and
+  `run.json` records a sha256 per frame and for the source, the transcript
+  backend, and the segment starts a claim may be anchored to.
+- **Frames carry their own timestamp, and get wider.** `frames.py` draws
+  `t=MM:SS` into every frame with a truetype face, which tesseract reads 6 of 6
+  back off a real run. The default width moves 512 to 768 on a measurement —
+  twelve frames of one tutorial OCR'd at four widths give 17 readable words at
+  512, 402 at 768 and 637 at 1024 — so note mode floors at 1024.
+- **Three review lanes that cannot see each other.** `review.py` writes one
+  brief per lane into `<run-dir>/review/` — facts, quality, coverage — each with
+  a refute-by-default stance and an instruction not to read another lane,
+  because three agreeing lanes look like corroboration when they are an echo.
+  Every brief first counts how much of the note this run can reach: anchors with
+  a frame, anchors on a segment start, longest runtime with no frame.
+- **Review lanes run at xhigh reasoning effort.** Measured 2026-09-09 over 30
+  unreviewed notes read at low and at xhigh across all three lanes: 180 reviews,
+  1,218 findings, 610 one-sided after pairing on a shared five-word quote. xhigh
+  finds about four more real defects per note per lane, at roughly 49k output
+  tokens and 11 minutes against 9k and under 3 at low.
+- **OpenRouter word timestamps group into anchorable segments** at a 4.0s cap, a
+  0.5s silence and a sentence end past 1.0s, reproducing the 3.7s median
+  `whisper-large-v3` gives when the routing is good. A transcript with a
+  chunk-sized hole is refused, naming the missing clock range;
+  `WATCH_ALLOW_TRANSCRIPT_GAPS=1` keeps the old behaviour.
+
+### Fixed
+- **A URL's run was named after a digest of the URL, not the video.**
+  `_read_info` narrowed yt-dlp's `info.json` to the fields the report reads and
+  `id` was not among them, so every note-mode run fell through to the fallback
+  for local files — silently, because the report printed the right title out of
+  the same dict. (`skills/watch/scripts/download.py`)
+- **A run that lost every audio chunk exited 0**, printing
+  `Transcript: none available`, which a batch driven off exit codes reads as
+  success. Gated on Whisper having run, so `--no-whisper` on an uncaptioned clip
+  still exits 0; a run with no credential now exits 1. `--backend local` also
+  decoded with the OpenRouter key, and `-l auto` re-detects per file, so
+  `large-v3` called English Welsh — the language is pinned once per run.
+- **The word-coverage guard refused real renderings and passed broken ones over
+  five rounds.** Comparing spans charged a rebuild for a music intro's silent
+  seconds; comparing endpoints then passed words covering 0-30 and 270-300 of a
+  300s chunk, the shape that once destroyed 83% of a two-hour file. Three terms
+  now, each derived from the captured responses: longest word-free run inside a
+  claim of speech (25.0s), share outside it (1.5%), word stamps per served word
+  (0.95). Refusals name video time, not chunk-local seconds.
+- **The scaffolded `.env` and `SKILL.md` offered
+  `WATCH_OPENROUTER_PROVIDER=groq`** while the module pins `deepinfra`; both are
+  now pinned to `whisper.OPENROUTER_PROVIDER` by a case.
+
+### Notes
+- watch-quality 0.5.0; see below.
+- `spec/` publishes 136 rules across five files, each naming what it refuses,
+  which function owns it and which cases pin it. A mutation harness breaks a
+  rule's owner and requires a cited case to go red: 134 measured, 134 pinned.
+
+## [watch-quality 0.5.0] — 2026-09-16
+
+The plugin's own version moves separately; see 0.7.0 above.
+
+### Added
+- **`watch-audit` gives the gates one door.** Gates over notes, windows,
+  anchors, citations, transcript alignment and review lanes, an aggregator
+  reporting what each gate said rather than only its exit code, and a leak
+  scanner refusing a published line that reproduces a private recording.
+- **`wq-file-note` derives the two fields a note was given by hand.** The dated
+  filename is what `note_date` reads and every dated exemption row is compared
+  against, so an undated note cannot be aged. Six notes in the corpus name a
+  rendering no gate can open, so the filer refuses an oracle it cannot read
+  itself, and distrusts the manifest's `subtitle_path`.
+- **`wq-file-review` and `wq-file-brief` own what a person used to remember.**
+  The first decides where a report goes and what counts as one — the header must
+  parse, name its lane and name the note — where both were checked at audit
+  time, days later. The second stamps a brief with the hash of its own body,
+  which the lane must quote back or its report is refused.
+- **One note per video is a rule now**, because reviews and the audit sidecar
+  are addressed by video id alone, so one set of reports answered for both.
+- **Scans and refreshes say what they could not do.** Where a class of thing was
+  not in force the summary names it; a sidecar refresh prints each repaired
+  row's old and new line; the header check prints its reach, 55 of 59 excused.
+
+### Fixed
+- **The leak gate read UTF-16 as clean**, because the lossy fallback fired only
+  on `UnicodeDecodeError`, which UTF-16 does not raise: a file carrying a live
+  refused literal counted as scanned and printed no `# not scanned:` line.
+- **The gate excused itself by file, then by resolved path.** Excusing the file
+  meant a refused word in the module that quotes every refused shape could never
+  be found; excusing by resolved path meant a copy of the package elsewhere —
+  tarball, CI checkout, second worktree — exited 1 on its own fixtures.
+- **Two gates never returned.** `Infinity` is legal JSON, so the window planner
+  appended until the machine gave out — `timeout 20`, rc 124, twice, through a
+  note's own oracle field. `is_relative_to` is lexical, so `<runs>/../../..`
+  read as inside the corpus and the walk started wherever `..` landed.
+- **Exemption rows excused notes forever, and unpinned rows never aged.**
+  `excused` compared `when <= reason[:10]` as strings and every ISO date sorts
+  below every letter, so `permanent` and `9999-99-99` each excused every note
+  they named for good. Unpinned rows are re-measured on every run now.
+- **A refusal named no literal and could not name one.** Over the fork's own
+  tracked text a five-character needle has 1,253 dictionary words that match
+  only after the squash removes every separator — `spec/README.md:91` was
+  refused for `adjust`, a word not in the file. It names which literal it hit
+  now, without printing it, on a line number `_decodings` no longer shifts.
+- **Six spellings of a name were encodings, not separators.** After `%65`,
+  `&#101;` or base64 the letter is not in the file, so no separator list reaches
+  one. Ten codepoints had walked past that list, three of them not adversarial:
+  an en dash, a full stop and a slash are how a name gets written down.
+- **The anchor rule argued a moment has six renderings, then matched on the
+  colon.** Eight renderings of the same two seconds exited 0: `1m13s`, `73s`,
+  `1 min 13 sec`, `PT1M13S`, `?t=73`, a `U+2236` ratio colon, a right-to-left
+  mark inside the stamp, and `[٠١:١٣]`. The rule reads the number now.
+- **Three measurements were right only by coincidence.** A note naming
+  `<repo>/docs/x.md` resolved only while the checkout's basename was that word.
+  A row starting before a window and ending inside it was counted by no window.
+  And an unstamped brief made the required hash echo a published constant, so a
+  lane that never opened its brief could quote it.
+
 ## [0.6.2] — 2026-08-19
 
 ### Fixed
