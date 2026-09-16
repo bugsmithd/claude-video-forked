@@ -463,8 +463,8 @@ case = "a short recording that is legitimately one window, which must NOT be ref
 test = "note_windows::a short file is one window"
 kind = "selftest"
 [[rule.neighbour]]
-case = "a window holding exactly half the segments, which is on the ceiling and must NOT be refused"
-test = "tests/test_spec_evidence_witness.py::test_a_window_holding_exactly_half_the_segments_is_on_the_ceiling"
+case = "a window holding exactly half the segments, well under the 90% ceiling, which must NOT be refused"
+test = "tests/test_spec_evidence_witness.py::test_a_window_holding_exactly_half_the_segments_is_under_the_ceiling"
 kind = "pytest"
 [[rule.neighbour]]
 case = "a front-loaded recording where the first ten minutes carry most of the speech, which is real and refused anyway"

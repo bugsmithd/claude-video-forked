@@ -1291,7 +1291,7 @@ def test_an_eleventh_orphan_is_counted_rather_than_named(tmp_path):
 # note_windows.main -- E-WIN-OVERFULL
 # ==========================================================================
 
-def test_a_window_holding_exactly_half_the_segments_is_on_the_ceiling(tmp_path):
+def test_a_window_holding_exactly_half_the_segments_is_under_the_ceiling(tmp_path):
     """Half the segments in one window of a real split is not a refusal.
 
     Two clusters either side of one boundary, thirty segments each: the split
@@ -1333,6 +1333,7 @@ def test_a_front_loaded_recording_is_refused_as_an_unsplit_plan(tmp_path):
     assert code == 1
     assert len(overfull) == 1, defects
     assert "one window holds 500 of 540 segments" in overfull[0]
+    assert "the numbers say it did not" in overfull[0]
 
 
 # ==========================================================================
@@ -1530,8 +1531,9 @@ def test_a_long_recording_with_one_denser_stretch_is_not_an_unsplit_video(tmp_pa
     A 6.6-hour recording, 4,399 segments, 47 windows, none empty, nothing
     orphaned, every segment under 31 seconds. For about 27 minutes the speaker
     talks in shorter segments, so three windows hold 228 to 236 against a
-    median of 88 -- 2.1 times the recording's average density. `overfull_share`
-    puts the ceiling for a 47-window plan at 220 segments and refused the note:
+    median of 88 -- 2.1 times the whole recording's average density, which is
+    2.2 times the density of the rest of it. The removed even-split share rule
+    put the ceiling for a 47-window plan at 220 segments and refused the note:
     "one window holds 236 of 4399 segments". The plan split the video in time;
     one stretch simply carries more segments per second.
 
@@ -1561,8 +1563,9 @@ def test_a_short_recording_with_a_dense_cold_open_is_not_an_unsplit_video(tmp_pa
 
     A 38-minute recording, 345 segments, five windows, none empty, nothing
     orphaned. The first eight and a half minutes carry 153 segments, so window
-    1 holds 175 and the other four hold 69, 62, 57 and 30. `overfull_share`
-    puts the ceiling for five windows at 162 and refused the note: "one window
+    1 holds 175 and the other four hold 69, 62, 57 and 30. The removed
+    even-split share rule put the ceiling for five windows at 162 and refused
+    the note: "one window
     holds 175 of 345 segments". The note itself says the cold open is dense;
     the plan split the video in time.
 
@@ -1616,6 +1619,9 @@ def test_segments_stamped_to_the_last_second_are_an_unsplit_video(tmp_path):
     assert code == 1
     assert len(overfull) == 1, defects
     assert "one window holds 70 of 70 segments" in overfull[0]
+    # The diagnosis names stacked stamps, not a split that never happened.
+    assert "claim 24850 seconds inside the 700 they reach" in overfull[0]
+    assert "numbers say it did not" not in overfull[0]
 
 
 def test_ten_remarks_ending_on_the_last_second_are_an_unsplit_video(tmp_path):
@@ -1638,6 +1644,7 @@ def test_ten_remarks_ending_on_the_last_second_are_an_unsplit_video(tmp_path):
     assert code == 1
     assert len(overfull) == 1, defects
     assert "one window holds 10 of 10 segments" in overfull[0]
+    assert "stamps are stacked" in overfull[0]
 
 
 def ends_pushed_to_the_last_second() -> list[dict]:
@@ -1696,6 +1703,8 @@ def test_a_plan_whose_stamps_stack_up_is_refused_when_few_are_longer_than_a_wind
     assert code == 1
     assert len(overfull) == 1, defects
     assert f"one window holds {held} of {len(segments)} segments" in overfull[0]
+    assert "stamps are stacked" in overfull[0]
+    assert "numbers say it did not" not in overfull[0]
 
 
 def test_one_segment_stamped_across_the_whole_recording_is_not_an_unsplit_video(tmp_path):
