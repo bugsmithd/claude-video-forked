@@ -1292,7 +1292,7 @@ def test_an_eleventh_orphan_is_counted_rather_than_named(tmp_path):
 # ==========================================================================
 
 def test_a_window_holding_exactly_half_the_segments_is_on_the_ceiling(tmp_path):
-    """Half is the ceiling, and the test is strictly greater than it.
+    """Half the segments in one window of a real split is not a refusal.
 
     Two clusters either side of one boundary, thirty segments each: the split
     happened, and a rule that fired here would refuse a plan that worked.
@@ -1307,10 +1307,10 @@ def test_a_window_holding_exactly_half_the_segments_is_on_the_ceiling(tmp_path):
                                 "--overlap", "0")
 
     assert [w["segments"] for w in plan] == [30, 30]
-    # Half of the segments, against a ceiling that an even two-window split
-    # puts well above it: `(1 + 0/300) / 2 * 2` is 1.0, capped at 0.9.
-    assert max(w["segments"] for w in plan) < len(segments) * nw.overfull_share(
-        len(plan), 300.0, 0.0)
+    # Half of the segments, against the one share the rule still reads, and no
+    # segment stamped across more than a window.
+    assert max(w["segments"] for w in plan) < len(segments) * nw.OVERFULL_CEILING
+    assert max(s["end"] - s["start"] for s in segments) < 300.0
     assert (code, defects) == (0, [])
 
 
@@ -1515,6 +1515,74 @@ def test_one_window_holding_the_whole_recording_is_still_refused(tmp_path):
     code, found = run_windows(tmp_path, segments)
 
     assert [f for f in found if "E-WIN-OVERFULL" in f], found
+
+
+def gapless(start: float, end: float, count: int, label: str) -> list[dict]:
+    """`count` back-to-back segments tiling [start, end], the shape a rebuilt decode has."""
+    step = (end - start) / count
+    return [{"start": start + i * step, "end": start + (i + 1) * step,
+             "text": f"{label} remark number {i}"} for i in range(count)]
+
+
+def test_a_long_recording_with_one_denser_stretch_is_not_an_unsplit_video(tmp_path):
+    """A course from the rung-4 corpus -- twice an even split is still density.
+
+    A 6.6-hour recording, 4,399 segments, 47 windows, none empty, nothing
+    orphaned, every segment under 31 seconds. For about 27 minutes the speaker
+    talks in shorter segments, so three windows hold 228 to 236 against a
+    median of 88 -- 2.1 times the recording's average density. `overfull_share`
+    puts the ceiling for a 47-window plan at 220 segments and refused the note:
+    "one window holds 236 of 4399 segments". The plan split the video in time;
+    one stretch simply carries more segments per second.
+
+    Same segment count, duration, window count and biggest window as that
+    rendering, built here rather than read; the rendering has a second dense
+    stretch, which this fixture leaves out because one is enough to refuse.
+
+    Would fail if: the check goes back to comparing a window's share of the
+    segments against what an even split of the plan would give.
+    """
+    segments = (gapless(0.0, 17340.0, 2955, "a steady")
+                + gapless(17340.0, 18960.0, 632, "a denser")
+                + gapless(18960.0, 23727.0, 812, "a later steady"))
+
+    plan = nw.plan(segments, 600.0, 90.0)
+    code, defects = run_windows(tmp_path, segments)
+
+    assert (len(segments), len(plan)) == (4399, 47)
+    assert max(w["segments"] for w in plan) == 236
+    assert max(s["end"] - s["start"] for s in segments) < 600.0
+    assert named(defects, "E-WIN-OVERFULL") == []
+    assert (code, defects) == (0, [])
+
+
+def test_a_short_recording_with_a_dense_cold_open_is_not_an_unsplit_video(tmp_path):
+    """A talk from the rung-4 corpus -- a cold open that talks fast.
+
+    A 38-minute recording, 345 segments, five windows, none empty, nothing
+    orphaned. The first eight and a half minutes carry 153 segments, so window
+    1 holds 175 and the other four hold 69, 62, 57 and 30. `overfull_share`
+    puts the ceiling for five windows at 162 and refused the note: "one window
+    holds 175 of 345 segments". The note itself says the cold open is dense;
+    the plan split the video in time.
+
+    Same segment count, duration, window count and first window as that
+    rendering, built here rather than read.
+
+    Would fail if: the check goes back to comparing a window's share of the
+    segments against what an even split of the plan would give.
+    """
+    segments = (gapless(0.0, 510.0, 165, "a cold open")
+                + gapless(510.0, 2290.0, 180, "a steady"))
+
+    plan = nw.plan(segments, 600.0, 90.0)
+    code, defects = run_windows(tmp_path, segments)
+
+    assert len(segments) == 345
+    assert [w["segments"] for w in plan] == [175, 62, 62, 61, 26]
+    assert max(s["end"] - s["start"] for s in segments) < 600.0
+    assert named(defects, "E-WIN-OVERFULL") == []
+    assert (code, defects) == (0, [])
 
 
 @pytest.mark.parametrize("bad", ["Infinity", "-Infinity", "NaN"])
