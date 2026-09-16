@@ -1756,6 +1756,47 @@ def align_renderings(first: Path, second: Path,
     return report
 
 
+# A REQUEST WHOSE DECODE THINNED IS CUT AGAIN, and these two numbers say when.
+#
+# MEASURED 2026-09-16 on plugin 0.7.3: one request's first decode kept 1,070
+# words where the second decode kept 2,005 (0.53), another kept 1,095 of 1,888
+# (0.58). Both responses were fine-grained, so no word-array guard in
+# `_segments_from_response` ran, and both runs exited 0. Across the 45
+# OpenRouter request spans on disk that day, every other span with a second
+# decode read 0.84 or higher. 0.75 sits between the two groups.
+#
+# A span where the second decode kept under 100 words is not graded: one
+# span read 1,385 against 3, which is a second decode that heard nothing, not
+# a first decode that lost speech.
+THIN_WORD_RATIO = 0.75
+THIN_MIN_WORDS = 100
+
+
+def span_words(segments: list[dict], start: float, end: float | None) -> int:
+    """Words in the segments that start inside [start, end); `end` None runs on."""
+    return sum(len(seg["text"].split()) for seg in segments
+               if seg["start"] >= start and (end is None or seg["start"] < end))
+
+
+def thin_spans(first: list[dict], second: list[dict],
+               plan: list[tuple[float, float]]
+               ) -> list[tuple[int, float, float | None, int, int]]:
+    """Request spans whose first decode kept too few of the second decode's words.
+
+    Returns `(index, start, end, first_words, second_words)`, `end` None for
+    the last request. THE SECOND DECODE ONLY SAYS A SPAN IS SHORT. It never
+    supplies a word or a second to the transcript.
+    """
+    found = []
+    for index, (start, _length) in enumerate(plan):
+        end = plan[index + 1][0] if index + 1 < len(plan) else None
+        heard = span_words(second, start, end)
+        kept = span_words(first, start, end)
+        if heard >= THIN_MIN_WORDS and kept < THIN_WORD_RATIO * heard:
+            found.append((index, start, end, kept, heard))
+    return found
+
+
 def transcribe_video(
     video_path: str,
     audio_out: Path,
@@ -1930,7 +1971,76 @@ def transcribe_video(
 
     print(f"[watch] transcribed {len(segments)} segments via {backend}", file=sys.stderr)
 
+    def recut_thin_spans(first: list[dict], other: list[dict]) -> list[dict]:
+        # A NEW CUT, NOT A PLAIN RETRY. Re-sending the same chunk file came back
+        # byte-identical, so each attempt widens the cut by another overlap on
+        # both sides, then trims the result back to the span it answers for.
+        duration = audio_duration(audio_path)
+        plan = plan_by_seconds(duration, _config_float(
+            "WATCH_OPENROUTER_MAX_SECONDS", OPENROUTER_MAX_SECONDS))
+        thin = thin_spans(first, other, plan)
+        if not thin:
+            print(f"[watch] thinning check: {len(plan)} request(s), none thinned",
+                  file=sys.stderr)
+            return first
+        still_thin = []
+        for index, start, end, kept, heard in thin:
+            span_end = duration if end is None else end
+            print(f"[watch] {_format_span(start, end)} kept {kept} words where "
+                  f"the second decode kept {heard} — cutting it again",
+                  file=sys.stderr)
+            replaced = False
+            cuts = 0
+            for attempt in (1, 2):
+                cut_from = max(0.0, start - attempt * DECODE_OVERLAP_SECONDS)
+                cut_to = min(duration, span_end + attempt * DECODE_OVERLAP_SECONDS)
+                if (cut_from, cut_to) == (start, span_end):
+                    break
+                cuts += 1
+                cut = split_audio(audio_path,
+                                  audio_out.parent / f"chunks-thin-{index}-{attempt}",
+                                  [(cut_from, cut_to - cut_from)])
+                try:
+                    retry = shift_segments(_transcribe_file(
+                        backend, api_key, cut[0][0], None, cut_from), cut_from)
+                except SystemExit as exc:
+                    print(f"[watch] cut {attempt} failed ({exc})", file=sys.stderr)
+                    continue
+                retry = [seg for seg in retry if seg["start"] >= start
+                         and (end is None or seg["start"] < end)]
+                words = span_words(retry, start, end)
+                print(f"[watch] cut {attempt} kept {words} words", file=sys.stderr)
+                if words >= THIN_WORD_RATIO * heard:
+                    first = sorted(
+                        [seg for seg in first if seg["start"] < start
+                         or (end is not None and seg["start"] >= end)] + retry,
+                        key=lambda seg: seg["start"])
+                    replaced = True
+                    break
+            if not replaced:
+                still_thin.append((start, end, cuts))
+        if still_thin:
+            spans = ", ".join(_format_span(start, end) for start, end, _ in still_thin)
+            # Only as many cuts as were made: a span that is the whole audio
+            # cannot widen on either side, so it gets none.
+            detail = ", ".join(
+                f"{_format_span(start, end)} after {cuts} new cut{'' if cuts == 1 else 's'}"
+                + (" (one request covers the whole audio, so no different cut "
+                   "exists)" if cuts == 0 else "")
+                for start, end, cuts in still_thin)
+            if allowed not in ("1", "true", "yes", "on"):
+                raise SystemExit(
+                    f"{len(still_thin)} request(s) kept too few words: "
+                    f"{detail}. The second decode heard speech there "
+                    f"that the transcript does not carry, so the run is refused "
+                    f"rather than written. Set WATCH_ALLOW_TRANSCRIPT_GAPS=1 to "
+                    f"keep the thin transcript anyway.")
+            print(f"[watch] keeping thin audio at {spans} because "
+                  f"WATCH_ALLOW_TRANSCRIPT_GAPS is set", file=sys.stderr)
+        return first
+
     second = second_model(backend)
+    other = None
     if second:
         first_model = (_read_config_value("WHISPER_CPP_MODEL")
                        if backend == "local"
@@ -1944,6 +2054,7 @@ def transcribe_video(
         try:
             other = decode(second, "chunks-2")
         except SystemExit as exc:
+            other = None
             print(f"[watch] second decode failed, continuing with one: {exc}",
                   file=sys.stderr)
         else:
@@ -1951,11 +2062,20 @@ def transcribe_video(
                 audio_out.parent / "transcript-2.json", backend, second, other)
             print(f"[watch] second decode: {len(other)} segments — NOTHING HERE "
                   f"IS QUOTABLE until the two agree", file=sys.stderr)
+            if backend == "openrouter":
+                recut = recut_thin_spans(segments, other)
+                if recut is not segments:
+                    segments = recut
+                    write_rendering(first_path, backend, first_model, segments)
             try:
                 duration = audio_duration(audio_path)
             except SystemExit:
                 duration = None
             align_renderings(first_path, second_path, duration)
+
+    if backend == "openrouter" and other is None:
+        print("[watch] no second decode, so thinning could not be checked: a "
+              "request that lost words passes unseen", file=sys.stderr)
 
     return segments, backend
 

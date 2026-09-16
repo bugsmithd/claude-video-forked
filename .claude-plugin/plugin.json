@@ -1,6 +1,6 @@
 {
   "name": "watch",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Let Claude watch a video. Downloads with yt-dlp, extracts auto-scaled second-stamped frames with ffmpeg, pulls captions or falls back to Whisper (OpenRouter, local whisper.cpp, Groq, or OpenAI), and hands frames + transcript to Claude. Fork of bradautomates/claude-video.",
   "author": {
     "name": "Divyanshu Rathore"

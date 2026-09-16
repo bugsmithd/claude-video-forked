@@ -20,3 +20,14 @@ Below-the-bar findings from reviews of this repository. Each row is not a blocke
 ## E-WIN-OVERFULL stacked-stamp arm (commit `e135dda`, 2026-09-16)
 
 - **CLOSED 2026-09-16, fixed.** A plan refused only by the stacked-stamp arm now prints the seconds its stamps claim against the seconds they reach and says they are stacked; the set of refused plans is unchanged. `watch-quality/src/watchquality/note_windows.py`: a plan refused by the stacked-stamp arm (for example three or more segments stamped across a whole recording that did split) prints "the plan says it split the video and the numbers say it did not", which is the wrong diagnosis; the refusal itself is right. Tests pin the message prefix, so a reword must update them.
+
+## Thinned OpenRouter request spans (commit `a754d66`, review 2026-09-16, bead `yt_notes-sfrs`)
+
+- `skills/watch/scripts/whisper.py:1995-1996`: retries widen a 600 s request to 660 s and then 720 s, past `OPENROUTER_MAX_SECONDS`; not measured against the provider's 60 s processing timeout.
+- `skills/watch/scripts/whisper.py:2009-2010`: the retry trim keys on segment start only, so seam words can be duplicated after the span end or dropped before its start; `drop_seam_repeats` is not applied.
+- `skills/watch/SKILL.md:1`: frontmatter version reads 0.7.2 while `plugin.json` reads 0.7.4; the drift predates this commit.
+- `skills/watch/scripts/whisper.py:1978`, `:2001`: `audio_duration` and the retry `split_audio` sit outside the per-attempt catch, so an ffmpeg failure there ends the run instead of counting as a failed attempt.
+- `skills/watch/scripts/whisper.py:1799-1800`: a second model that hallucinates 100 or more words over silence can refuse a healthy run; only replay evidence (0 of 43 healthy spans flagged) exists.
+- `tests/test_whisper.py:1968`: no test tells retry words from second-decode words directly; filling a span from the second decode is caught only by retry counts.
+- ADR mirror `claude-video-forked.md`, TRADEOFFS thinning entry: the ruling says "a shifted start", while the code and CHANGELOG widen both sides; align the wording at the next ADR touch.
+- `skills/watch/scripts/whisper.py:1974`: no live run of the re-cut path yet; the route is environment-sensitive and needs two matching runs.

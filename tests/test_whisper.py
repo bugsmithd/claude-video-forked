@@ -1951,3 +1951,178 @@ class TestRetryMustCarrySomething:
             dropped=dropped)
         assert segments == looping
         assert dropped == []
+
+
+def _spoken(words, begin=0.0):
+    """Placeholder speech: ten-word segments every 5s, each 4s long."""
+    return [{"start": begin + 5.0 * i, "end": begin + 5.0 * i + 4.0,
+             "text": " ".join(["x"] * 10)}
+            for i in range(words // 10)]
+
+
+def _words_from(segments, start, end=None):
+    return sum(len(seg["text"].split()) for seg in segments
+               if seg["start"] >= start and (end is None or seg["start"] < end))
+
+
+class TestAThinnedRequestIsReRequested:
+    """A request whose first decode kept far fewer words than the second is cut again.
+
+    Measured 2026-09-16 on plugin 0.7.3: a fine-grained first decode of one
+    request carried 1,070 words where the second decode carried 2,005, no
+    word-array guard ran because the response was not coarse, and the run
+    exited 0. Re-sending the same chunk came back byte-identical, so a retry
+    has to be a different cut of the same span.
+
+    Three requests of 500s over 1500s of audio: 0:00, 8:20 and 16:40 onward.
+    """
+
+    def _run(self, monkeypatch, tmp_path, *, first, second, retries=(),
+             config=None, second_fails=False, duration=1500.0):
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"\x00")
+        seen = {"cuts": [], "requests": [], "aligned": []}
+        values = {"WATCH_OPENROUTER_MODEL_2":
+                  "second/model" if second is not None else None,
+                  **(config or {})}
+        monkeypatch.setattr(whisper, "extract_audio", lambda *a, **k: audio)
+        monkeypatch.setattr(whisper, "audio_duration", lambda *a, **k: duration)
+        monkeypatch.setattr(whisper, "_read_config_value", values.get)
+
+        def split(full, work_dir, plan):
+            seen["cuts"].append((work_dir.name, list(plan)))
+            return [(tmp_path / f"{work_dir.name}-{i}.mp3", offset)
+                    for i, (offset, _length) in enumerate(plan)]
+
+        pending = list(retries)
+
+        def transcribe(backend, key, path, override=None, offset=0.0):
+            seen["requests"].append(path.name)
+            if path.name.startswith("chunks-thin-"):
+                # A cut that reaches before 16:40 returns a segment there, which
+                # the replacement must trim away.
+                lead = ([{"start": 999.0 - offset, "end": 999.5 - offset,
+                          "text": "x"}] if offset < 999.0 else [])
+                return lead + _spoken(pending.pop(0), 1000.0 - offset)
+            if path == audio:
+                # A single-request video sends the whole file, both decodes.
+                return _spoken((second if override else first)[0])
+            index = int(path.stem.rsplit("-", 1)[1])
+            if path.name.startswith("chunks-2-"):
+                if second_fails:
+                    raise SystemExit("second route down")
+                return _spoken(second[index])
+            return _spoken(first[index])
+
+        def align(first_path, second_path, duration):
+            seen["aligned"].append(
+                json.loads(first_path.read_text(encoding="utf-8"))["segments"])
+
+        monkeypatch.setattr(whisper, "split_audio", split)
+        monkeypatch.setattr(whisper, "_transcribe_file", transcribe)
+        monkeypatch.setattr(whisper, "align_renderings", align)
+        return seen
+
+    def _retries(self, seen):
+        return [name for name in seen["requests"]
+                if name.startswith("chunks-thin-")]
+
+    def test_a_thin_span_is_cut_again_and_the_retry_replaces_exactly_it(
+            self, monkeypatch, tmp_path):
+        """Fails if a thin span is kept, re-sent as the same bytes, or spliced wrong."""
+        seen = self._run(monkeypatch, tmp_path,
+                         first={0: 200, 1: 200, 2: 100},
+                         second={0: 200, 1: 200, 2: 200}, retries=[200])
+        segments, _backend = whisper.transcribe_video(
+            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
+
+        assert len(self._retries(seen)) == 1
+        retry_cuts = [plan for name, plan in seen["cuts"]
+                      if name.startswith("chunks-thin-")]
+        assert retry_cuts and retry_cuts[0] != [(1000.0, 500.0)]
+        assert _words_from(segments, 1000.0) == 200
+        assert not [seg for seg in segments if 999.0 <= seg["start"] < 1000.0]
+        assert (segments[:40] == _spoken(200)
+                + whisper.shift_segments(_spoken(200), 500.0))
+        written = json.loads((tmp_path / "transcript-1.json")
+                             .read_text(encoding="utf-8"))["segments"]
+        assert written == segments
+        assert seen["aligned"] == [segments]
+
+    def test_a_retry_that_stays_thin_is_tried_twice_then_refused(
+            self, monkeypatch, tmp_path):
+        """Fails if a thin span retries forever, or the run exits 0 on it."""
+        seen = self._run(monkeypatch, tmp_path,
+                         first={0: 200, 1: 200, 2: 100},
+                         second={0: 200, 1: 200, 2: 200}, retries=[100, 100])
+        with pytest.raises(SystemExit) as caught:
+            whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                     backend="openrouter", api_key="sk")
+        assert len(self._retries(seen)) == 2
+        message = str(caught.value)
+        assert "16:40 to the end" in message
+        assert "WATCH_ALLOW_TRANSCRIPT_GAPS" in message
+
+    def test_a_thin_single_request_video_is_refused_without_a_new_cut(
+            self, monkeypatch, tmp_path):
+        """Fails if the refusal claims cuts that were never made on a one-request video."""
+        seen = self._run(monkeypatch, tmp_path, first={0: 100},
+                         second={0: 200}, duration=300.0)
+        with pytest.raises(SystemExit) as caught:
+            whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                     backend="openrouter", api_key="sk")
+        assert self._retries(seen) == []
+        message = str(caught.value)
+        assert "0:00 to the end" in message
+        assert "two new cuts" not in message
+        assert "after 0 new cuts" in message
+        assert "one request covers the whole audio" in message
+
+    def test_the_escape_hatch_keeps_a_thin_span(self, monkeypatch, tmp_path,
+                                                capsys):
+        """Fails if the gap flag skips the retries or does not reach the refusal."""
+        seen = self._run(monkeypatch, tmp_path,
+                         first={0: 200, 1: 200, 2: 100},
+                         second={0: 200, 1: 200, 2: 200}, retries=[100, 100],
+                         config={"WATCH_ALLOW_TRANSCRIPT_GAPS": "1"})
+        segments, _backend = whisper.transcribe_video(
+            "v.mp4", tmp_path / "audio.mp3", backend="openrouter", api_key="sk")
+        assert len(self._retries(seen)) == 2
+        assert _words_from(segments, 1000.0) == 100
+        assert "16:40 to the end" in capsys.readouterr().err
+
+    def test_a_span_the_second_decode_barely_heard_is_not_re_requested(
+            self, monkeypatch, tmp_path, capsys):
+        """Fails if a near-silent span triggers retries: 20 of 90 is not thinning."""
+        seen = self._run(monkeypatch, tmp_path,
+                         first={0: 200, 1: 200, 2: 20},
+                         second={0: 200, 1: 200, 2: 90})
+        whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                 backend="openrouter", api_key="sk")
+        assert self._retries(seen) == []
+        assert "3 request(s), none thinned" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("second, second_fails",
+                             [(None, False), ({0: 200, 1: 200, 2: 200}, True)])
+    def test_without_a_second_decode_nothing_is_re_requested_and_it_says_so(
+            self, monkeypatch, tmp_path, capsys, second, second_fails):
+        """Fails if a missing witness passes silently as a checked transcript."""
+        seen = self._run(monkeypatch, tmp_path,
+                         first={0: 200, 1: 200, 2: 100},
+                         second=second, second_fails=second_fails)
+        whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                 backend="openrouter", api_key="sk")
+        assert self._retries(seen) == []
+        assert "thinning could not be checked" in capsys.readouterr().err
+
+    def test_a_healthy_run_makes_no_extra_request(self, monkeypatch, tmp_path,
+                                                  capsys):
+        """Fails if the check costs a request on a run that did not thin, or never ran."""
+        seen = self._run(monkeypatch, tmp_path,
+                         first={0: 200, 1: 190, 2: 200},
+                         second={0: 200, 1: 200, 2: 200})
+        whisper.transcribe_video("v.mp4", tmp_path / "audio.mp3",
+                                 backend="openrouter", api_key="sk")
+        assert len(seen["requests"]) == 6
+        assert [name for name, _plan in seen["cuts"]] == ["chunks", "chunks-2"]
+        assert "3 request(s), none thinned" in capsys.readouterr().err
